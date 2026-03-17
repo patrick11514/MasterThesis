@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { Channel, invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import type { File } from './types';
 
@@ -20,7 +20,7 @@ export const promptFiles = async () => {
   return files.map(toFile);
 };
 
-export const promptDirectory = async () => {
+export const promptDirectory = async (channel: Channel<number>) => {
   const directory = await open({
     directory: true
   });
@@ -31,7 +31,8 @@ export const promptDirectory = async () => {
 
   const files = await invoke<string[]>('recursive', {
     extensions: TARGET_EXTENSIONS,
-    directory
+    directory,
+    channel
   });
 
   return files.map(toFile);

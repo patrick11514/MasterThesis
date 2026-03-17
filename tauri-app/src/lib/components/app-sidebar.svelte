@@ -1,7 +1,10 @@
 <script lang="ts">
   import * as Sidebar from '$/lib/components/ui/sidebar';
-  import { Folder, FolderPlus, Plus } from '@lucide/svelte';
+  import { FolderIcon, FolderPlusIcon, PlusIcon, SearchIcon } from '@lucide/svelte';
+  import { Channel } from '@tauri-apps/api/core';
+  import { tick } from 'svelte';
   import { toast } from 'svelte-sonner';
+  import type { File } from '../files/types';
   import { promptDirectory, promptFiles } from '../files/utils';
   import { appState } from '../state.svelte';
   import { Button } from './ui/button';
@@ -13,11 +16,26 @@
   }
 
   let currentState = $state(State.Idle);
+  let scannedFiles = $state(0);
 
   const selectFiles = async (directory: boolean) => {
     currentState = State.Scanning;
 
-    const files = directory ? await promptDirectory() : await promptFiles();
+    let files: File[] | undefined;
+
+    if (!directory) {
+      files = await promptFiles();
+      currentState = State.Scanning;
+      await tick();
+      currentState = State.Finished;
+    } else {
+      const channel = new Channel<number>();
+      channel.onmessage = (message) => {
+        scannedFiles = message;
+      };
+
+      files = await promptDirectory(channel);
+    }
 
     if (!files) {
       currentState = State.Idle;
@@ -38,13 +56,13 @@
   <Sidebar.Header>
     <Sidebar.Menu>
       <Sidebar.MenuItem class="flex flex-col items-center justify-center gap-2">
-        <div class="flex w-full items-center justify-center gap-2">
+        <div class="flex w-full items-center justify-center gap-2 text-center text-sm">
           {#if currentState === State.Idle}
-            <Folder class="h-4 w-4" /> Import files
+            <FolderIcon class="h-4 w-4" /> Import files
           {:else if currentState === State.Scanning}
-            Scanning for files...
+            <SearchIcon class="h-4 w-4" /> Scanning... {scannedFiles} found
           {:else if currentState === State.Finished}
-            Done! You can add more files if you want.
+            <FolderIcon class="h-4 w-4" /> Done!
           {/if}
         </div>
         <div class="flex gap-2">
@@ -54,7 +72,7 @@
             variant="outline"
             size="sm"
           >
-            <Plus class="h-4 w-4" /> Add new files
+            <PlusIcon class="h-4 w-4" /> Add new files
           </Button>
           <Button
             disabled={currentState === State.Scanning}
@@ -62,7 +80,7 @@
             variant="outline"
             size="sm"
           >
-            <FolderPlus class="h-4 w-4" />
+            <FolderPlusIcon class="h-4 w-4" />
           </Button>
         </div>
       </Sidebar.MenuItem>
