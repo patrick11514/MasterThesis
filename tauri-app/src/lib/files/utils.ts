@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
+import type { File } from './types';
 
 const TARGET_EXTENSIONS = ['fits'];
 
@@ -14,7 +15,9 @@ export const promptFiles = async () => {
     ]
   });
 
-  console.log(files);
+  if (!files) return;
+
+  return files.map(toFile);
 };
 
 export const promptDirectory = async () => {
@@ -26,8 +29,19 @@ export const promptDirectory = async () => {
     return;
   }
 
-  const files = await invoke('recursive_files', {
+  const files = await invoke<string[]>('recursive', {
     extensions: TARGET_EXTENSIONS,
     directory
   });
+
+  return files.map(toFile);
+};
+
+const toFile = (path: string): File => {
+  const name = path.split('/').slice(-1)[0];
+
+  return {
+    path,
+    name
+  };
 };

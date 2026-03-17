@@ -261,7 +261,8 @@ pub fn run() {
             test2,
             test3,
             test4_stretch,
-            file_picker::recursive_files
+            //File Picker Module
+            file_picker::recursive
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

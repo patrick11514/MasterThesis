@@ -4,10 +4,14 @@ use std::{
 };
 
 use rayon::iter::{ParallelBridge, ParallelIterator};
+use tauri::{
+    plugin::{Builder, TauriPlugin},
+    Runtime,
+};
 use walkdir::WalkDir;
 
 #[tauri::command]
-pub fn recursive_files(extensions: Vec<String>, directory: PathBuf) -> Vec<PathBuf> {
+pub async fn recursive(extensions: Vec<String>, directory: PathBuf) -> Vec<PathBuf> {
     let dir = WalkDir::new(directory);
 
     let extensions = extensions
