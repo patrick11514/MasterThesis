@@ -1,7 +1,7 @@
 {
     "rust-analyzer.linkedProjects": [
-        "tauri-app/src-tauri/Cargo.toml"
+        "astro-grader/src-tauri/Cargo.toml"
     ],
     "svelte.enable-ts-plugin": true,
-    "prettier.configPath": "tauri-app/.prettierrc"
+    "prettier.configPath": "astro-grader/.prettierrc"
 }

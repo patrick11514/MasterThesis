@@ -1,38 +1,11 @@
-use std::{path::Path, time::Duration};
+use std::path::Path;
 
 use fitsio::hdu::HduInfo;
-use rayon::iter::{ParallelBridge, ParallelIterator};
+use rayon::iter::ParallelIterator;
 use rayon::prelude::*;
 
 mod config;
 mod file_picker;
-
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-async fn run_job() {
-    println!("test");
-
-    tokio::time::sleep(Duration::from_secs(2)).await;
-
-    println!("test2");
-
-    let data = vec![0u8; 9999900];
-
-    let a = data
-        .into_iter()
-        .enumerate()
-        .map(|(_, i)| i)
-        .collect::<Vec<_>>()
-        .windows(2)
-        .par_bridge()
-        .map(|windows| windows[0].saturating_mul(windows[1]))
-        .collect::<Vec<_>>();
-}
-
-#[tauri::command]
-fn test2() -> String {
-    "Hello".into()
-}
 
 #[tauri::command]
 async fn test3(src: String) -> tauri::ipc::Response {
@@ -258,8 +231,6 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
-            run_job,
-            test2,
             test3,
             test4_stretch,
             //File Picker Module

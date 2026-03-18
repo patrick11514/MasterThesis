@@ -7,7 +7,7 @@
 </script>
 
 <Resizable.Pane defaultSize={60} class="flex w-full">
-  <Resizable.PaneGroup direction="horizontal" class="flex h-full w-full">
+  <Resizable.PaneGroup direction="horizontal" class="flex h-full w-full" autoSaveId="main-ui">
     <Sidebar />
     <Resizable.Handle withHandle />
     <Preview />

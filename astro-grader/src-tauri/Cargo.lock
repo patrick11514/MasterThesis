@@ -98,6 +98,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "astro-grader"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "fitsio",
+ "image",
+ "image-convert",
+ "rayon",
+ "sep-sys",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-opener",
+ "tokio",
+ "ts-rs",
+ "walkdir",
+]
+
+[[package]]
 name = "async-broadcast"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4312,28 +4333,6 @@ dependencies = [
  "webview2-com",
  "window-vibrancy",
  "windows",
-]
-
-[[package]]
-name = "tauri-app"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "dirs",
- "fitsio",
- "image",
- "image-convert",
- "rayon",
- "sep-sys",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-opener",
- "tokio",
- "ts-rs",
- "walkdir",
 ]
 
 [[package]]

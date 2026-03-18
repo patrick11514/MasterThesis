@@ -1,8 +1,8 @@
 [package]
-name = "tauri-app"
+name = "astro-grader"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "Astro grader desktop application built with Tauri"
+authors = ["Patrik Mintěl"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -11,7 +11,7 @@ edition = "2021"
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "tauri_app_lib"
+name = "astro_grader_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -32,5 +32,3 @@ image = "0.25.9"
 bytemuck = "1.25.0"
 walkdir = "2.5.0"
 ts-rs = "12.0.1"
-dirs = "6.0.0"
-

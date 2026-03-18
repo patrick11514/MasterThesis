@@ -5,20 +5,22 @@
     FolderPlusIcon,
     PlusIcon,
     SearchIcon,
-    SettingsIcon
+    SettingsIcon,
+    XIcon
   } from '@lucide/svelte';
   import { Channel } from '@tauri-apps/api/core';
   import { tick } from 'svelte';
   import { toast } from 'svelte-sonner';
+  import { promptDirectory, promptFiles } from '../files';
   import type { File } from '../files/types';
-  import { promptDirectory, promptFiles } from '../files/utils';
-  import { getAppState, storeFiles } from '../state.svelte';
+  import { getAppState } from '../state.svelte';
   import { Button, buttonVariants } from './ui/button';
   import * as Collapsible from './ui/collapsible';
   import * as Dialog from './ui/dialog';
   import { Input } from './ui/input';
   import * as Item from './ui/item';
   import { Label } from './ui/label';
+  import ModeButton from './ui/mode-button.svelte';
   import * as Resizable from './ui/resizable';
   import { Switch } from './ui/switch';
 
@@ -55,7 +57,7 @@
       return;
     }
 
-    const added = storeFiles(files);
+    const added = appState.storeFiles(files);
 
     toast.success(`Added ${added} file${added !== 1 ? 's' : ''}!`);
 
@@ -63,20 +65,30 @@
   };
 
   const appState = await getAppState();
+
+  const onNightConfigChange = async () => {
+    await appState.saveConfig();
+
+    appState.reApplyFilters();
+  };
 </script>
 
 <Resizable.Pane defaultSize={20} class="flex flex-col items-center gap-2 p-2">
-  <div class="flex flex-col items-center justify-center gap-2">
-    <div class="flex w-full items-center justify-center gap-2 text-center text-lg">
-      {#if currentState === State.Idle}
-        <FolderIcon class="h-4 w-4" /> Import files
-      {:else if currentState === State.Scanning}
-        <SearchIcon class="h-4 w-4" /> Scanning... {scannedFiles} found
-      {:else if currentState === State.Finished}
-        <FolderIcon class="h-4 w-4" /> Done!
-      {/if}
+  <div class="flex w-full flex-col items-center justify-center gap-2">
+    <div class="flex w-full flex-wrap items-center text-center text-lg">
+      <ModeButton class="mr-auto" />
+      <span class="mr-auto flex flex-wrap items-center gap-2">
+        {#if currentState === State.Idle}
+          <FolderIcon class="h-4 w-4" /> Import files
+        {:else if currentState === State.Scanning}
+          <SearchIcon class="h-4 w-4" /> Scanning... {scannedFiles} found
+        {:else if currentState === State.Finished}
+          <FolderIcon class="h-4 w-4" /> Done!
+        {/if}
+      </span>
+      <ModeButton class="invisible" />
     </div>
-    <div class="flex gap-2">
+    <div class="flex flex-wrap gap-2">
       <Button
         disabled={currentState === State.Scanning}
         onclick={() => selectFiles(false)}
@@ -116,24 +128,31 @@
             variant="default"
             size="sm"
             onclick={() => {
-              appState.nightFilter.push({
+              appState.nightPrefixes.push({
                 text: '',
-                type: 'prefix'
+                type: 'Prefix'
               });
             }}>Add Night Filter</Button
           >
           <div class="grid gap-4">
-            {#each appState.nightFilter as filter, index (index)}
+            {#each appState.nightPrefixes as filter, index (index)}
               <div class="flex items-center gap-2">
                 <Input placeholder="Filter text" bind:value={filter.text} class="flex-1" />
 
                 <Label>Prefix</Label>
                 <Switch
                   bind:checked={
-                    () => filter.type === 'suffix', (v) => (filter.type = v ? 'suffix' : 'prefix')
+                    () => filter.type === 'Suffix', (v) => (filter.type = v ? 'Suffix' : 'Prefix')
                   }
                 />
                 <Label>Suffix</Label>
+
+                <XIcon
+                  class="h-4 w-4 cursor-pointer text-red-500"
+                  onclick={() => {
+                    appState.nightPrefixes.splice(index, 1);
+                  }}
+                />
               </div>
             {/each}
           </div>
@@ -141,10 +160,7 @@
             <Dialog.Close
               type="button"
               class={buttonVariants({ variant: 'outline' })}
-              onclick={async () => {
-                await appState.saveConfig();
-                //TODO run restor of files here to update the night list
-              }}
+              onclick={onNightConfigChange}
             >
               Close
             </Dialog.Close>
@@ -153,7 +169,7 @@
       </Dialog.Content>
     </Dialog.Root>
   </h2>
-  <div class="flex flex-col gap-2 overflow-y-auto">
+  <div class="flex w-full flex-col gap-2 overflow-y-auto">
     {#if Object.keys(appState.files).length === 0}
       <p class="text-muted-foreground">No files imported.</p>
     {:else}
@@ -169,6 +185,9 @@
                 <Item.Content>
                   {file.name}
                 </Item.Content>
+                <Item.Footer class="text-sm text-muted-foreground">
+                  {file.path}
+                </Item.Footer>
               </Item.Root>
             {/each}
           </Collapsible.Content>

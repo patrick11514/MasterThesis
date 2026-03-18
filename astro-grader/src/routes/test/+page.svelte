@@ -3,7 +3,7 @@
   import * as Resizable from '$/lib/components/ui/resizable';
 </script>
 
-<Resizable.PaneGroup direction="vertical" class="flex flex-col">
+<Resizable.PaneGroup direction="vertical" class="flex flex-col" autoSaveId="main-layout">
   <MainUi />
   <Resizable.Handle />
 </Resizable.PaneGroup>

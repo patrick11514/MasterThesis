@@ -1,3 +1,4 @@
+use tauri::Manager;
 use ts_rs::TS;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq, Hash, TS)]
@@ -44,10 +45,14 @@ impl std::fmt::Display for ConfigError {
     }
 }
 
-pub async fn write_config(config: &Config) -> Result<(), ConfigError> {
-    let config_path = dirs::config_dir()
+pub async fn write_config(
+    app_handle: &tauri::AppHandle,
+    config: &Config,
+) -> Result<(), ConfigError> {
+    let config_path = app_handle
+        .path()
+        .app_config_dir()
         .expect("Could not find config directory")
-        .join("tauri-app")
         .join("config.json");
 
     if let Some(parent) = config_path.parent() {
@@ -64,10 +69,11 @@ pub async fn write_config(config: &Config) -> Result<(), ConfigError> {
     Ok(())
 }
 
-pub async fn read_config() -> Result<Config, ConfigError> {
-    let config_path = dirs::config_dir()
+pub async fn read_config(app_handle: &tauri::AppHandle) -> Result<Config, ConfigError> {
+    let config_path = app_handle
+        .path()
+        .app_config_dir()
         .expect("Could not find config directory")
-        .join("astro-grader")
         .join("config.json");
 
     if !config_path.exists() {
@@ -82,11 +88,13 @@ pub async fn read_config() -> Result<Config, ConfigError> {
 }
 
 #[tauri::command]
-pub async fn config_get() -> Result<Config, String> {
-    read_config().await.map_err(|e| format!("{}", e))
+pub async fn config_get(app_handle: tauri::AppHandle) -> Result<Config, String> {
+    read_config(&app_handle).await.map_err(|e| format!("{}", e))
 }
 
 #[tauri::command]
-pub async fn config_set(config: Config) -> Result<(), String> {
-    write_config(&config).await.map_err(|e| format!("{}", e))
+pub async fn config_set(app_handle: tauri::AppHandle, config: Config) -> Result<(), String> {
+    write_config(&app_handle, &config)
+        .await
+        .map_err(|e| format!("{}", e))
 }
