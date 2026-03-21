@@ -84,6 +84,7 @@ pub async fn read_config(app_handle: &tauri::AppHandle) -> Result<Config, Config
         .await
         .map_err(ConfigError::ReadFileError)?;
     let config: Config = serde_json::from_str(&config_json).map_err(ConfigError::ParseError)?;
+
     Ok(config)
 }
 
