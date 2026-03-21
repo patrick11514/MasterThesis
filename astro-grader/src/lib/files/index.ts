@@ -1,7 +1,8 @@
 import { Channel, invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
+import type { File } from '../types/File';
 import type { NightPrefix } from '../types/NightPrefix';
-import type { File } from './types';
+import { sortFunction } from '../utils';
 
 const TARGET_EXTENSIONS = ['fits'];
 const DEFAULT_NIGHT_NAME = 'Unsorted';
@@ -24,7 +25,9 @@ export const promptFiles = async () => {
 
   if (!files) return;
 
-  return files.map(toFile);
+  return await invoke<File[]>('file_picker_convert', {
+    files
+  });
 };
 
 /*
@@ -41,22 +44,11 @@ export const promptDirectory = async (channel: Channel<number>) => {
     return;
   }
 
-  const files = await invoke<string[]>('file_picker_recursive', {
+  return await invoke<File[]>('file_picker_recursive', {
     extensions: TARGET_EXTENSIONS,
     directory,
     channel
   });
-
-  return files.map(toFile);
-};
-
-const toFile = (path: string): File => {
-  const name = path.split('/').slice(-1)[0];
-
-  return {
-    path,
-    name
-  };
 };
 
 /*
@@ -107,16 +99,16 @@ export const parseFiles = (files: File[], filters: NightPrefix[]) => {
 
   if (parsedFiles[DEFAULT_NIGHT_NAME]) {
     sortedParsedFiles[DEFAULT_NIGHT_NAME] = parsedFiles[DEFAULT_NIGHT_NAME].sort((a, b) =>
-      a.name.localeCompare(b.name)
+      sortFunction(a.name, b.name)
     );
   }
 
   const sortedKeys = Object.keys(parsedFiles)
     .filter((key) => key !== DEFAULT_NIGHT_NAME)
-    .sort((a, b) => a.localeCompare(b));
+    .sort((a, b) => sortFunction(a, b));
 
   for (const key of sortedKeys) {
-    sortedParsedFiles[key] = parsedFiles[key].sort((a, b) => a.name.localeCompare(b.name));
+    sortedParsedFiles[key] = parsedFiles[key].sort((a, b) => sortFunction(a.name, b.name));
   }
 
   return sortedParsedFiles;

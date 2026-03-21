@@ -235,6 +235,7 @@ pub fn run() {
             test4_stretch,
             //File Picker Module
             file_picker::file_picker_recursive,
+            file_picker::file_picker_convert,
             //Config Module
             config::config_get,
             config::config_set

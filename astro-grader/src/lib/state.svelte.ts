@@ -1,14 +1,16 @@
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'svelte-sonner';
 import { parseFiles } from './files';
-import type { File, Files } from './files/types';
+import { FILE_TYPES, type Files } from './files/types';
 import type { Config } from './types/Config';
+import type { File } from './types/File';
 import type { NightPrefix } from './types/NightPrefix';
 
 class AppState {
   public files = $state<Files>({});
   public nightPrefixes = $state<NightPrefix[]>([]);
   public loaded = false;
+  public framesShown = $state(Object.fromEntries(FILE_TYPES.map((type) => [type, true])));
 
   async loadConfig() {
     try {
@@ -56,6 +58,14 @@ class AppState {
     const parsed = parseFiles(allFiles, this.nightPrefixes);
     this.files = parsed;
   }
+
+  removeFiles(night: string, filePath: string | null = null) {
+    if (filePath) {
+      this.files[night] = this.files[night].filter((file) => file.path !== filePath);
+    } else {
+      delete this.files[night];
+    }
+  }
 }
 
 const appState = new AppState();
@@ -67,3 +77,5 @@ export const getAppState = async () => {
   }
   return appState;
 };
+
+export type AppStateType = typeof appState;

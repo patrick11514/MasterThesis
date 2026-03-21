@@ -1,0 +1,4 @@
+- Optimize dropdowns, because they render all elements but with css hidden, so they are actually present in HTML, and loading 4k+ files really hurts :D
+- Add some section for including master frames, because the are actually used for more than single night
+- Lets do some processing :)
+- Figure out the integration of dark/flat frames, if we got them instead of master frames

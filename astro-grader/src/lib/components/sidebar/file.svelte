@@ -1,0 +1,76 @@
+<script lang="ts">
+  import { FILE_COLORS, FILE_TYPES } from '$/lib/files/types';
+  import type { AppStateType } from '$/lib/state.svelte';
+  import type { File } from '$/lib/types/File';
+  import { ArrowLeftRightIcon, FileImageIcon, InfoIcon, XIcon } from '@lucide/svelte';
+  import { Button } from '../ui/button';
+  import * as DropdownMenu from '../ui/dropdown-menu';
+  import * as Item from '../ui/item';
+  import * as Popover from '../ui/popover';
+
+  interface Props {
+    night: string;
+    file: File;
+    appState: AppStateType;
+  }
+  const { night, file, appState }: Props = $props();
+</script>
+
+<Item.Root class="w-full px-4 py-0">
+  <Item.Content class="flex w-full flex-row items-center gap-2">
+    <FileImageIcon class={FILE_COLORS[file.type]} />
+    <span class="flex-1 truncate">{file.name}</span>
+
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger>
+        {#snippet child({ props })}
+          <Button {...props} variant="outline" size="icon-sm">
+            <ArrowLeftRightIcon />
+          </Button>
+        {/snippet}
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Content class="w-56">
+        <DropdownMenu.Group>
+          <DropdownMenu.Label>Panel Position</DropdownMenu.Label>
+          <DropdownMenu.Separator />
+          <DropdownMenu.RadioGroup bind:value={file.type}>
+            {#each FILE_TYPES as type (type)}
+              <DropdownMenu.RadioItem value={type}>{type}</DropdownMenu.RadioItem>
+            {/each}
+          </DropdownMenu.RadioGroup>
+        </DropdownMenu.Group>
+      </DropdownMenu.Content>
+    </DropdownMenu.Root>
+    <Popover.Root>
+      <Popover.Trigger class="shrink-0">
+        <Button variant="outline" size="icon-sm">
+          <InfoIcon />
+        </Button>
+      </Popover.Trigger>
+      <Popover.Content class="flex w-max flex-col gap-2">
+        <div>
+          <strong>Name:</strong>
+          {file.name}
+        </div>
+        <div>
+          <strong>Path:</strong>
+          {file.path}
+        </div>
+        <div>
+          <strong>Type:</strong>
+          {file.type}
+        </div>
+      </Popover.Content>
+    </Popover.Root>
+    <Button
+      class="shrink-0"
+      variant="destructive"
+      size="icon-sm"
+      onclick={() => {
+        appState.removeFiles(night, file.path);
+      }}
+    >
+      <XIcon />
+    </Button>
+  </Item.Content>
+</Item.Root>
