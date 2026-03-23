@@ -6,17 +6,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use ts_rs::TS;
 use walkdir::WalkDir;
 
-#[derive(serde::Serialize, serde::Deserialize, TS)]
-#[ts(export)]
-pub enum FileType {
-    Light,
-    Dark,
-    Flat,
-    Bias,
-    MasterDark,
-    MasterFlat,
-    MasterBias,
-}
+use crate::fits::FileType;
 
 #[derive(serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]

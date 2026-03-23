@@ -6,6 +6,7 @@ use rayon::prelude::*;
 
 mod config;
 mod file_picker;
+mod fits;
 
 #[tauri::command]
 async fn test3(src: String) -> tauri::ipc::Response {
@@ -238,7 +239,9 @@ pub fn run() {
             file_picker::file_picker_convert,
             //Config Module
             config::config_get,
-            config::config_set
+            config::config_set,
+            //Fits
+            fits::fits_read_image
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

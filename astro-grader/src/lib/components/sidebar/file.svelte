@@ -17,7 +17,10 @@
 </script>
 
 <Item.Root class="w-full px-4 py-0">
-  <Item.Content class="flex w-full flex-row items-center gap-2">
+  <Item.Content
+    class="flex w-full flex-row items-center gap-2"
+    onclick={() => (appState.previewImage = file.path)}
+  >
     <FileImageIcon class={FILE_COLORS[file.type]} />
     <span class="flex-1 truncate">{file.name}</span>
 

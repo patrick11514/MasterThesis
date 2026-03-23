@@ -11,6 +11,7 @@ class AppState {
   public nightPrefixes = $state<NightPrefix[]>([]);
   public loaded = false;
   public framesShown = $state(Object.fromEntries(FILE_TYPES.map((type) => [type, true])));
+  public previewImage = $state<string>();
 
   async loadConfig() {
     try {
