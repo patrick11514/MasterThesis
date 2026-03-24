@@ -1,7 +1,7 @@
 <script lang="ts">
   import * as Resizable from '$/lib/components/ui/resizable';
-  import Histogram from './histogram.svelte';
-  import Preview from './preview.svelte';
+  import Histogram from './preview/histogram.svelte';
+  import Preview from './preview/preview.svelte';
   import Sidebar from './sidebar/index.svelte';
   import * as Separator from './ui/separator';
 

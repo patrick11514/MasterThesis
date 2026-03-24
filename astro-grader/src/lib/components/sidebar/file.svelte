@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { previewState } from '$/lib/components/preview/state.svelte';
   import { FILE_COLORS, FILE_TYPES } from '$/lib/files/types';
   import type { AppStateType } from '$/lib/state.svelte';
   import type { File } from '$/lib/types/File';
@@ -19,7 +20,7 @@
 <Item.Root class="w-full px-4 py-0">
   <Item.Content
     class="flex w-full flex-row items-center gap-2"
-    onclick={() => (appState.previewImage = file.path)}
+    onclick={() => (previewState.previewImage = file)}
   >
     <FileImageIcon class={FILE_COLORS[file.type]} />
     <span class="flex-1 truncate">{file.name}</span>

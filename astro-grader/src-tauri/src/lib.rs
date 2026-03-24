@@ -3,6 +3,9 @@ use std::path::Path;
 use fitsio::hdu::HduInfo;
 use rayon::iter::ParallelIterator;
 use rayon::prelude::*;
+use tauri::Manager;
+
+use crate::app_state::AppState;
 
 mod config;
 mod file_picker;
@@ -226,9 +229,18 @@ async fn test4_stretch(
     .unwrap()
 }
 
+mod app_state;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .setup(|app| {
+            app.manage(AppState {
+                ..Default::default()
+            });
+
+            Ok(())
+        })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
