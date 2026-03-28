@@ -14,3 +14,25 @@ export type WithElementRef<T, U extends HTMLElement = HTMLElement> = T & { ref?:
 
 export const sortFunction = (a: string, b: string) =>
   a.localeCompare(b, undefined, { numeric: true });
+
+export const getData = async <T>(url: string): Promise<T | undefined> => {
+  try {
+    const request = await fetch(url);
+    if (!request.ok) {
+      return undefined;
+    }
+
+    const contentType = request.headers.get('Content-Type');
+
+    if (contentType === 'application/octet-stream') {
+      return (await request.arrayBuffer()) as T;
+    } else if (contentType === 'application/json') {
+      return (await request.json()) as T;
+    } else {
+      return (await request.text()) as T;
+    }
+  } catch (e) {
+    console.error(`Unable to fetch ${url}:`, e);
+    return undefined;
+  }
+};

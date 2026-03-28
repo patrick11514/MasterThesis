@@ -14,32 +14,24 @@ mod utils;
 pub use structs::FileType;
 
 #[tauri::command]
-pub async fn fits_read_image(path: PathBuf) -> Result<ImageData, String> {
-    tokio::task::spawn_blocking(move || {
-        let start = std::time::Instant::now();
-        println!("Reading image from fits file: {:?}", path);
-        let mut fits = file::FitsFile::new(path).map_err(|err| match err {
-            FitsOpenError::OpenError => "Unable to open file, does the file exists?".to_string(),
-            FitsOpenError::NoHudFound => "Unable to find primary HDU in fits file".to_string(),
-        })?;
+pub async fn fits_read_image(
+    path: PathBuf,
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<ImageData, String> {
+    let mut fits = file::FitsFile::new(path).map_err(|err| match err {
+        FitsOpenError::OpenError => "Unable to open file, does the file exists?".to_string(),
+        FitsOpenError::NoHudFound => "Unable to find primary HDU in fits file".to_string(),
+    })?;
 
-        println!("Extracting image data from fits file");
+    let image = fits.read_image().map_err(|err| match err {
+        ReadImageError::ReadImageFailed => "Unable to read image data from fits file".to_string(),
+        ReadImageError::UnableToExtractImageSize => {
+            "Unable to extract image size from fits file".to_string()
+        }
+    })?;
 
-        let image = fits.read_image().map_err(|err| match err {
-            ReadImageError::ReadImageFailed => {
-                "Unable to read image data from fits file".to_string()
-            }
-            ReadImageError::UnableToExtractImageSize => {
-                "Unable to extract image size from fits file".to_string()
-            }
-        })?;
+    let converted = image.to_js_imagedata();
+    *state.current_image_data.lock().unwrap() = Some(converted);
 
-        println!("sonverting image data to js imagedata");
-        let converted = image.to_js_imagedata();
-        println!("Started sending image data to frontend");
-
-        Ok(image.data)
-    })
-    .await
-    .map_err(|_| String::from("Failed to read image"))?
+    Ok(image.data)
 }

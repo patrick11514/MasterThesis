@@ -59,9 +59,7 @@ impl ImageDataPixels {
         // If data is already in correct rgbrgb order (or grayscale), process normally
         if self.data.depth == 1 || self.data.bayer_pattern.is_some() {
             let pixels = &self.pixels;
-            let mut out_bytes = Vec::with_capacity(8 + pixels.len() * 4);
-            out_bytes.extend_from_slice(&(width as u32).to_le_bytes());
-            out_bytes.extend_from_slice(&(height as u32).to_le_bytes());
+            let mut out_bytes = Vec::with_capacity(pixels.len() * 4);
             for &val in pixels.iter() {
                 out_bytes.extend_from_slice(&val.to_le_bytes());
             }
@@ -79,16 +77,12 @@ impl ImageDataPixels {
         let (g_plane, b_plane) = gb_plane.split_at(plane_area);
 
         // 2. Pre-allocate the exact size of the final byte array to avoid resizing
-        // 8 bytes (headers) + (total pixels * 3 channels * 4 bytes per f32)
-        let total_bytes = 8 + (plane_area * 3 * 4);
+        // (total pixels * 3 channels * 4 bytes per f32)
+        let total_bytes = (plane_area * 3 * 4);
         let mut out_bytes = vec![0u8; total_bytes];
 
-        // Write the width and height headers
-        out_bytes[0..4].copy_from_slice(&(width as u32).to_le_bytes());
-        out_bytes[4..8].copy_from_slice(&(height as u32).to_le_bytes());
-
         // 3. Grab a mutable slice of just the pixel data area
-        let pixel_bytes = &mut out_bytes[8..];
+        let pixel_bytes = &mut out_bytes[..];
 
         // 4. Iterate over the output bytes in chunks of 12 (3 f32s * 4 bytes each)
         pixel_bytes
