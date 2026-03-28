@@ -49,6 +49,9 @@ The Master's thesis will build upon the statistical baseline by introducing Deep
 * **Active Learning ("Dotrénování"):** Implementing a human-in-the-loop system. The user's manual classification of the "Undecided" folder from Phase 1 will be used as labeled training data to continuously fine-tune the classification model for their specific camera sensor and local seeing conditions.
 * **Model Deployment:** Training models locally or via Python/PyTorch, then exporting to ONNX format to be executed directly within the Rust/Tauri backend for seamless user experience without requiring a Python environment.
 
+
+**Look into it: https://github.com/karpathy/autoresearch?tab=readme-ov-file**
+
 ---
 
 ## Academic References & Foundations

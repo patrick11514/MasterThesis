@@ -64,3 +64,4 @@ Papers (review):
 
 * **"A geometric approach to estimate background in astronomical images"** by S. Maji et al. (2024).
 * *Theoretical Focus:* A very recent mathematical approach that uses the method of steepest descent to locate local minima in an image. It is specifically designed to handle "confusion limits" in dense star fields, where traditional algorithms mathematically overestimate the background sky level due to the sheer density of overlapping starlight.
+
