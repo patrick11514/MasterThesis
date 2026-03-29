@@ -64,15 +64,12 @@ impl FitsFile {
     ) -> Result<super::image_data_pixels::ImageDataPixels, ReadImageError> {
         let bayer_pat = self.get_tag_value(Tag::BayerPattern);
 
-        println!("Parsing image data from fits file");
-
         let mut data: Vec<f32> = self
             .hdu
             .read_image(&mut self.file)
             .map_err(|_| ReadImageError::ReadImageFailed)?;
 
         if let fitsio::hdu::HduInfo::ImageInfo { shape, image_type } = &self.hdu.info {
-            println!("format: {:?}", image_type);
             if let Some(bayer_pattern) = bayer_pat {
                 //Normalize data
                 normalize_data(&mut data, image_type);
@@ -84,14 +81,14 @@ impl FitsFile {
                     super::utils::normalize_offset(self.get_tag_custom::<i32>(Tag::YBayerOffset)),
                 );
 
-                println!("Debayering image");
                 let debayered = utils::debayer_data(image_data, bayer_pattern, offset);
-                println!("Finished debayering image");
                 return Ok(debayered);
             }
 
-            println!("No bayer pattern found, returning raw image data");
-            return Ok(ImageDataPixels::from_fits(shape, data));
+            let mut data = ImageDataPixels::from_fits(shape, data);
+            data.to_rgb_layout(); //Directly convert to RGB layout if needed, this will modify the data in place and avoid unnecessary copies
+
+            return Ok(data);
         }
         Err(ReadImageError::UnableToExtractImageSize)
     }

@@ -7,7 +7,7 @@
   let linked = $state(true);
 </script>
 
-<section class="w-96 p-1">
+<section class="w-full p-1">
   <Button size="icon-sm" variant="outline" onclick={() => (linked = !linked)}>
     {#if linked}
       <LinkIcon />
@@ -27,8 +27,4 @@
     <RotateCcwIcon />
   </Button>
   <Slider bind:linked bind:R={previewState.R} bind:G={previewState.G} bind:B={previewState.B} />
-  <pre>
-  {JSON.stringify(previewState.previewData, null, 2)}
-  {JSON.stringify({ R: previewState.R, G: previewState.G, B: previewState.B }, null, 2)}
-  </pre>
 </section>

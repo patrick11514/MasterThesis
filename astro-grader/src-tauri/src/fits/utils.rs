@@ -1,6 +1,6 @@
-use rayon::iter::{IntoParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
+use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 
-use crate::fits::image_data_pixels::{ImageData, ImageDataPixels};
+use crate::fits::image_data_pixels::ImageDataLayout;
 
 pub fn normalize_offset(offset: Option<i32>) -> usize {
     let offset = offset.unwrap_or(0);
@@ -111,6 +111,7 @@ pub fn debayer_data(
             width: new_width,
             height: new_height,
             depth: 3,
+            layout: ImageDataLayout::RGB,
         },
         pixels: rgb_data,
     }

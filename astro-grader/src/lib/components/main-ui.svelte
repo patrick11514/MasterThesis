@@ -1,6 +1,6 @@
 <script lang="ts">
   import * as Resizable from '$/lib/components/ui/resizable';
-  import Histogram from './preview/histogram.svelte';
+  import ImageInfo from './preview/image-info.svelte';
   import Preview from './preview/preview.svelte';
   import Sidebar from './sidebar/index.svelte';
   import * as Separator from './ui/separator';
@@ -15,5 +15,7 @@
     <Preview />
   </Resizable.PaneGroup>
   <Separator.Root orientation="vertical" />
-  <Histogram />
+  <div class="flex h-full w-[20%] flex-col items-stretch justify-stretch">
+    <ImageInfo />
+  </div>
 </Resizable.Pane>

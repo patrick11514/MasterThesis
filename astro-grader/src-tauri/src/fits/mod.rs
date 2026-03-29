@@ -28,7 +28,9 @@ pub async fn fits_read_image(
         }
     })?;
 
-    let converted = image.to_js_imagedata();
+    let converted = image
+        .to_js_imagedata()
+        .ok_or("Unable to convert image data to js imagedata, unsupported layout")?;
     *state.current_image_data.lock().unwrap() = Some(converted);
 
     Ok(image.data)

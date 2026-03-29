@@ -4,7 +4,7 @@ import type { File } from '../types/File';
 import type { NightPrefix } from '../types/NightPrefix';
 import { sortFunction } from '../utils';
 
-const TARGET_EXTENSIONS = ['fits'];
+const TARGET_EXTENSIONS = ['fits', 'fit'];
 const DEFAULT_NIGHT_NAME = 'Unsorted';
 
 /*
