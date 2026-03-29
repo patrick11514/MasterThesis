@@ -15,12 +15,7 @@
       <UnlinkIcon />
     {/if}
   </Button>
-  <Slider
-    bind:linked
-    bind:shadows={previewState.shadows}
-    bind:midtones={previewState.midtones}
-    bind:highlights={previewState.highlights}
-  />
+  <Slider bind:linked bind:R={previewState.R} bind:G={previewState.G} bind:B={previewState.B} />
   <pre>
   {JSON.stringify(previewState.previewData, null, 2)}
   </pre>

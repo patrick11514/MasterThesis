@@ -1,144 +1,150 @@
 <script lang="ts">
-  import { tick } from 'svelte';
-  import { ColorSlider } from '../ui/color-slider';
-  import type { Vec3 } from './state.svelte';
+  import { Slider as SliderPrimitive } from 'bits-ui';
+  import { untrack } from 'svelte';
+  import { PreserveRatio, type SMH } from './preserve-ratio.svelte';
 
   type Props = {
     linked: boolean;
-    shadows: Vec3;
-    midtones: Vec3;
-    highlights: Vec3;
+    R: SMH;
+    G: SMH;
+    B: SMH;
   };
-  const {
-    linked = $bindable(false),
-    shadows = $bindable(),
-    midtones = $bindable(),
-    highlights = $bindable()
-  }: Props = $props();
 
-  let syncing = $state(false);
+  let { linked = $bindable(), R = $bindable(), G = $bindable(), B = $bindable() }: Props = $props();
 
-  const getValue = (idx: number): Vec3['data'] => [
-    shadows.data[idx],
-    midtones.data[idx],
-    highlights.data[idx]
-  ];
+  type STFChannel = {
+    id: string;
+    color: string;
+    ratios: PreserveRatio;
+  };
 
-  const setValue = (idx: number, [newS, newM, newH]: Vec3['data']) => {
-    if (syncing) return;
+  //We take first snapshot of state, because we don't want to automatically update
+  let channels: STFChannel[] = $state([
+    {
+      id: 'Red',
+      color: '#ff0000',
+      ratios: new PreserveRatio(R)
+    },
+    {
+      id: 'Green',
+      color: '#00ff00',
+      ratios: new PreserveRatio(G)
+    },
+    {
+      id: 'Blue',
+      color: '#0000ff',
+      ratios: new PreserveRatio(B)
+    }
+  ]);
 
-    if (!linked) {
-      shadows.data[idx] = newS;
-      midtones.data[idx] = newM;
-      highlights.data[idx] = newH;
+  // Simple helper to check if two SMH tuples match
+  const isSame = (a: SMH, b: SMH) => a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
+
+  // Effect to sync external prop changes into our local channel state
+  $effect(() => {
+    const newR = R;
+    const newG = G;
+    const newB = B;
+
+    untrack(() => {
+      const localR = channels[0].ratios.getState();
+      const localG = channels[1].ratios.getState();
+      const localB = channels[2].ratios.getState();
+
+      const rChanged = !isSame(newR, localR);
+      const gChanged = !isSame(newG, localG);
+      const bChanged = !isSame(newB, localB);
+
+      if (!rChanged && !gChanged && !bChanged) return;
+
+      console.log('Updating from outside', { newR, newG, newB });
+
+      // 4. Only update the specific channels that received new outside data
+      if (rChanged) channels[0].ratios.setState(newR);
+      if (gChanged) channels[1].ratios.setState(newG);
+      if (bChanged) channels[2].ratios.setState(newB);
+    });
+  });
+
+  let updating = $state([false, false, false]);
+
+  const handleSliderChange = (channelIdx: number, v: number[] | undefined) => {
+    if (!v || v.length !== 3) return;
+
+    // 1. Prevent infinite loops from Bits UI internal value syncing
+    if (updating[channelIdx]) {
+      updating[channelIdx] = false;
       return;
     }
 
-    syncing = true;
-    const [oldS, oldM, oldH] = getValue(idx);
+    const ratios = channels[channelIdx].ratios;
+    const current = ratios.getState();
+    const next = [...v] as SMH;
 
-    // 1. Identify which handle actively moved
-    // (Priority: Shadows and Highlights drive Midtones, so check them first)
-    let changedHandle: 'S' | 'M' | 'H' | null = null;
-    let oldVal = 0,
-      newVal = 0;
+    // 2. Reintroduce clamping! Thumbs cannot cross each other.
+    next[0] = Math.min(next[0], v[1]);
+    next[1] = Math.max(Math.min(next[1], v[2]), v[0]);
+    next[2] = Math.max(next[2], v[1]);
 
-    if (newS !== oldS) {
-      changedHandle = 'S';
-      oldVal = oldS;
-      newVal = newS;
-    } else if (newH !== oldH) {
-      changedHandle = 'H';
-      oldVal = oldH;
-      newVal = newH;
-    } else if (newM !== oldM) {
-      changedHandle = 'M';
-      oldVal = oldM;
-      newVal = newM;
+    const [s0, m0, h0] = current;
+    const [s1, m1, h1] = next;
+
+    // 3. Explicitly detect which thumb moved
+    const sMoved = s1 !== s0;
+    const mMoved = m1 !== m0;
+    const hMoved = h1 !== h0;
+
+    updating[channelIdx] = true;
+    let newState: SMH;
+
+    // 4. Update the specific value based on the movement
+    if (sMoved) {
+      newState = ratios.updateShadows(s1);
+    } else if (mMoved) {
+      newState = ratios.updateMidtone(m1);
+    } else if (hMoved) {
+      newState = ratios.updateHighlights(h1);
+    } else {
+      updating[channelIdx] = false; // Nothing moved
+      return;
     }
 
-    if (changedHandle !== null) {
-      // 2. Calculate Proportional Jump (Percentage of available space used)
-      const isIncreasing = newVal > oldVal;
-      let pctJump = 0;
+    // 5. Sync the new state back to the parent $bindable props
+    if (channelIdx === 0) R = newState;
+    if (channelIdx === 1) G = newState;
+    if (channelIdx === 2) B = newState;
 
-      if (isIncreasing) {
-        const space = 1.0 - oldVal;
-        pctJump = space > 0 ? (newVal - oldVal) / space : 0;
-      } else {
-        const space = oldVal - 0.0;
-        pctJump = space > 0 ? (oldVal - newVal) / space : 0;
-      }
-
-      // Helper to apply the percentage jump to target's available space
-      const getNewTarget = (targetOld: number) => {
-        let targetNew = targetOld;
-        if (isIncreasing) {
-          targetNew = targetOld + (1.0 - targetOld) * pctJump;
-        } else {
-          targetNew = targetOld - (targetOld - 0.0) * pctJump;
-        }
-        // Round to 4 decimals to avoid IEEE 754 precision echo bugs
-        return Math.max(0, Math.min(1, Math.round(targetNew * 10000) / 10000));
-      };
-
-      // 3. Apply to all sliders
-      for (let i = 0; i < 3; i++) {
-        if (i === idx) {
-          // The actively dragged slider gets the raw exact values
-          shadows.data[i] = newS;
-          midtones.data[i] = newM;
-          highlights.data[i] = newH;
-        } else {
-          // The linked sliders get proportional updates
-          const targetS = shadows.data[i];
-          const targetM = midtones.data[i];
-          const targetH = highlights.data[i];
-
-          // Calculate current ratio so the parent can preserve the midtone itself
-          const currentDelta = targetH - targetS;
-          const ratio = currentDelta === 0 ? 0.5 : (targetM - targetS) / currentDelta;
-
-          if (changedHandle === 'S') {
-            const newTargetS = getNewTarget(targetS);
-            shadows.data[i] = newTargetS;
-
-            // Re-apply ratio to new delta to keep midtone proportionately locked
-            const exactMidtone = newTargetS + ratio * (targetH - newTargetS);
-            midtones.data[i] = Math.max(0, Math.min(1, Math.round(exactMidtone * 10000) / 10000));
-          } else if (changedHandle === 'H') {
-            const newTargetH = getNewTarget(targetH);
-            highlights.data[i] = newTargetH;
-
-            // Re-apply ratio
-            const exactMidtone = targetS + ratio * (newTargetH - targetS);
-            midtones.data[i] = Math.max(0, Math.min(1, Math.round(exactMidtone * 10000) / 10000));
-          } else if (changedHandle === 'M') {
-            // Midtone moved independently, S and H stay where they are
-            midtones.data[i] = getNewTarget(targetM);
-          }
-        }
-      }
-    }
-
-    tick().then(() => {
-      syncing = false;
-    });
+    // Note: If `linked` is true, this is where you would also iterate
+    // over the other channels and apply `newState` to them!
   };
-
-  const colors = ['#ff0000', '#00ff00', '#0000ff'];
 </script>
 
-<div class="flex h-16 flex-col gap-2">
-  {#each colors as color, idx (color)}
-    <ColorSlider
-      {color}
-      bind:value={
-        () => getValue(idx),
-        ([s, m, h]) => {
-          setValue(idx, [s, m, h]);
-        }
-      }
-    />
-  {/each}
+<div class="flex flex-col gap-4 p-4">
+  <div class="flex flex-col gap-3">
+    {#each channels as channel, idx (channel.id)}
+      <SliderPrimitive.Root
+        value={channels[idx].ratios.getState()}
+        type="multiple"
+        onValueChange={(v) => handleSliderChange(idx, v)}
+        min={0}
+        max={1}
+        step={0.01}
+        autoSort={false}
+        class="relative flex h-6 w-full touch-none items-center select-none"
+      >
+        {#snippet children({ thumbItems })}
+          <span
+            class="relative h-full w-full grow overflow-hidden rounded-sm"
+            style="background: linear-gradient(to right, black, {channel.color});"
+          ></span>
+          {#each thumbItems as thumb (thumb.index)}
+            <SliderPrimitive.Thumb
+              index={thumb.index}
+              class="absolute -ml-0.75 block h-8 w-1.5 cursor-ew-resize rounded-sm border border-gray-400 bg-white hover:bg-gray-200 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"
+            />
+          {/each}
+        {/snippet}
+      </SliderPrimitive.Root>
+    {/each}
+  </div>
 </div>

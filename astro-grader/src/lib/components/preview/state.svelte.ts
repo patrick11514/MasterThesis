@@ -1,5 +1,6 @@
 import type { File } from '../../types/File';
 import type { ImageData } from '../../types/ImageData';
+import type { SMH } from './preserve-ratio.svelte';
 
 export class Vec3 {
   public data = $state<[number, number, number]>([0, 0, 0]);
@@ -14,9 +15,9 @@ export class Vec3 {
 class PreviewState {
   public previewImage = $state<File>();
   public previewData = $state<ImageData>();
-  public shadows = $state<Vec3>(Vec3.init(0.0));
-  public midtones = $state<Vec3>(Vec3.init(0.5));
-  public highlights = $state<Vec3>(Vec3.init(1.0));
+  public R = $state<SMH>([0.0, 0.5, 1.0]);
+  public G = $state<SMH>([0.0, 0.5, 1.0]);
+  public B = $state<SMH>([0.0, 0.5, 1.0]);
 }
 
 export const previewState = new PreviewState();

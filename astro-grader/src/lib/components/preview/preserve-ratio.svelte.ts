@@ -1,9 +1,10 @@
-type RangeTuple = [number, number, number]; // [shadows, midtone, highlights]
+// Shadows Midtones Highlights (SMH)
+export type SMH = [number, number, number];
 
 export class PreserveRatio {
-  private shadows: number;
-  private midtone: number;
-  private highlights: number;
+  private shadows = $state<number>(0);
+  private midtone = $state<number>(0);
+  private highlights = $state<number>(0);
 
   // Tracks the relative percentage of the midtone
   private ratio: number;
@@ -11,7 +12,7 @@ export class PreserveRatio {
   // 10000 allows for 4 decimal places of precision (e.g., 0.1234)
   private multiplier: number = 10000;
 
-  constructor(initialValues: RangeTuple) {
+  constructor(initialValues: SMH) {
     [this.shadows, this.midtone, this.highlights] = initialValues;
     this.ratio = this.calculateRatio();
   }
@@ -35,26 +36,31 @@ export class PreserveRatio {
 
   // --- Action Methods ---
 
-  public updateShadows(newVal: number): RangeTuple {
+  public updateShadows(newVal: number): SMH {
     this.shadows = this.fixFloat(newVal);
     this.recalculateMidtone();
     return this.getState();
   }
 
-  public updateHighlights(newVal: number): RangeTuple {
+  public updateHighlights(newVal: number): SMH {
     this.highlights = this.fixFloat(newVal);
     this.recalculateMidtone();
     return this.getState();
   }
 
-  public updateMidtone(newVal: number): RangeTuple {
+  public updateMidtone(newVal: number): SMH {
     this.midtone = this.fixFloat(newVal);
     // Midtone moved independently, so we must record its new relative ratio
     this.ratio = this.calculateRatio();
     return this.getState();
   }
 
-  public getState(): RangeTuple {
+  public getState(): SMH {
     return [this.shadows, this.midtone, this.highlights];
+  }
+
+  public setState(newValues: SMH): void {
+    [this.shadows, this.midtone, this.highlights] = newValues.map(this.fixFloat.bind(this));
+    this.ratio = this.calculateRatio();
   }
 }
