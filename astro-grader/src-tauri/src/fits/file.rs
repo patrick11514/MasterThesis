@@ -2,7 +2,11 @@ use std::path::PathBuf;
 
 use ts_rs::TS;
 
-use crate::fits::{image_data_pixels::ImageDataPixels, tag::Tag, utils};
+use crate::fits::{
+    image_data_pixels::ImageDataPixels,
+    tag::Tag,
+    utils::{self, normalize_data},
+};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]
@@ -62,13 +66,17 @@ impl FitsFile {
 
         println!("Parsing image data from fits file");
 
-        let data: Vec<f32> = self
+        let mut data: Vec<f32> = self
             .hdu
             .read_image(&mut self.file)
             .map_err(|_| ReadImageError::ReadImageFailed)?;
 
-        if let fitsio::hdu::HduInfo::ImageInfo { shape, .. } = &self.hdu.info {
+        if let fitsio::hdu::HduInfo::ImageInfo { shape, image_type } = &self.hdu.info {
+            println!("format: {:?}", image_type);
             if let Some(bayer_pattern) = bayer_pat {
+                //Normalize data
+                normalize_data(&mut data, image_type);
+
                 let image_data = ImageDataPixels::from_fits(shape, data);
 
                 let offset = (

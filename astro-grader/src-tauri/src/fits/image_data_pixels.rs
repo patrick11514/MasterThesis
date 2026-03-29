@@ -78,7 +78,7 @@ impl ImageDataPixels {
 
         // 2. Pre-allocate the exact size of the final byte array to avoid resizing
         // (total pixels * 3 channels * 4 bytes per f32)
-        let total_bytes = (plane_area * 3 * 4);
+        let total_bytes = plane_area * 3 * 4;
         let mut out_bytes = vec![0u8; total_bytes];
 
         // 3. Grab a mutable slice of just the pixel data area

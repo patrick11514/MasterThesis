@@ -1,4 +1,4 @@
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use rayon::iter::{IntoParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 
 use crate::fits::image_data_pixels::{ImageData, ImageDataPixels};
 
@@ -52,14 +52,14 @@ pub fn debayer_data(
                 let mut sum_b = 0.0;
                 let mut count_b = 0.0;
 
-                for dy in 0..4 {
-                    let oy = y * 4 + dy;
+                for dy in 0..2 {
+                    let oy = y * 2 + dy;
                     if oy >= orig_height {
                         continue;
                     }
 
-                    for dx in 0..4 {
-                        let ox = x * 4 + dx;
+                    for dx in 0..2 {
+                        let ox = x * 2 + dx;
                         if ox >= orig_width {
                             continue;
                         }
@@ -114,4 +114,25 @@ pub fn debayer_data(
         },
         pixels: rgb_data,
     }
+}
+
+pub fn normalize_data(data: &mut Vec<f32>, format: &fitsio::images::ImageType) {
+    data.par_iter_mut().for_each(|pixel| {
+        *pixel = *pixel
+            / match format {
+                fitsio::images::ImageType::UnsignedByte => 255.0,
+                fitsio::images::ImageType::Byte => 127.0,
+
+                fitsio::images::ImageType::UnsignedShort => 65535.0,
+                fitsio::images::ImageType::Short => 32767.0,
+
+                fitsio::images::ImageType::UnsignedLong => 4294967295.0,
+                fitsio::images::ImageType::Long => 2147483647.0,
+
+                fitsio::images::ImageType::LongLong => 9223372036854775800.0,
+
+                fitsio::images::ImageType::Float => 1.0,
+                fitsio::images::ImageType::Double => 1.0,
+            }
+    });
 }

@@ -1,7 +1,5 @@
 use std::path::PathBuf;
 
-use ts_rs::TS;
-
 use crate::fits::{file::ReadImageError, image_data_pixels::ImageData, structs::FitsOpenError};
 
 mod file;
