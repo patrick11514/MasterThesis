@@ -4,6 +4,8 @@ use rayon::{
 };
 use ts_rs::TS;
 
+use crate::fits::{file::FitsFile, utils::debayer_data};
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]
 pub enum ImageDataLayout {
@@ -15,14 +17,26 @@ pub enum ImageDataLayout {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]
 pub struct ImageOptions {
+    //This is bayer pattern of current data representation
     pub bayer_pattern: Option<String>,
     pub scale: f32,
+}
+
+impl Default for ImageOptions {
+    fn default() -> Self {
+        Self {
+            bayer_pattern: None,
+            scale: 1.0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]
 pub struct ImageData {
     pub image_options: ImageOptions,
+    //this is bayer pattern of original data
+    pub original_bayer_pattern: Option<String>,
     pub depth: usize,
     pub width: usize,
     pub height: usize,
@@ -35,8 +49,15 @@ pub struct ImageDataPixels {
     pub pixels: Vec<f32>,
 }
 
+
+
 impl ImageDataPixels {
-    pub fn from_fits(shape: &Vec<usize>, data: Vec<f32>) -> Self {
+    pub fn from_fits(fits: &mut FitsFile) -> Self {
+        if let fitsio::hdu::HduInfo::ImageInfo { shape, image_type } = &self.hdu.info {
+
+        let shape = fits.get_image_shape();
+        let data = fits.get_image_data();
+
         assert!(shape.len() == 2 || shape.len() == 3);
 
         if shape.len() == 3 && shape[0] == 3 {
@@ -119,5 +140,9 @@ impl ImageDataPixels {
         };
 
         Some(byte_slice.to_vec())
+    }
+
+    pub fn debayer(&mut self, bayer_pattern: String, offset: (usize, usize)) {
+        debayer_data(self, bayer_pattern, offset);
     }
 }

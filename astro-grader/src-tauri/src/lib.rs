@@ -1,4 +1,6 @@
-use tauri::{http, Manager, State};
+use std::sync::Mutex;
+
+use tauri::{Manager, State, http};
 
 use crate::app_state::AppState;
 
@@ -18,7 +20,7 @@ static URL_PREFIXES: [&str; 4] = [
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .manage(AppState::default())
+        .manage(Mutex::new(AppState::default()))
         .register_uri_scheme_protocol("astro-grader", |app, request| {
             let raw_uri = request.uri().to_string();
             let mut path = raw_uri;
@@ -34,8 +36,8 @@ pub fn run() {
             println!("Trimmed URI: {}", trimmed);
 
             if trimmed == "preview" {
-                let state: State<AppState> = app.app_handle().state();
-                let buffer = state.current_image_data.lock().unwrap().clone();
+                let state: State<Mutex<AppState>> = app.app_handle().state();
+                let buffer = state.lock().unwrap().current_image_data;
 
                 println!("Started serving data...");
 

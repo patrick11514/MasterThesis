@@ -13,10 +13,10 @@ pub fn normalize_offset(offset: Option<i32>) -> usize {
 }
 
 pub fn debayer_data(
-    data: super::image_data_pixels::ImageDataPixels,
+    data: &mut super::image_data_pixels::ImageDataPixels,
     bayer_pattern: String,
     offset: (usize, usize),
-) -> super::image_data_pixels::ImageDataPixels {
+) {
     assert!(bayer_pattern.len() == 4);
     assert!(bayer_pattern.contains('R'));
     assert!(bayer_pattern.contains('G'));
@@ -105,19 +105,13 @@ pub fn debayer_data(
         })
         .collect();
 
-    super::image_data_pixels::ImageDataPixels {
-        data: super::image_data_pixels::ImageData {
-            image_options: ImageOptions {
-                bayer_pattern: Some(bayer_pattern),
-                scale: 0.5, // Current debayering will downscale image by 2
-            },
-            width: new_width,
-            height: new_height,
-            depth: 3,
-            layout: ImageDataLayout::RGB,
-        },
-        pixels: rgb_data,
-    }
+    data.pixels = rgb_data;
+    data.data.width = new_width;
+    data.data.height = new_height;
+    data.data.depth = 3;
+    data.data.layout = ImageDataLayout::RGB;
+    data.data.image_options.bayer_pattern = Some(bayer_pattern);
+    data.data.image_options.scale = 0.5; // Current debayering will downscale image by 2
 }
 
 pub fn normalize_data(data: &mut Vec<f32>, format: &fitsio::images::ImageType) {

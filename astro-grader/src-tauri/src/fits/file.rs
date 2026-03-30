@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::{
-    app_state::AppState,
+    app_state::{AppState, CurrentImage},
     fits::{
         image_data_pixels::{ImageDataPixels, ImageOptions},
         tag::Tag,
@@ -21,7 +21,7 @@ pub struct FitsFile {
 }
 
 impl FitsFile {
-    pub fn new(path: PathBuf, state: &AppState) -> Result<Self, super::structs::FitsOpenError> {
+    pub fn new(path: PathBuf) -> Result<Self, super::structs::FitsOpenError> {
         let mut file =
             fitsio::FitsFile::open(path).map_err(|_| super::structs::FitsOpenError::OpenError)?;
         let hdu = file
@@ -55,7 +55,29 @@ impl FitsFile {
     pub fn read_image(
         &mut self,
     ) -> Result<super::image_data_pixels::ImageDataPixels, ReadImageError> {
-        let bayer_pat = self.get_tag_value(Tag::BayerPattern);
+        let mut data: Vec<f32> = self
+            .hdu
+            .read_image(&mut self.file)
+            .map_err(|_| ReadImageError::ReadImageFailed)?;
+
+        if let fitsio::hdu::HduInfo::ImageInfo { shape, image_type } = &self.hdu.info {
+            //Normalize data
+            normalize_data(&mut data, image_type);
+            let mut data = ImageDataPixels::from_fits(shape, data);
+            data.to_rgb_layout(); // To RGB format in case the data are in RGBPlanar
+
+            return Ok(data);
+        }
+        Err(ReadImageError::UnableToExtractImageSize)
+    }
+
+    pub fn read_image_options(
+        &mut self,
+        options: ImageOptions,
+    ) -> Result<super::image_data_pixels::ImageDataPixels, ReadImageError> {
+        let bayer_pat = options
+            .bayer_pattern
+            .or(self.get_tag_value(Tag::BayerPattern));
 
         let mut data: Vec<f32> = self
             .hdu
@@ -63,30 +85,24 @@ impl FitsFile {
             .map_err(|_| ReadImageError::ReadImageFailed)?;
 
         if let fitsio::hdu::HduInfo::ImageInfo { shape, image_type } = &self.hdu.info {
+            //Normalize data
+            normalize_data(&mut data, image_type);
+            let mut data = ImageDataPixels::from_fits(shape, data);
+            data.to_rgb_layout(); // To RGB format in case the data are in RGBPlanar
+
             if let Some(bayer_pattern) = bayer_pat {
-                //Normalize data
-                normalize_data(&mut data, image_type);
-
-                let image_data = ImageDataPixels::from_fits(shape, data);
-
                 let offset = (
                     super::utils::normalize_offset(self.get_tag_custom::<i32>(Tag::XBayerOffset)),
                     super::utils::normalize_offset(self.get_tag_custom::<i32>(Tag::YBayerOffset)),
                 );
 
-                let debayered = utils::debayer_data(image_data, bayer_pattern, offset);
-                return Ok(debayered);
-            }
+                data.debayer(bayer_pattern, offset);
 
-            let mut data = ImageDataPixels::from_fits(shape, data);
-            data.to_rgb_layout(); //Directly convert to RGB layout if needed, this will modify the data in place and avoid unnecessary copies
+                return Ok(data);
+            }
 
             return Ok(data);
         }
         Err(ReadImageError::UnableToExtractImageSize)
-    }
-
-    pub fn read_image_options(&mut self, options: ImageOptions) -> Option<ImageDataPixels> {
-        None
     }
 }
