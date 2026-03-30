@@ -3,6 +3,8 @@
 - Lets do some processing :)
 - Figure out the integration of dark/flat frames, if we got them instead of master frames
 
+- Force debayering the Grayscale image fuck ups :D (NOTE: every action performed on Grayscale (H.fit) will result in crash :/)
+
 - Where we left:
 file:///home/patrick115/Projects/VSB/Semester8/SemestralProject/astro-grader/src/lib/components/preview/image-info.svelte#L16
  - Render the  image info + add the dropdown with debayering options, and react on them, then if you select some debayering option, we need to call the 
