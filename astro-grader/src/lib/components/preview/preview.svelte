@@ -14,6 +14,7 @@
     width: number;
     height: number;
     data: Float32Array;
+    grayscale: boolean;
   } | null>(null);
 
   const loadImage = async (image: File) => {
@@ -39,7 +40,8 @@
       rawData = {
         width: previewData.width,
         height: previewData.height,
-        data: new Float32Array(data)
+        data: new Float32Array(data),
+        grayscale: previewData.layout === 'Grayscale'
       };
 
       console.log(rawData);
@@ -115,14 +117,23 @@
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
 
+    //Update the grayscale uniform
+    const isGrayscale = rawData?.grayscale ? 1 : 0;
+    const isGrayscaleLoc = gl.getUniformLocation(program, 'u_is_grayscale');
+
+    gl.uniform1i(isGrayscaleLoc, isGrayscale);
+
+    const internalFormat = isGrayscale ? gl.R32F : gl.RGB32F;
+    const sourceFormat = isGrayscale ? gl.RED : gl.RGB;
+
     gl.texImage2D(
       gl.TEXTURE_2D,
       0,
-      gl.RGB32F,
+      internalFormat,
       rawData.width,
       rawData.height,
       0,
-      gl.RGB,
+      sourceFormat,
       gl.FLOAT,
       rawData.data
     );

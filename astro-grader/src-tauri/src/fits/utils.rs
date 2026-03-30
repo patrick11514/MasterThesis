@@ -1,6 +1,6 @@
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 
-use crate::fits::image_data_pixels::ImageDataLayout;
+use crate::fits::image_data_pixels::{ImageDataLayout, ImageOptions};
 
 pub fn normalize_offset(offset: Option<i32>) -> usize {
     let offset = offset.unwrap_or(0);
@@ -107,7 +107,10 @@ pub fn debayer_data(
 
     super::image_data_pixels::ImageDataPixels {
         data: super::image_data_pixels::ImageData {
-            bayer_pattern: Some(bayer_pattern),
+            image_options: ImageOptions {
+                bayer_pattern: Some(bayer_pattern),
+                scale: 0.5, // Current debayering will downscale image by 2
+            },
             width: new_width,
             height: new_height,
             depth: 3,

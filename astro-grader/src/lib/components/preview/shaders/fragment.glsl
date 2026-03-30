@@ -1,5 +1,6 @@
 precision mediump float;
 uniform sampler2D u_image;
+uniform bool u_is_grayscale;
 
 uniform vec3 u_shadows;
 uniform vec3 u_midtones;
@@ -8,7 +9,14 @@ uniform vec3 u_highlights;
 varying vec2 v_texCoord;
 
 void main() {
-    vec3 color = texture2D(u_image, v_texCoord).rgb;
+    vec4 texel = texture2D(u_image, v_texCoord);
+    vec3 color;
+
+    if (u_is_grayscale) {
+        color = vec3(texel.r);
+    } else {
+        color = texel.rgb;
+    }
 
     // 1. Clip Shadows and Highlights
     // GPU subtracts R from R, G from G, B from B automatically

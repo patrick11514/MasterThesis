@@ -260,6 +260,8 @@ pub fn run() {
                 let state: State<AppState> = app.app_handle().state();
                 let buffer = state.current_image_data.lock().unwrap().clone();
 
+                println!("Started serving data...");
+
                 return match buffer {
                     Some(data) => http::Response::builder()
                         .header("Content-Type", "application/octet-stream")

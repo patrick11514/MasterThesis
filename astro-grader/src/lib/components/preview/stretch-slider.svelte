@@ -5,12 +5,14 @@
 
   type Props = {
     linked: boolean;
-    R: SMH;
-    G: SMH;
-    B: SMH;
+    sliders: {
+      id: string;
+      value: SMH;
+      color: string;
+    }[];
   };
 
-  let { linked = $bindable(), R = $bindable(), G = $bindable(), B = $bindable() }: Props = $props();
+  let { linked = $bindable(), sliders = $bindable() }: Props = $props();
 
   type STFChannel = {
     id: string;
@@ -19,50 +21,50 @@
   };
 
   //We take first snapshot of state, because we don't want to automatically update
-  let channels: STFChannel[] = $state([
-    {
-      id: 'Red',
-      color: '#ff0000',
-      ratios: new PreserveRatio(R)
-    },
-    {
-      id: 'Green',
-      color: '#00ff00',
-      ratios: new PreserveRatio(G)
-    },
-    {
-      id: 'Blue',
-      color: '#0000ff',
-      ratios: new PreserveRatio(B)
-    }
-  ]);
+  let channels: STFChannel[] = $state(
+    sliders.map((slider) => ({
+      id: slider.id,
+      color: slider.color,
+      ratios: new PreserveRatio(slider.value)
+    }))
+  );
 
   // Simple helper to check if two SMH tuples match
   const isSame = (a: SMH, b: SMH) => a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
 
   // Effect to sync external prop changes into our local channel state
   $effect(() => {
-    const newR = R;
-    const newG = G;
-    const newB = B;
+    const currentSliders = sliders;
 
     untrack(() => {
-      const localR = channels[0].ratios.getState();
-      const localG = channels[1].ratios.getState();
-      const localB = channels[2].ratios.getState();
+      const structureChanged =
+        channels.length !== currentSliders.length ||
+        !channels.every((c, idx) => c.id === currentSliders[idx].id);
 
-      const rChanged = !isSame(newR, localR);
-      const gChanged = !isSame(newG, localG);
-      const bChanged = !isSame(newB, localB);
+      if (structureChanged) {
+        channels = currentSliders.map((slider) => ({
+          id: slider.id,
+          color: slider.color,
+          ratios: new PreserveRatio(slider.value)
+        }));
+        return;
+      }
 
-      if (!rChanged && !gChanged && !bChanged) return;
+      let needsReactivity = false;
 
-      console.log('Updating from outside', { newR, newG, newB });
+      for (let i = 0; i < currentSliders.length; i++) {
+        const incomingVal = currentSliders[i].value;
+        const localVal = channels[i].ratios.getState();
 
-      // 4. Only update the specific channels that received new outside data
-      if (rChanged) channels[0].ratios.setState(newR);
-      if (gChanged) channels[1].ratios.setState(newG);
-      if (bChanged) channels[2].ratios.setState(newB);
+        if (!isSame(incomingVal, localVal)) {
+          channels[i].ratios.setState(incomingVal);
+          needsReactivity = true;
+        }
+      }
+
+      if (needsReactivity) {
+        channels = [...channels];
+      }
     });
   });
 
@@ -113,9 +115,7 @@
       return;
     }
 
-    if (channelIdx === 0) R = newState;
-    if (channelIdx === 1) G = newState;
-    if (channelIdx === 2) B = newState;
+    sliders[channelIdx].value = newState;
 
     if (!linked) return;
 
@@ -126,7 +126,7 @@
     // 2. Calculate the "weight" of the movement across the total available space
     const shiftPct = diff / masterRange;
 
-    for (let i = 0; i < 3; ++i) {
+    for (let i = 0; i < sliders.length; ++i) {
       if (i === channelIdx) continue;
 
       const channel = channels[i];
@@ -159,9 +159,7 @@
         continue;
       }
 
-      if (i === 0) R = res;
-      if (i === 1) G = res;
-      if (i === 2) B = res;
+      sliders[i].value = res;
     }
   };
 </script>

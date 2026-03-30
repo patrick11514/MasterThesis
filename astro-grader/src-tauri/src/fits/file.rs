@@ -1,20 +1,10 @@
 use std::path::PathBuf;
 
-use ts_rs::TS;
-
 use crate::fits::{
-    image_data_pixels::ImageDataPixels,
+    image_data_pixels::{ImageDataPixels, ImageOptions},
     tag::Tag,
     utils::{self, normalize_data},
 };
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
-#[ts(export)]
-pub struct ReadImageOptions {
-    debayer: bool,
-    bayer_pattern: Option<String>,
-    down_sample_factor: Option<usize>,
-}
 
 #[derive(Debug)]
 pub enum ReadImageError {
@@ -93,7 +83,7 @@ impl FitsFile {
         Err(ReadImageError::UnableToExtractImageSize)
     }
 
-    pub fn read_image_options(&mut self, options: ReadImageOptions) -> Option<ImageDataPixels> {
+    pub fn read_image_options(&mut self, options: ImageOptions) -> Option<ImageDataPixels> {
         None
     }
 }

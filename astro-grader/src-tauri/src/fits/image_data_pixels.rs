@@ -1,5 +1,3 @@
-use std::thread::current;
-
 use rayon::{
     iter::{IndexedParallelIterator, ParallelIterator},
     slice::ParallelSliceMut,
@@ -16,8 +14,15 @@ pub enum ImageDataLayout {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]
-pub struct ImageData {
+pub struct ImageOptions {
     pub bayer_pattern: Option<String>,
+    pub scale: f32,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+pub struct ImageData {
+    pub image_options: ImageOptions,
     pub depth: usize,
     pub width: usize,
     pub height: usize,
@@ -40,7 +45,10 @@ impl ImageDataPixels {
                 //Shape is in reverse order
                 //shape = [3, 2116, 3804], image_type = Float or shape = [2160, 3840], image_type = UnsignedShort
                 data: ImageData {
-                    bayer_pattern: None,
+                    image_options: ImageOptions {
+                        bayer_pattern: None,
+                        scale: 1.0,
+                    },
                     depth: shape[0],
                     width: shape[2],
                     height: shape[1],
@@ -54,7 +62,10 @@ impl ImageDataPixels {
         //Needs debayering then
         ImageDataPixels {
             data: ImageData {
-                bayer_pattern: None,
+                image_options: ImageOptions {
+                    bayer_pattern: None,
+                    scale: 1.0,
+                },
                 width: shape[1],
                 height: shape[0],
                 depth: 1, // Grayscale or debayered data is always single channel (depth = 1)

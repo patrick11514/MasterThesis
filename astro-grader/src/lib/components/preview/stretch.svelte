@@ -26,5 +26,5 @@
   >
     <RotateCcwIcon />
   </Button>
-  <Slider bind:linked bind:R={previewState.R} bind:G={previewState.G} bind:B={previewState.B} />
+  <Slider bind:linked bind:sliders={previewState.channels} />
 </section>
