@@ -1,9 +1,12 @@
 use std::path::PathBuf;
 
-use crate::fits::{
-    image_data_pixels::{ImageDataPixels, ImageOptions},
-    tag::Tag,
-    utils::{self, normalize_data},
+use crate::{
+    app_state::AppState,
+    fits::{
+        image_data_pixels::{ImageDataPixels, ImageOptions},
+        tag::Tag,
+        utils::{self, normalize_data},
+    },
 };
 
 #[derive(Debug)]
@@ -18,7 +21,7 @@ pub struct FitsFile {
 }
 
 impl FitsFile {
-    pub fn new(path: PathBuf) -> Result<Self, super::structs::FitsOpenError> {
+    pub fn new(path: PathBuf, state: &AppState) -> Result<Self, super::structs::FitsOpenError> {
         let mut file =
             fitsio::FitsFile::open(path).map_err(|_| super::structs::FitsOpenError::OpenError)?;
         let hdu = file
