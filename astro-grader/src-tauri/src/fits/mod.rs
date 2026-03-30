@@ -4,6 +4,7 @@ use crate::fits::{
     file::ReadImageError,
     image_data_pixels::{ImageData, ImageOptions},
     structs::FitsOpenError,
+    utils::normalize_data,
 };
 
 mod file;
@@ -22,38 +23,56 @@ pub async fn fits_read_image(
     options: Option<ImageOptions>,
     state: tauri::State<'_, Mutex<crate::AppState>>,
 ) -> Result<ImageData, String> {
-    let state = state.lock().unwrap();
+    let mut state = state.lock().unwrap();
 
-    let image = if let Some(current_image) = &state.current_image && current_image.path == path {
-        current_image.data
+    let mut image = if let Some(current_image) = &state.current_image
+        && current_image.path == path
+    {
+        current_image.data.clone()
     } else {
+        let mut fits = file::FitsFile::new(path.clone()).map_err(|err| match err {
+            FitsOpenError::OpenError => "Unable to open file, does the file exists?".to_string(),
+            FitsOpenError::NoHudFound => "Unable to find primary HDU in fits file".to_string(),
+        })?;
 
-    let mut fits = file::FitsFile::new(path).map_err(|err| match err {
-        FitsOpenError::OpenError => "Unable to open file, does the file exists?".to_string(),
-        FitsOpenError::NoHudFound => "Unable to find primary HDU in fits file".to_string(),
-    })?;
+        let mut image = ImageDataPixels::from_fits(&mut fits).map_err(|err| match err {
+            ReadImageError::ReadImageFailed => {
+                "Unable to read image data from fits file".to_string()
+            }
+            ReadImageError::UnableToExtractImageSize => {
+                "Unable to extract image size from fits file".to_string()
+            }
+        })?;
 
-    let image = fits.read_image().map_err(|err| match err {
-        ReadImageError::ReadImageFailed => "Unable to read image data from fits file".to_string(),
-        ReadImageError::UnableToExtractImageSize => {
-            "Unable to extract image size from fits file".to_string()
-        }
-    })?;
+        let image_type = fits.get_image_type().unwrap();
 
-    let current_image = crate::app_state::CurrentImage {
-        path,
-        data: image
+        //Normalize data at first load
+        normalize_data(&mut image.pixels, &image_type);
+        image.to_rgb_layout();
+
+        let mut current_image = crate::app_state::CurrentImage { path, data: image };
+
+        //save current image to app state
+        state.current_image.replace(current_image.clone());
+
+        //at the end, we debayer the image, because we have saved the original Grayscale
+        current_image.data.debayer(
+            None, /* This will use the bayerpattern from FITS if presented */
+        );
+
+        current_image.data
     };
 
-    //save current image to app state
-    state
-        .current_image
-        .replace(current_image.clone());
+    if let Some(options) = options {
+        if let Some(bayer_pattern) = options.bayer_pattern {
+            image.debayer(Some(bayer_pattern));
+        }
+        //rescale
 
-    current_image.data
-};
-
-    let bayer_format = fits.get_tag_value(tag::Tag::BayerPattern);
+        if options.scale != image.data.applied_options.scale {
+            image.scale(options.scale);
+        }
+    }
 
     let converted = image
         .to_js_imagedata()

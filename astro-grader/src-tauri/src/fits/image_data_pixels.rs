@@ -1,12 +1,16 @@
+use fitsio::images::ReadImage;
 use rayon::{
     iter::{IndexedParallelIterator, ParallelIterator},
     slice::ParallelSliceMut,
 };
 use ts_rs::TS;
 
-use crate::fits::{file::FitsFile, utils::debayer_data};
+use crate::fits::{
+    file::{FitsFile, ReadImageError},
+    utils::debayer_data,
+};
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS, PartialEq)]
 #[ts(export)]
 pub enum ImageDataLayout {
     Grayscale, //Single channel, no bayer pattern
@@ -22,21 +26,23 @@ pub struct ImageOptions {
     pub scale: f32,
 }
 
-impl Default for ImageOptions {
-    fn default() -> Self {
-        Self {
-            bayer_pattern: None,
-            scale: 1.0,
-        }
-    }
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+pub struct BayerPattern {
+    pattern: String,
+    x_offset: usize,
+    y_offset: usize,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]
 pub struct ImageData {
-    pub image_options: ImageOptions,
+    //this will store currently applied options on the image, so we know, what
+    //was currently applied on the image, for example, we will know, if data
+    //is already debayered, scaled etc...
+    pub applied_options: ImageOptions,
     //this is bayer pattern of original data
-    pub original_bayer_pattern: Option<String>,
+    pub original_bayer_pattern: Option<BayerPattern>,
     pub depth: usize,
     pub width: usize,
     pub height: usize,
@@ -49,51 +55,60 @@ pub struct ImageDataPixels {
     pub pixels: Vec<f32>,
 }
 
-
-
 impl ImageDataPixels {
-    pub fn from_fits(fits: &mut FitsFile) -> Self {
-        if let fitsio::hdu::HduInfo::ImageInfo { shape, image_type } = &self.hdu.info {
-
+    pub fn from_fits(fits: &mut FitsFile) -> Result<Self, ReadImageError> {
+        let data = fits.read_image()?;
         let shape = fits.get_image_shape();
-        let data = fits.get_image_data();
+        let bayer_pattern = fits.get_tag_value(crate::fits::tag::Tag::BayerPattern);
+        let (x_offset, y_offset) = (
+            fits.get_tag_custom::<i32>(crate::fits::tag::Tag::XBayerOffset),
+            fits.get_tag_custom::<i32>(crate::fits::tag::Tag::YBayerOffset),
+        );
+
+        let bayer_pattern = bayer_pattern.map(|pattern| BayerPattern {
+            pattern,
+            x_offset: crate::fits::utils::normalize_offset(x_offset),
+            y_offset: crate::fits::utils::normalize_offset(y_offset),
+        });
 
         assert!(shape.len() == 2 || shape.len() == 3);
 
         if shape.len() == 3 && shape[0] == 3 {
             //Assume RGB data, no bayer pattern
-            return ImageDataPixels {
+            return Ok(ImageDataPixels {
                 //Shape is in reverse order
                 //shape = [3, 2116, 3804], image_type = Float or shape = [2160, 3840], image_type = UnsignedShort
                 data: ImageData {
-                    image_options: ImageOptions {
+                    applied_options: ImageOptions {
                         bayer_pattern: None,
                         scale: 1.0,
                     },
+                    original_bayer_pattern: bayer_pattern,
                     depth: shape[0],
                     width: shape[2],
                     height: shape[1],
                     layout: ImageDataLayout::RGBPlanar,
                 },
                 pixels: data,
-            };
+            });
         }
 
         //Default grayscale image, no bayer pattern
         //Needs debayering then
-        ImageDataPixels {
+        Ok(ImageDataPixels {
             data: ImageData {
-                image_options: ImageOptions {
+                applied_options: ImageOptions {
                     bayer_pattern: None,
                     scale: 1.0,
                 },
+                original_bayer_pattern: bayer_pattern,
+                depth: 1,
                 width: shape[1],
                 height: shape[0],
-                depth: 1, // Grayscale or debayered data is always single channel (depth = 1)
                 layout: ImageDataLayout::Grayscale,
             },
             pixels: data,
-        }
+        })
     }
 
     // This function normalizes data into two formats:
@@ -142,7 +157,77 @@ impl ImageDataPixels {
         Some(byte_slice.to_vec())
     }
 
-    pub fn debayer(&mut self, bayer_pattern: String, offset: (usize, usize)) {
-        debayer_data(self, bayer_pattern, offset);
+    pub fn debayer(&mut self, bayer_pattern: Option<String>) {
+        let bayer_pattern = match &self.data.original_bayer_pattern {
+            Some(original_pattern) => BayerPattern {
+                pattern: bayer_pattern.unwrap_or(original_pattern.pattern.clone()),
+                x_offset: original_pattern.x_offset,
+                y_offset: original_pattern.y_offset,
+            },
+            None => {
+                if let Some(pattern) = bayer_pattern {
+                    BayerPattern {
+                        pattern,
+                        x_offset: 0,
+                        y_offset: 0,
+                    }
+                } else {
+                    return;
+                }
+            }
+        };
+
+        debayer_data(
+            self,
+            bayer_pattern.pattern,
+            (bayer_pattern.x_offset, bayer_pattern.y_offset),
+        );
+    }
+
+    pub fn scale(&mut self, scale: f32) {
+        // 1. FIX: Use the macro (assert!) and correct the logic
+        assert!(
+            self.data.layout != ImageDataLayout::RGBPlanar,
+            "Scaling is only supported for interleaved RGB or Grayscale format"
+        );
+
+        // Use .round() to avoid weird off-by-one pixel dimensions
+        let new_width = (self.data.width as f32 * scale).round() as usize;
+        let new_height = (self.data.height as f32 * scale).round() as usize;
+
+        // Cache variables to prevent borrowing issues inside the Rayon closure
+        let depth = self.data.depth;
+        let orig_width = self.data.width;
+        let orig_height = self.data.height;
+        let orig_pixels = &self.pixels;
+
+        let mut new_pixels = vec![0.0_f32; new_width * new_height * depth];
+
+        // 2. UPGRADE: Parallelize over the new pixel chunks!
+        new_pixels
+            .par_chunks_exact_mut(depth)
+            .enumerate()
+            .for_each(|(i, pixel_chunk)| {
+                // Reconstruct the X and Y coordinates in the NEW image
+                let x = i % new_width;
+                let y = i / new_width;
+
+                // 3. FIX: Calculate source coordinates and clamp them using .min()
+                // This guarantees we never read out of bounds, even with floating point quirks
+                let src_x = ((x as f32 / scale) as usize).min(orig_width - 1);
+                let src_y = ((y as f32 / scale) as usize).min(orig_height - 1);
+
+                let src_idx = (src_y * orig_width + src_x) * depth;
+
+                // Copy the channels (works seamlessly for both Grayscale and RGB)
+                for c in 0..depth {
+                    pixel_chunk[c] = orig_pixels[src_idx + c];
+                }
+            });
+
+        self.pixels = new_pixels;
+        self.data.width = new_width;
+        self.data.height = new_height;
+        self.data.applied_options.scale = scale;
     }
 }

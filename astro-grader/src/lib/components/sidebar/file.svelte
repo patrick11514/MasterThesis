@@ -20,7 +20,18 @@
 <Item.Root class="w-full px-4 py-0">
   <Item.Content
     class="flex w-full flex-row items-center gap-2"
-    onclick={() => (previewState.previewImage = file)}
+    onclick={(ev) => {
+      //@ts-expect-error This hack prevents calling when using popover / remove button
+      if (ev.target?.closest('button')) {
+        return;
+      }
+
+      previewState.previewImage = file;
+      previewState.imageOptions = {
+        bayer_pattern: null,
+        scale: 0.5
+      };
+    }}
   >
     <FileImageIcon class={FILE_COLORS[file.type]} />
     <span class="flex-1 truncate">{file.name}</span>
@@ -47,9 +58,11 @@
     </DropdownMenu.Root>
     <Popover.Root>
       <Popover.Trigger class="shrink-0">
-        <Button variant="outline" size="icon-sm">
-          <InfoIcon />
-        </Button>
+        {#snippet child({ props })}
+          <Button {...props} variant="outline" size="icon-sm">
+            <InfoIcon />
+          </Button>
+        {/snippet}
       </Popover.Trigger>
       <Popover.Content class="flex w-max flex-col gap-2">
         <div>

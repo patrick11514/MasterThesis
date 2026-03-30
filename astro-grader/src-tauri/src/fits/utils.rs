@@ -110,8 +110,8 @@ pub fn debayer_data(
     data.data.height = new_height;
     data.data.depth = 3;
     data.data.layout = ImageDataLayout::RGB;
-    data.data.image_options.bayer_pattern = Some(bayer_pattern);
-    data.data.image_options.scale = 0.5; // Current debayering will downscale image by 2
+    data.data.applied_options.bayer_pattern = Some(bayer_pattern);
+    data.data.applied_options.scale = 0.5; // Current debayering will downscale image by 2
 }
 
 pub fn normalize_data(data: &mut Vec<f32>, format: &fitsio::images::ImageType) {

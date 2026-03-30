@@ -9,15 +9,15 @@ use crate::{
     },
 };
 
+pub struct FitsFile {
+    file: fitsio::FitsFile,
+    hdu: fitsio::hdu::FitsHdu,
+}
+
 #[derive(Debug)]
 pub enum ReadImageError {
     ReadImageFailed,
     UnableToExtractImageSize,
-}
-
-pub struct FitsFile {
-    file: fitsio::FitsFile,
-    hdu: fitsio::hdu::FitsHdu,
 }
 
 impl FitsFile {
@@ -52,7 +52,29 @@ impl FitsFile {
         None
     }
 
-    pub fn read_image(
+    pub fn get_image_shape(&self) -> Vec<usize> {
+        if let fitsio::hdu::HduInfo::ImageInfo { shape, .. } = &self.hdu.info {
+            return shape.clone();
+        }
+        vec![]
+    }
+
+    pub fn get_image_type(&self) -> Option<fitsio::images::ImageType> {
+        if let fitsio::hdu::HduInfo::ImageInfo { image_type, .. } = &self.hdu.info {
+            return Some(*image_type);
+        }
+        None
+    }
+
+    pub fn read_image(&mut self) -> Result<Vec<f32>, ReadImageError> {
+        let data = self
+            .hdu
+            .read_image(&mut self.file)
+            .map_err(|_| ReadImageError::ReadImageFailed)?;
+        Ok(data)
+    }
+
+    /*pub fn read_image(
         &mut self,
     ) -> Result<super::image_data_pixels::ImageDataPixels, ReadImageError> {
         let mut data: Vec<f32> = self
@@ -104,5 +126,5 @@ impl FitsFile {
             return Ok(data);
         }
         Err(ReadImageError::UnableToExtractImageSize)
-    }
+    }*/
 }

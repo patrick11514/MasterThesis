@@ -37,7 +37,7 @@ pub fn run() {
 
             if trimmed == "preview" {
                 let state: State<Mutex<AppState>> = app.app_handle().state();
-                let buffer = state.lock().unwrap().current_image_data;
+                let buffer = state.lock().unwrap().current_image_data.clone();
 
                 println!("Started serving data...");
 

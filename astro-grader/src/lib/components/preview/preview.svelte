@@ -1,6 +1,8 @@
 <script lang="ts">
   import type { ImageData } from '$/lib/types/ImageData';
+  import type { ImageOptions } from '$/lib/types/ImageOptions';
   import { getData } from '$/lib/utils';
+  import { InfoIcon, LoaderIcon } from '@lucide/svelte';
   import { invoke } from '@tauri-apps/api/core';
   import { toast } from 'svelte-sonner';
   import type { File } from '../../types/File';
@@ -17,12 +19,13 @@
     grayscale: boolean;
   } | null>(null);
 
-  const loadImage = async (image: File) => {
+  const loadImage = async (image: File, options: ImageOptions | undefined) => {
     try {
       let start = Date.now();
 
       const previewData = await invoke<ImageData>('fits_read_image', {
-        path: image.path
+        path: image.path,
+        options
       });
 
       previewState.previewData = previewData;
@@ -30,12 +33,16 @@
       console.log('Time to read image:', Date.now() - start, 'ms');
       console.log('Downloading image...');
       start = Date.now();
+
+      previewState.loadingImage = true;
       const data = await getData<ArrayBuffer>('astro-grader://preview');
 
       if (!data) {
         toast.error('Failed to load preview data');
         return;
       }
+
+      previewState.loadingImage = false;
 
       rawData = {
         width: previewData.width,
@@ -70,7 +77,7 @@
 
   $effect(() => {
     if (previewState.previewImage) {
-      loadImage(previewState.previewImage);
+      loadImage(previewState.previewImage, previewState.imageOptions);
     }
   });
 
@@ -187,6 +194,24 @@
   });
 </script>
 
-<Resizable.Pane defaultSize={80}>
-  <canvas bind:this={canvasElement} class="mt-4 h-auto w-full border shadow-sm"></canvas>
+<Resizable.Pane defaultSize={80} class="relative">
+  <canvas bind:this={canvasElement} class="h-auto w-full"></canvas>
+  <div
+    class="pointer-events-none absolute top-0 left-0 flex h-full w-full items-center justify-center"
+  >
+    {#if !previewState.previewData}
+      <div class="flex flex-col items-center gap-2">
+        <InfoIcon class="size-12 text-muted-foreground" />
+        <span class="text-muted-foreground">
+          No image loaded. Please select file from the sidebar to preview it here.
+        </span>
+      </div>
+    {/if}
+    {#if previewState.loadingImage}
+      <div class="flex items-center gap-2">
+        <LoaderIcon class="size-12 animate-spin text-muted-foreground" />
+        <span class="text-muted-foreground">Loading image...</span>
+      </div>
+    {/if}
+  </div>
 </Resizable.Pane>
