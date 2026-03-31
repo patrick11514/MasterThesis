@@ -31,11 +31,23 @@
     variant="outline"
     onclick={() => {
       if (!previewState.previewData) return;
+      if (!previewState.previewData.auto_stf) return;
 
-      linked = false;
-      previewState.R = previewState.previewData.auto_stf?.[0] ?? [0, 0.5, 1];
-      previewState.G = previewState.previewData.auto_stf?.[1] ?? [0, 0.5, 1];
-      previewState.B = previewState.previewData.auto_stf?.[2] ?? [0, 0.5, 1];
+      console.log(
+        'APplying STF',
+        linked ? 'linked' : 'unlinked',
+        previewState.previewData.auto_stf
+      );
+
+      let stf = linked
+        ? previewState.previewData.auto_stf.linked
+        : previewState.previewData.auto_stf.unlinked;
+
+      previewState.R = stf.r;
+      previewState.G = stf.g;
+      previewState.B = stf.b;
+
+      console.log('Applied');
     }}
   >
     <ChartColumnIcon />

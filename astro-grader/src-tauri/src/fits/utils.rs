@@ -1,6 +1,6 @@
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 
-use crate::fits::image_data_pixels::ImageDataLayout;
+use crate::fits::image_data_pixels::{ImageDataLayout, SMH, STFPair};
 
 pub fn normalize_offset(offset: Option<i32>) -> usize {
     let offset = offset.unwrap_or(0);
@@ -136,6 +136,22 @@ pub fn normalize_data(data: &mut Vec<f32>, format: &fitsio::images::ImageType) {
 }
 
 // Yoinked from official code :) https://pixinsight.com/forum/index.php?threads/programmatic-way-to-do-an-stf-autostretch.6659/
+pub fn calculate_channel_stats(data: &[f32], offset: usize, stride: usize) -> (f32, f32) {
+    let mut sample: Vec<f32> = data.iter().skip(offset).step_by(stride).copied().collect();
+
+    if sample.is_empty() {
+        return (0.0, 0.0);
+    }
+
+    let mid = sample.len() / 2;
+    let (_, &mut median, _) = sample.select_nth_unstable_by(mid, |a, b| a.partial_cmp(b).unwrap());
+
+    let mut deviations: Vec<f32> = sample.iter().map(|&v| (v - median).abs()).collect();
+    let (_, &mut mad, _) = deviations.select_nth_unstable_by(mid, |a, b| a.partial_cmp(b).unwrap());
+
+    (median, mad)
+}
+
 fn mtf(target: f32, x: f32) -> f32 {
     if x == 0.0 {
         return 0.0;
@@ -143,31 +159,18 @@ fn mtf(target: f32, x: f32) -> f32 {
     if x == 1.0 {
         return 1.0;
     }
-    // PI's exact MTF algebraic solver
     ((target - 1.0) * x) / (((2.0 * target - 1.0) * x) - target)
 }
 
-pub fn calculate_pixinsight_stf(medians: &[f32], mads: &[f32], rgb_linked: bool) -> AutoStf {
-    let n = medians.len(); // Will be 1 for Grayscale, 3 for RGB
-
-    // PixInsight Defaults
-    let shadows_clipping = -2.80; // Note it's negative! So we ADD it below.
+pub fn calculate_stf(medians: &[f32], mads: &[f32], rgb_linked: bool) -> STFPair {
+    let n = medians.len();
+    let shadows_clipping = -2.80;
     let target_background = 0.25;
 
-    // Scale MADs to standard deviation
     let scaled_mads: Vec<f32> = mads.iter().map(|&mad| mad * 1.4826).collect();
+    let mut channels: Vec<SMH> = vec![[0.0, 0.5, 1.0]; n];
 
-    let mut channels = vec![
-        StfChannel {
-            c0: 0.0,
-            c1: 1.0,
-            m: 0.5
-        };
-        n
-    ];
-
-    if rgb_linked {
-        // --- LINKED STRETCH ---
+    if rgb_linked && n == 3 {
         let mut inverted_channels = 0;
         for c in 0..n {
             if medians[c] > 0.5 {
@@ -176,12 +179,10 @@ pub fn calculate_pixinsight_stf(medians: &[f32], mads: &[f32], rgb_linked: bool)
         }
 
         if inverted_channels < n {
-            // Noninverted image
             let mut c0 = 0.0;
             let mut m_avg = 0.0;
 
             for c in 0..n {
-                // The floating point zero-check trick
                 if 1.0 + scaled_mads[c] != 1.0 {
                     c0 += medians[c] + shadows_clipping * scaled_mads[c];
                 }
@@ -192,10 +193,9 @@ pub fn calculate_pixinsight_stf(medians: &[f32], mads: &[f32], rgb_linked: bool)
             let m = mtf(target_background, (m_avg / n as f32) - c0);
 
             for c in 0..n {
-                channels[c] = StfChannel { c0, c1: 1.0, m };
+                channels[c] = [c0, m, 1.0];
             }
         } else {
-            // Inverted image
             let mut c1 = 0.0;
             let mut m_avg = 0.0;
 
@@ -212,39 +212,43 @@ pub fn calculate_pixinsight_stf(medians: &[f32], mads: &[f32], rgb_linked: bool)
             let m = mtf(c1 - (m_avg / n as f32), target_background);
 
             for c in 0..n {
-                channels[c] = StfChannel { c0: 0.0, c1, m };
+                channels[c] = [0.0, m, 1.0];
             }
         }
     } else {
-        // --- UNLINKED STRETCH ---
         for c in 0..n {
             if medians[c] < 0.5 {
-                // Noninverted channel
                 let c0 = if 1.0 + scaled_mads[c] != 1.0 {
                     (medians[c] + shadows_clipping * scaled_mads[c]).clamp(0.0, 1.0)
                 } else {
                     0.0
                 };
                 let m = mtf(target_background, medians[c] - c0);
-                channels[c] = StfChannel { c0, c1: 1.0, m };
+                channels[c] = [c0, m, 1.0];
             } else {
-                // Inverted channel
                 let c1 = if 1.0 + scaled_mads[c] != 1.0 {
                     (medians[c] - shadows_clipping * scaled_mads[c]).clamp(0.0, 1.0)
                 } else {
                     1.0
                 };
                 let m = mtf(c1 - medians[c], target_background);
-                channels[c] = StfChannel { c0: 0.0, c1, m };
+                channels[c] = [0.0, m, 1.0];
             }
         }
     }
 
-    // Safely unpack into our struct based on the number of channels processed
-    Auto {
-        r: channels[0],
-        g: if n == 3 { channels[1] } else { channels[0] },
-        b: if n == 3 { channels[2] } else { channels[0] },
-        linked: rgb_linked,
+    // Map computed channels to STFPair. For Grayscale (n=1), duplicate the profile across RGB.
+    STFPair {
+        r: channels[0].clone(),
+        g: if n == 3 {
+            channels[1].clone()
+        } else {
+            channels[0].clone()
+        },
+        b: if n == 3 {
+            channels[2].clone()
+        } else {
+            channels[0].clone()
+        },
     }
 }

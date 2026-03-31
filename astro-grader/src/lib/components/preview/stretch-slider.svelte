@@ -35,6 +35,7 @@
   // Effect to sync external prop changes into our local channel state
   $effect(() => {
     const currentSliders = sliders;
+    console.log(currentSliders, Date.now());
 
     untrack(() => {
       const structureChanged =
@@ -57,6 +58,7 @@
         const localVal = channels[i].ratios.getState();
 
         if (!isSame(incomingVal, localVal)) {
+          updating[i] = true; // Prevent echoing back to slider on next update
           channels[i].ratios.setState(incomingVal);
           needsReactivity = true;
         }
@@ -71,6 +73,7 @@
   let updating = $state([false, false, false]);
 
   const handleSliderChange = (channelIdx: number, v: number[] | undefined) => {
+    console.log('Slider change', channelIdx, v, Date.now());
     if (!v || v.length !== 3) return;
 
     // 1. Prevent infinite loops from Bits UI internal value syncing
@@ -78,6 +81,8 @@
       updating[channelIdx] = false;
       return;
     }
+
+    console.log('Handling slider change for channel', channelIdx, 'with value', v, Date.now());
 
     const ratios = channels[channelIdx].ratios;
     const current = ratios.getState();
@@ -117,7 +122,11 @@
 
     sliders[channelIdx].value = newState;
 
+    console.log('updatet channel', channelIdx, 'to', newState, 'diff was', diff, Date.now());
+
     if (!linked) return;
+
+    console.log('Applying linked adjustment with diff', diff, Date.now());
 
     // 1. Calculate the master's active range (width) BEFORE the move
     // Fallback to 1 to prevent division by zero if thumbs are perfectly squished
@@ -173,7 +182,7 @@
         onValueChange={(v) => handleSliderChange(idx, v)}
         min={0}
         max={1}
-        step={0.01}
+        step={0.000001}
         autoSort={false}
         class="relative flex h-6 w-full touch-none items-center select-none"
       >

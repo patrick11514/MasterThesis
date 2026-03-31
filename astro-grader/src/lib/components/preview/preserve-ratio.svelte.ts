@@ -9,17 +9,9 @@ export class PreserveRatio {
   // Tracks the relative percentage of the midtone
   private ratio: number;
 
-  // 10000 allows for 4 decimal places of precision (e.g., 0.1234)
-  private multiplier: number = 10000;
-
   constructor(initialValues: SMH) {
     [this.shadows, this.midtone, this.highlights] = initialValues;
     this.ratio = this.calculateRatio();
-  }
-
-  // Solves the JS floating point precision issue
-  private fixFloat(value: number): number {
-    return Math.round(value * this.multiplier) / this.multiplier;
   }
 
   private calculateRatio(): number {
@@ -31,25 +23,25 @@ export class PreserveRatio {
   private recalculateMidtone(): void {
     const delta = this.highlights - this.shadows;
     const exactMidtone = this.shadows + this.ratio * delta;
-    this.midtone = this.fixFloat(exactMidtone);
+    this.midtone = exactMidtone;
   }
 
   // --- Action Methods ---
 
   public updateShadows(newVal: number): SMH {
-    this.shadows = this.fixFloat(newVal);
+    this.shadows = newVal;
     this.recalculateMidtone();
     return this.getState();
   }
 
   public updateHighlights(newVal: number): SMH {
-    this.highlights = this.fixFloat(newVal);
+    this.highlights = newVal;
     this.recalculateMidtone();
     return this.getState();
   }
 
   public updateMidtone(newVal: number): SMH {
-    this.midtone = this.fixFloat(newVal);
+    this.midtone = newVal;
     // Midtone moved independently, so we must record its new relative ratio
     this.ratio = this.calculateRatio();
     return this.getState();
@@ -60,7 +52,7 @@ export class PreserveRatio {
   }
 
   public setState(newValues: SMH): void {
-    [this.shadows, this.midtone, this.highlights] = newValues.map(this.fixFloat.bind(this));
+    [this.shadows, this.midtone, this.highlights] = newValues;
     this.ratio = this.calculateRatio();
   }
 }

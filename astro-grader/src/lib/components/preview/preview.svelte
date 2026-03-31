@@ -55,6 +55,7 @@
   };
 
   const compileShader = (gl: WebGLRenderingContext, type: number, source: string) => {
+    console.log('Compiling shader', { type: type === gl.VERTEX_SHADER ? 'VERTEX' : 'FRAGMENT' });
     const shader = gl.createShader(type);
     if (!shader) throw new Error('Could not create shader');
     gl.shaderSource(shader, source);
@@ -70,6 +71,7 @@
 
   $effect(() => {
     if (previewState.previewImage) {
+      console.log('loading image');
       loadImage(previewState.previewImage, previewState.imageOptions);
     }
   });
@@ -83,6 +85,8 @@
 
     const gl = canvasElement.getContext('webgl2') as WebGL2RenderingContext;
     if (!gl) return;
+
+    console.log('init');
 
     // Setup canvas
     canvasElement.width = rawData.width;

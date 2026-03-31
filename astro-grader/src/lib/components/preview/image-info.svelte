@@ -30,7 +30,7 @@
       }
     });
 
-    console.log(currentOptions);
+    console.log(currentOptions, Date.now());
     return currentOptions;
   });
 

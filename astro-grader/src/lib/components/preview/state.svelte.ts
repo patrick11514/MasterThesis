@@ -3,7 +3,7 @@ import type { File } from '../../types/File';
 import type { ImageData } from '../../types/ImageData';
 import type { SMH } from './preserve-ratio.svelte';
 
-type ImageState = "loading" | "downloading" | undefined
+type ImageState = 'loading' | 'downloading' | undefined;
 
 class PreviewState {
   public imageState = $state<ImageState>();
@@ -20,6 +20,8 @@ class PreviewState {
     const R = this.R;
     const G = this.G;
     const B = this.B;
+
+    console.log('Getting channels', Date.now(), { R, G, B });
 
     if (this.previewData?.layout === 'Grayscale') {
       return [

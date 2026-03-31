@@ -7,7 +7,7 @@ use ts_rs::TS;
 
 use crate::fits::{
     file::{FitsFile, ReadImageError},
-    utils::{calculate_channel_stf, debayer_data},
+    utils::{calculate_channel_stats, calculate_stf, debayer_data},
 };
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS, PartialEq)]
@@ -44,21 +44,21 @@ pub struct BayerPattern {
 }
 
 //Same type we hade in TS
-type SMH = [f32; 3]; // Shadow, Midtone, Highlight
+pub type SMH = [f32; 3]; // Shadow, Midtone, Highlight
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]
-struct STFPair {
-    r: SMH,
-    g: SMH,
-    b: SMH,
+pub struct STFPair {
+    pub r: SMH,
+    pub g: SMH,
+    pub b: SMH,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]
-struct AutoSFT {
-    linked: STFPair,
-    unlinked: STFPair,
+pub struct AutoSFT {
+    pub linked: STFPair,
+    pub unlinked: STFPair,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
@@ -270,29 +270,33 @@ impl ImageDataPixels {
     }
 
     pub fn calculate_stf(&mut self) {
-        assert!(
-            self.data.layout != ImageDataLayout::RGBPlanar,
-            "STF calculation is only supported for interleaved RGB or Grayscale format"
-        );
-
-        match self.data.layout {
+        // 1. Extract statistical samples based on memory layout
+        let (medians, mads) = match self.data.layout {
             ImageDataLayout::Grayscale => {
-                // Offset 0, Stride 100 floats
-                let stf = calculate_channel_stf(self.pixels.as_slice(), 0, 0);
-
-                // It's monochrome, so R, G, and B get the exact same curve
-                self.data.auto_stf = Some([stf, stf, stf]);
+                let (med, mad) = calculate_channel_stats(&self.pixels, 0, 100);
+                (vec![med], vec![mad]) // 1 Channel
             }
             ImageDataLayout::RGB => {
-                // Stride 300 floats (100 pixels * 3 channels)
-                // Red starts at index 0, Green at 1, Blue at 2
-                let stf_r = calculate_channel_stf(self.pixels.as_slice(), 0, 0);
-                let stf_g = calculate_channel_stf(self.pixels.as_slice(), 1, 0);
-                let stf_b = calculate_channel_stf(self.pixels.as_slice(), 2, 0);
-
-                self.data.auto_stf = Some([stf_r, stf_g, stf_b]);
+                let (r_med, r_mad) = calculate_channel_stats(&self.pixels, 0, 300);
+                let (g_med, g_mad) = calculate_channel_stats(&self.pixels, 1, 300);
+                let (b_med, b_mad) = calculate_channel_stats(&self.pixels, 2, 300);
+                (vec![r_med, g_med, b_med], vec![r_mad, g_mad, b_mad]) // 3 Channels
             }
-            _ => unreachable!(),
-        }
+            ImageDataLayout::RGBPlanar => {
+                let plane_area = self.data.width * self.data.height;
+                let (r_med, r_mad) = calculate_channel_stats(&self.pixels[0..plane_area], 0, 100);
+                let (g_med, g_mad) =
+                    calculate_channel_stats(&self.pixels[plane_area..plane_area * 2], 0, 100);
+                let (b_med, b_mad) =
+                    calculate_channel_stats(&self.pixels[plane_area * 2..], 0, 100);
+                (vec![r_med, g_med, b_med], vec![r_mad, g_mad, b_mad]) // 3 Channels
+            }
+        };
+
+        // 2. Compute both linked and unlinked STF profiles
+        self.data.auto_stf = Some(AutoSFT {
+            linked: calculate_stf(&medians, &mads, true),
+            unlinked: calculate_stf(&medians, &mads, false),
+        });
     }
 }
