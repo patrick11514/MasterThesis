@@ -7,7 +7,7 @@ use ts_rs::TS;
 
 use crate::fits::{
     file::{FitsFile, ReadImageError},
-    utils::debayer_data,
+    utils::{calculate_channel_stf, debayer_data},
 };
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS, PartialEq)]
@@ -26,12 +26,39 @@ pub struct ImageOptions {
     pub scale: f32,
 }
 
+impl Default for ImageOptions {
+    fn default() -> Self {
+        ImageOptions {
+            bayer_pattern: None,
+            scale: 0.5,
+        }
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]
 pub struct BayerPattern {
     pattern: String,
     x_offset: usize,
     y_offset: usize,
+}
+
+//Same type we hade in TS
+type SMH = [f32; 3]; // Shadow, Midtone, Highlight
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+struct STFPair {
+    r: SMH,
+    g: SMH,
+    b: SMH,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+struct AutoSFT {
+    linked: STFPair,
+    unlinked: STFPair,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
@@ -47,6 +74,8 @@ pub struct ImageData {
     pub width: usize,
     pub height: usize,
     pub layout: ImageDataLayout,
+    //Precomputed auto-STF for FE
+    pub auto_stf: Option<AutoSFT>,
 }
 
 #[derive(Debug, Clone)]
@@ -88,6 +117,7 @@ impl ImageDataPixels {
                     width: shape[2],
                     height: shape[1],
                     layout: ImageDataLayout::RGBPlanar,
+                    auto_stf: None,
                 },
                 pixels: data,
             });
@@ -106,6 +136,7 @@ impl ImageDataPixels {
                 width: shape[1],
                 height: shape[0],
                 layout: ImageDataLayout::Grayscale,
+                auto_stf: None,
             },
             pixels: data,
         })
@@ -157,7 +188,7 @@ impl ImageDataPixels {
         Some(byte_slice.to_vec())
     }
 
-    pub fn debayer(&mut self, bayer_pattern: Option<String>) {
+    pub fn debayer(&mut self, bayer_pattern: Option<String>) -> bool {
         let bayer_pattern = match &self.data.original_bayer_pattern {
             Some(original_pattern) => BayerPattern {
                 pattern: bayer_pattern.unwrap_or(original_pattern.pattern.clone()),
@@ -172,7 +203,7 @@ impl ImageDataPixels {
                         y_offset: 0,
                     }
                 } else {
-                    return;
+                    return false;
                 }
             }
         };
@@ -182,6 +213,8 @@ impl ImageDataPixels {
             bayer_pattern.pattern,
             (bayer_pattern.x_offset, bayer_pattern.y_offset),
         );
+
+        true
     }
 
     pub fn scale(&mut self, scale: f32) {
@@ -190,6 +223,11 @@ impl ImageDataPixels {
             self.data.layout != ImageDataLayout::RGBPlanar,
             "Scaling is only supported for interleaved RGB or Grayscale format"
         );
+
+        if scale > self.data.applied_options.scale {
+            //We can't upscale image...
+            return;
+        }
 
         // Use .round() to avoid weird off-by-one pixel dimensions
         let new_width = (self.data.width as f32 * scale).round() as usize;
@@ -229,5 +267,32 @@ impl ImageDataPixels {
         self.data.width = new_width;
         self.data.height = new_height;
         self.data.applied_options.scale = scale;
+    }
+
+    pub fn calculate_stf(&mut self) {
+        assert!(
+            self.data.layout != ImageDataLayout::RGBPlanar,
+            "STF calculation is only supported for interleaved RGB or Grayscale format"
+        );
+
+        match self.data.layout {
+            ImageDataLayout::Grayscale => {
+                // Offset 0, Stride 100 floats
+                let stf = calculate_channel_stf(self.pixels.as_slice(), 0, 0);
+
+                // It's monochrome, so R, G, and B get the exact same curve
+                self.data.auto_stf = Some([stf, stf, stf]);
+            }
+            ImageDataLayout::RGB => {
+                // Stride 300 floats (100 pixels * 3 channels)
+                // Red starts at index 0, Green at 1, Blue at 2
+                let stf_r = calculate_channel_stf(self.pixels.as_slice(), 0, 0);
+                let stf_g = calculate_channel_stf(self.pixels.as_slice(), 1, 0);
+                let stf_b = calculate_channel_stf(self.pixels.as_slice(), 2, 0);
+
+                self.data.auto_stf = Some([stf_r, stf_g, stf_b]);
+            }
+            _ => unreachable!(),
+        }
     }
 }

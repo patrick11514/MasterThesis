@@ -9,19 +9,50 @@
   const bayerPatterns = ['None', 'RGGB', 'BGGR', 'RGBG', 'GRBG'];
   const scalings = ['100%', '50%', '25%'];
 
-  let currentBayerPattern = $derived(
-    previewState.previewData?.applied_options.bayer_pattern ?? 'None'
-  );
+  // We need to compare each key, and take these applied
+  const currentOptions = $derived.by(() => {
+    if (!previewState.previewData) {
+      return null; // null ->
+    }
 
-  $effect(() => {
-    console.log(currentBayerPattern);
+    if (!previewState.imageOptions) {
+      return previewState.previewData.applied_options; // -> applied
+    }
+
+    //compare keys, and select set of applied one
+
+    const currentOptions = { ...previewState.imageOptions };
+    const options = Object.keys(previewState.imageOptions) as (keyof typeof currentOptions)[];
+    options.forEach((key) => {
+      if (!currentOptions[key]) {
+        //@ts-expect-error Here typescript doesn't know, if the key is missing, or the value is undefined, but in our case, it will be undefined
+        currentOptions[key] = previewState.previewData?.applied_options?.[key] ?? undefined;
+      }
+    });
+
+    console.log(currentOptions);
+    return currentOptions;
   });
 
-  let scaling = $derived(`${(previewState.previewData?.applied_options.scale ?? 1) * 100}%`);
+  // 1. Adapter for Bayer Pattern
+  const getBayer = () => currentOptions?.bayer_pattern ?? 'None';
+  const setBayer = (pattern: string) => {
+    // @ts-expect-error TODO
+    previewState.imageOptions = {
+      ...currentOptions,
+      bayer_pattern: pattern === 'None' ? null : pattern
+    };
+  };
 
-  $effect(() => {
-    console.log(scaling);
-  });
+  // 2. Adapter for Scaling
+  const getScale = () => `${(currentOptions?.scale ?? 1) * 100}%`;
+  const setScale = (value: string) => {
+    // @ts-expect-error TODO
+    previewState.imageOptions = {
+      ...currentOptions,
+      scale: parseInt(value, 10) / 100
+    };
+  };
 </script>
 
 {#if previewState.previewData}
@@ -30,79 +61,54 @@
   >
     <div class="flex flex-col items-center gap-1 py-2">
       <h2 class="text-xl font-semibold">Image Info</h2>
-      <div class="flex flex-col gap-1">
+      <div class="flex flex-col gap-1 font-light">
         <div class="flex items-center gap-2">
           <span class="font-semibold">Dimensions:</span>
-          <span>
-            {previewState.previewData.width} x {previewState.previewData.height}
-            <DropdownMenu.Root>
-              <DropdownMenu.Trigger>
-                {#snippet child({ props })}
-                  <Button {...props} variant="outline" size="icon-sm">
-                    <ArrowLeftRightIcon />
-                  </Button>
-                {/snippet}
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Content class="w-56">
-                <DropdownMenu.Group>
-                  <DropdownMenu.Label>Bayer Pattern</DropdownMenu.Label>
-                  <DropdownMenu.Separator />
-                  <DropdownMenu.RadioGroup
-                    bind:value={
-                      () => currentBayerPattern,
-                      (pattern) => {
-                        previewState.imageOptions = {
-                          ...previewState.imageOptions,
-                          bayer_pattern: pattern === 'None' ? null : pattern
-                        };
-                      }
-                    }
-                  >
-                    {#each bayerPatterns as pattern (pattern)}
-                      <DropdownMenu.RadioItem value={pattern}>{pattern}</DropdownMenu.RadioItem>
-                    {/each}
-                  </DropdownMenu.RadioGroup>
-                </DropdownMenu.Group>
-              </DropdownMenu.Content>
-            </DropdownMenu.Root>
-          </span>
+          {previewState.previewData.width} x {previewState.previewData.height}
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger>
+              {#snippet child({ props })}
+                <Button {...props} variant="outline" size="icon-sm">
+                  <ArrowLeftRightIcon />
+                </Button>
+              {/snippet}
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Content class="w-56">
+              <DropdownMenu.Group>
+                <DropdownMenu.Label>Scaling</DropdownMenu.Label>
+                <DropdownMenu.Separator />
+                <DropdownMenu.RadioGroup bind:value={getScale, setScale}>
+                  {#each scalings as scaling (scaling)}
+                    <DropdownMenu.RadioItem value={scaling}>{scaling}</DropdownMenu.RadioItem>
+                  {/each}
+                </DropdownMenu.RadioGroup>
+              </DropdownMenu.Group>
+            </DropdownMenu.Content>
+          </DropdownMenu.Root>
         </div>
         <div class="flex items-center gap-2">
           <span class="font-semibold">Bayer Pattern:</span>
-          <span>
-            {currentBayerPattern}
-            <DropdownMenu.Root>
-              <DropdownMenu.Trigger>
-                {#snippet child({ props })}
-                  <Button {...props} variant="outline" size="icon-sm">
-                    <ArrowLeftRightIcon />
-                  </Button>
-                {/snippet}
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Content class="w-56">
-                <DropdownMenu.Group>
-                  <DropdownMenu.Label>Scaling</DropdownMenu.Label>
-                  <DropdownMenu.Separator />
-                  <DropdownMenu.RadioGroup
-                    bind:value={
-                      () => scaling,
-                      (value) => {
-                        const scaleValue = parseInt(value) / 100;
-                        previewState.imageOptions = {
-                          ...previewState.imageOptions,
-                          scale: scaleValue
-                        };
-                      }
-                    }
-                  >
-                    {#each scalings as scaling (scaling)}
-                      <DropdownMenu.RadioItem value={scaling}>{scaling}</DropdownMenu.RadioItem>
-                    {/each}
-                  </DropdownMenu.RadioGroup>
-                </DropdownMenu.Group>
-              </DropdownMenu.Content>
-            </DropdownMenu.Root>
-          </span>
+          {getBayer()}
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger>
+              {#snippet child({ props })}
+                <Button {...props} variant="outline" size="icon-sm">
+                  <ArrowLeftRightIcon />
+                </Button>
+              {/snippet}
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Content class="w-56">
+              <DropdownMenu.Group>
+                <DropdownMenu.Label>Bayer Pattern</DropdownMenu.Label>
+                <DropdownMenu.Separator />
+                <DropdownMenu.RadioGroup bind:value={getBayer, setBayer}>
+                  {#each bayerPatterns as pattern (pattern)}
+                    <DropdownMenu.RadioItem value={pattern}>{pattern}</DropdownMenu.RadioItem>
+                  {/each}
+                </DropdownMenu.RadioGroup>
+              </DropdownMenu.Group>
+            </DropdownMenu.Content>
+          </DropdownMenu.Root>
         </div>
         <div class="flex items-center gap-2">
           <span class="font-semibold">Data type:</span>
@@ -110,16 +116,9 @@
         </div>
       </div>
     </div>
-    <div class="flex w-full flex-col gap-1 py-2">
-      <h2>Stretch</h2>
+    <div class="flex flex-col items-center gap-1 py-2">
+      <h2 class="text-xl font-semibold">Stretch</h2>
       <Stretch />
-    </div>
-    <div class="flex w-full flex-col gap-1 py-2">
-      <h2>Debug</h2>
-      <pre>
-        {JSON.stringify(previewState.previewData, null, 2)}
-        {JSON.stringify({ R: previewState.R, G: previewState.G, B: previewState.B }, null, 2)}
-       </pre>
     </div>
   </div>
 {:else}

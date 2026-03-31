@@ -21,7 +21,7 @@
 
   const loadImage = async (image: File, options: ImageOptions | undefined) => {
     try {
-      let start = Date.now();
+      previewState.imageState = 'loading';
 
       const previewData = await invoke<ImageData>('fits_read_image', {
         path: image.path,
@@ -29,12 +29,7 @@
       });
 
       previewState.previewData = previewData;
-
-      console.log('Time to read image:', Date.now() - start, 'ms');
-      console.log('Downloading image...');
-      start = Date.now();
-
-      previewState.loadingImage = true;
+      previewState.imageState = 'downloading';
       const data = await getData<ArrayBuffer>('astro-grader://preview');
 
       if (!data) {
@@ -42,7 +37,7 @@
         return;
       }
 
-      previewState.loadingImage = false;
+      previewState.imageState = undefined;
 
       rawData = {
         width: previewData.width,
@@ -50,8 +45,6 @@
         data: new Float32Array(data),
         grayscale: previewData.layout === 'Grayscale'
       };
-
-      console.log(rawData);
     } catch (_err) {
       const err = _err as string;
 
@@ -199,18 +192,23 @@
   <div
     class="pointer-events-none absolute top-0 left-0 flex h-full w-full items-center justify-center"
   >
-    {#if !previewState.previewData}
+    {#if previewState.imageState}
+      <div class="flex items-center gap-2">
+        <LoaderIcon class="size-12 animate-spin text-muted-foreground" />
+        <span class="text-muted-foreground">
+          {#if previewState.imageState === 'loading'}
+            Loading image...
+          {:else if previewState.imageState === 'downloading'}
+            Downloading image...
+          {/if}
+        </span>
+      </div>
+    {:else if !previewState.previewData}
       <div class="flex flex-col items-center gap-2">
         <InfoIcon class="size-12 text-muted-foreground" />
         <span class="text-muted-foreground">
           No image loaded. Please select file from the sidebar to preview it here.
         </span>
-      </div>
-    {/if}
-    {#if previewState.loadingImage}
-      <div class="flex items-center gap-2">
-        <LoaderIcon class="size-12 animate-spin text-muted-foreground" />
-        <span class="text-muted-foreground">Loading image...</span>
       </div>
     {/if}
   </div>

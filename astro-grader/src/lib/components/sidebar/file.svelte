@@ -27,10 +27,7 @@
       }
 
       previewState.previewImage = file;
-      previewState.imageOptions = {
-        bayer_pattern: null,
-        scale: 0.5
-      };
+      previewState.imageOptions = undefined;
     }}
   >
     <FileImageIcon class={FILE_COLORS[file.type]} />

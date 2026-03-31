@@ -20,7 +20,7 @@ pub use structs::FileType;
 #[tauri::command]
 pub async fn fits_read_image(
     path: PathBuf,
-    options: Option<ImageOptions>,
+    mut options: Option<ImageOptions>,
     state: tauri::State<'_, Mutex<crate::AppState>>,
 ) -> Result<ImageData, String> {
     let mut state = state.lock().unwrap();
@@ -56,9 +56,13 @@ pub async fn fits_read_image(
         state.current_image.replace(current_image.clone());
 
         //at the end, we debayer the image, because we have saved the original Grayscale
-        current_image.data.debayer(
+        if !current_image.data.debayer(
             None, /* This will use the bayerpattern from FITS if presented */
-        );
+        ) {
+            //If we don't debayer, we set options to default, so we apply
+            //The 50% downscaling, so we don't transfer huge grayscale images to FE
+            options.replace(ImageOptions::default());
+        }
 
         current_image.data
     };
@@ -73,6 +77,11 @@ pub async fn fits_read_image(
             image.scale(options.scale);
         }
     }
+
+    //calculate auto-STF
+    image.calculate_stf();
+
+    println!("{:?}", image.data);
 
     let converted = image
         .to_js_imagedata()

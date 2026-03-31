@@ -31,15 +31,10 @@ pub fn run() {
                 }
             }
 
-            println!("Normalized URI: {}", path);
             let trimmed = path.trim_matches('/');
-            println!("Trimmed URI: {}", trimmed);
-
             if trimmed == "preview" {
                 let state: State<Mutex<AppState>> = app.app_handle().state();
                 let buffer = state.lock().unwrap().current_image_data.clone();
-
-                println!("Started serving data...");
 
                 return match buffer {
                     Some(data) => http::Response::builder()

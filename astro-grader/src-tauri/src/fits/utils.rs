@@ -1,6 +1,6 @@
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 
-use crate::fits::image_data_pixels::{ImageDataLayout, ImageOptions};
+use crate::fits::image_data_pixels::ImageDataLayout;
 
 pub fn normalize_offset(offset: Option<i32>) -> usize {
     let offset = offset.unwrap_or(0);
@@ -111,7 +111,7 @@ pub fn debayer_data(
     data.data.depth = 3;
     data.data.layout = ImageDataLayout::RGB;
     data.data.applied_options.bayer_pattern = Some(bayer_pattern);
-    data.data.applied_options.scale = 0.5; // Current debayering will downscale image by 2
+    data.data.applied_options.scale = 1.0;
 }
 
 pub fn normalize_data(data: &mut Vec<f32>, format: &fitsio::images::ImageType) {
@@ -133,4 +133,118 @@ pub fn normalize_data(data: &mut Vec<f32>, format: &fitsio::images::ImageType) {
                 fitsio::images::ImageType::Double => 1.0,
             }
     });
+}
+
+// Yoinked from official code :) https://pixinsight.com/forum/index.php?threads/programmatic-way-to-do-an-stf-autostretch.6659/
+fn mtf(target: f32, x: f32) -> f32 {
+    if x == 0.0 {
+        return 0.0;
+    }
+    if x == 1.0 {
+        return 1.0;
+    }
+    // PI's exact MTF algebraic solver
+    ((target - 1.0) * x) / (((2.0 * target - 1.0) * x) - target)
+}
+
+pub fn calculate_pixinsight_stf(medians: &[f32], mads: &[f32], rgb_linked: bool) -> AutoStf {
+    let n = medians.len(); // Will be 1 for Grayscale, 3 for RGB
+
+    // PixInsight Defaults
+    let shadows_clipping = -2.80; // Note it's negative! So we ADD it below.
+    let target_background = 0.25;
+
+    // Scale MADs to standard deviation
+    let scaled_mads: Vec<f32> = mads.iter().map(|&mad| mad * 1.4826).collect();
+
+    let mut channels = vec![
+        StfChannel {
+            c0: 0.0,
+            c1: 1.0,
+            m: 0.5
+        };
+        n
+    ];
+
+    if rgb_linked {
+        // --- LINKED STRETCH ---
+        let mut inverted_channels = 0;
+        for c in 0..n {
+            if medians[c] > 0.5 {
+                inverted_channels += 1;
+            }
+        }
+
+        if inverted_channels < n {
+            // Noninverted image
+            let mut c0 = 0.0;
+            let mut m_avg = 0.0;
+
+            for c in 0..n {
+                // The floating point zero-check trick
+                if 1.0 + scaled_mads[c] != 1.0 {
+                    c0 += medians[c] + shadows_clipping * scaled_mads[c];
+                }
+                m_avg += medians[c];
+            }
+
+            c0 = (c0 / n as f32).clamp(0.0, 1.0);
+            let m = mtf(target_background, (m_avg / n as f32) - c0);
+
+            for c in 0..n {
+                channels[c] = StfChannel { c0, c1: 1.0, m };
+            }
+        } else {
+            // Inverted image
+            let mut c1 = 0.0;
+            let mut m_avg = 0.0;
+
+            for c in 0..n {
+                m_avg += medians[c];
+                if 1.0 + scaled_mads[c] != 1.0 {
+                    c1 += medians[c] - shadows_clipping * scaled_mads[c];
+                } else {
+                    c1 += 1.0;
+                }
+            }
+
+            c1 = (c1 / n as f32).clamp(0.0, 1.0);
+            let m = mtf(c1 - (m_avg / n as f32), target_background);
+
+            for c in 0..n {
+                channels[c] = StfChannel { c0: 0.0, c1, m };
+            }
+        }
+    } else {
+        // --- UNLINKED STRETCH ---
+        for c in 0..n {
+            if medians[c] < 0.5 {
+                // Noninverted channel
+                let c0 = if 1.0 + scaled_mads[c] != 1.0 {
+                    (medians[c] + shadows_clipping * scaled_mads[c]).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                let m = mtf(target_background, medians[c] - c0);
+                channels[c] = StfChannel { c0, c1: 1.0, m };
+            } else {
+                // Inverted channel
+                let c1 = if 1.0 + scaled_mads[c] != 1.0 {
+                    (medians[c] - shadows_clipping * scaled_mads[c]).clamp(0.0, 1.0)
+                } else {
+                    1.0
+                };
+                let m = mtf(c1 - medians[c], target_background);
+                channels[c] = StfChannel { c0: 0.0, c1, m };
+            }
+        }
+    }
+
+    // Safely unpack into our struct based on the number of channels processed
+    Auto {
+        r: channels[0],
+        g: if n == 3 { channels[1] } else { channels[0] },
+        b: if n == 3 { channels[2] } else { channels[0] },
+        linked: rgb_linked,
+    }
 }

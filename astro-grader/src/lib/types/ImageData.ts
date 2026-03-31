@@ -3,4 +3,4 @@ import type { BayerPattern } from "./BayerPattern";
 import type { ImageDataLayout } from "./ImageDataLayout";
 import type { ImageOptions } from "./ImageOptions";
 
-export type ImageData = { applied_options: ImageOptions, original_bayer_pattern: BayerPattern | null, depth: number, width: number, height: number, layout: ImageDataLayout, };
+export type ImageData = { applied_options: ImageOptions, original_bayer_pattern: BayerPattern | null, depth: number, width: number, height: number, layout: ImageDataLayout, auto_stf: [[number, number, number], [number, number, number], [number, number, number]] | null, };

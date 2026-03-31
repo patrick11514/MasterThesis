@@ -3,8 +3,10 @@ import type { File } from '../../types/File';
 import type { ImageData } from '../../types/ImageData';
 import type { SMH } from './preserve-ratio.svelte';
 
+type ImageState = "loading" | "downloading" | undefined
+
 class PreviewState {
-  public loadingImage = $state(false);
+  public imageState = $state<ImageState>();
 
   public previewImage = $state<File>();
   public previewData = $state<ImageData>();
