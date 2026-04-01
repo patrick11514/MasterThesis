@@ -6,6 +6,7 @@
   import FileImport from './file-import.svelte';
   import NightConfig from './night-config.svelte';
   import Night from './night.svelte';
+  import { isShown } from './utils';
 
   const appState = await getAppState();
 </script>
@@ -38,7 +39,9 @@
       <p class="text-center text-muted-foreground">No files imported.</p>
     {:else}
       {#each Object.entries(appState.files) as [night, files] (night)}
-        <Night {night} {files} {appState} />
+        {#if files.filter((file) => isShown(appState, file)).length > 0}
+          <Night {night} {files} {appState} />
+        {/if}
       {/each}
     {/if}
   </div>
