@@ -9,8 +9,6 @@
 
   const appState = await getAppState();
 
-  let openedNights = $state<number[]>([]);
-
   const nights = $derived(
     Object.entries(appState.files).map(([night, files], idx) => ({
       id: idx,
@@ -48,11 +46,10 @@
     {/each}
   </div>
 
-  <div class="flex w-full flex-col gap-2 overflow-y-auto">
+  <div class="h-full min-h-0 w-full flex-1">
     {#if Object.keys(appState.files).length === 0}
       <p class="text-center text-muted-foreground">No files imported.</p>
     {:else}
-      {JSON.stringify(nights.length)}
       <VirtualList {nights} {appState} />
     {/if}
   </div>

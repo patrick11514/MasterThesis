@@ -25,7 +25,7 @@
   */
 </script>
 
-<Item.Root class="w-full px-4 py-0">
+<Item.Root class="w-full p-0">
   <Item.Content
     class="flex w-full flex-row items-center gap-2"
     onclick={(ev) => {

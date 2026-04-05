@@ -3,14 +3,17 @@
   import type { File } from '$/lib/types/File';
   import { createVirtualizer } from '@tanstack/svelte-virtual';
   import { untrack } from 'svelte';
-  import Night from './night.svelte';
+  import FileElement from './file.svelte';
+  import NightElement from './night.svelte';
+
+  type Night = {
+    id: number;
+    name: string;
+    files: File[];
+  };
 
   type Props = {
-    nights: {
-      id: number;
-      name: string;
-      files: File[];
-    }[];
+    nights: Night[];
     appState: AppStateType;
   };
 
@@ -28,27 +31,85 @@
     }
   };
 
+  type NightFile = {
+    file: File;
+    night: string;
+  };
+
+  type Element =
+    | ({
+        _type: 'night';
+      } & Night)
+    | ({
+        _type: 'file';
+      } & NightFile);
+
+  const virtualElements = $derived.by<Element[]>(() => {
+    const elements: Element[] = [];
+
+    for (const night of nights) {
+      elements.push({
+        _type: 'night',
+        ...night
+      });
+
+      if (openedNights.includes(night.id)) {
+        elements.push(
+          ...night.files.map(
+            (file) =>
+              ({
+                _type: 'file',
+                file,
+                night: night.name
+              }) as const
+          )
+        );
+      }
+    }
+
+    return elements;
+  });
+
   const virtualizer = $state(
     createVirtualizer({
-      count: nights.length,
+      // svelte-ignore state_referenced_locally - we can't everytime re-create virtualizer, so we have effect under it, to update the count
+      count: virtualElements.length,
       getScrollElement: () => divElement,
-      horizontal: true,
-      estimateSize: () => 50,
-      overscan: 5
+      estimateSize: () => 35,
+      overscan: 10
     })
   );
 
   $effect(() => {
     const virtualizer = untrack(() => $virtualizer);
     virtualizer.setOptions({
-      count: nights.length
+      count: virtualElements.length
     });
   });
 </script>
 
-<div bind:this={divElement} class="flex flex-col gap-1">
-  {#each $virtualizer.getVirtualItems() as item (item.index)}
-    {@const night = nights[item.index]}
-    <Night {night} {appState} onToggle={(opened) => setNight(night.id, opened)} />
-  {/each}
+<div bind:this={divElement} class="relative h-full overflow-y-auto">
+  <div style="height: {$virtualizer.getTotalSize()}px; width: 100%; position: relative;">
+    {#each $virtualizer.getVirtualItems() as _item (_item.index)}
+      {@const item = virtualElements[_item.index]}
+      {#if item}
+        <div
+          style="position: absolute; top: 0; left: 0; width: 100%; transform: translateY({_item.start}px);"
+        >
+          {#if item._type === 'night'}
+            {@const night = item as Night}
+            <NightElement
+              {night}
+              {appState}
+              opened={openedNights.includes(item.id)}
+              onToggle={(opened) => setNight(item.id, opened)}
+            />
+          {:else}
+            {@const { file, night } = item as NightFile}
+            <FileElement {file} {night} {appState} />
+          {/if}
+        </div>
+      {/if}
+    {/each}
+  </div>
 </div>

@@ -14,10 +14,9 @@
     };
     appState: AppStateType;
     onToggle?: (state: boolean) => void;
+    opened?: boolean;
   }
-  const { night, appState, onToggle }: Props = $props();
-
-  let opened = $state(false);
+  let { night, appState, onToggle, opened = false }: Props = $props();
 
   //calculate file types count
   const fileTypesCount = $derived(
