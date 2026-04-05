@@ -5,10 +5,24 @@
   import * as Resizable from '../ui/resizable';
   import FileImport from './file-import.svelte';
   import NightConfig from './night-config.svelte';
-  import Night from './night.svelte';
-  import { isShown } from './utils';
+  import VirtualList from './virtual-list.svelte';
 
   const appState = await getAppState();
+
+  let openedNights = $state<number[]>([]);
+
+  const nights = $derived(
+    Object.entries(appState.files).map(([night, files], idx) => ({
+      id: idx,
+      name: night,
+      files
+    }))
+  );
+
+  $effect(() => {
+    console.log('outside');
+    console.log(nights);
+  });
 </script>
 
 <Resizable.Pane defaultSize={20} class="flex flex-col items-center gap-2 p-2">
@@ -38,11 +52,8 @@
     {#if Object.keys(appState.files).length === 0}
       <p class="text-center text-muted-foreground">No files imported.</p>
     {:else}
-      {#each Object.entries(appState.files) as [night, files] (night)}
-        {#if files.filter((file) => isShown(appState, file)).length > 0}
-          <Night {night} {files} {appState} />
-        {/if}
-      {/each}
+      {JSON.stringify(nights.length)}
+      <VirtualList {nights} {appState} />
     {/if}
   </div>
 </Resizable.Pane>

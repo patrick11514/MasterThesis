@@ -1,29 +1,27 @@
 <script lang="ts">
   import type { AppStateType } from '$/lib/state.svelte';
   import type { File } from '$/lib/types/File';
-  import { ChevronDownIcon, ChevronUpIcon, InfoIcon, XIcon } from '@lucide/svelte';
+  import { cn } from '$/lib/utils';
+  import { ChevronRightIcon, InfoIcon, XIcon } from '@lucide/svelte';
   import { Button } from '../ui/button';
-  import * as Collapsible from '../ui/collapsible';
   import * as Popover from '../ui/popover';
-  import FileComponent from './file.svelte';
 
   interface Props {
-    night: string;
-    files: File[];
+    night: {
+      id: number;
+      name: string;
+      files: File[];
+    };
     appState: AppStateType;
+    onToggle?: (state: boolean) => void;
   }
-  const { night, files, appState }: Props = $props();
+  const { night, appState, onToggle }: Props = $props();
 
   let opened = $state(false);
 
-  const isShown = (file: File) => {
-    const type = file.type;
-    return appState.framesShown[type];
-  };
-
   //calculate file types count
   const fileTypesCount = $derived(
-    files.reduce(
+    night.files.reduce(
       (acc, file) => {
         acc[file.type] = (acc[file.type] || 0) + 1;
         return acc;
@@ -33,18 +31,18 @@
   );
 </script>
 
-<Collapsible.Root
-  onOpenChangeComplete={(open) => {
-    opened = open;
+<button
+  onclick={() => {
+    opened = !opened;
+    onToggle?.(opened);
   }}
+  class="flex w-full items-center justify-between gap-2"
 >
-  <Collapsible.Trigger class="flex w-full items-center justify-center gap-2">
-    {night}
-    {#if !opened}
-      <ChevronUpIcon class="h-4 w-4" />
-    {:else}
-      <ChevronDownIcon class="h-4 w-4" />
-    {/if}
+  <div class="flex items-center gap-2">
+    <ChevronRightIcon class={cn('h-4 w-4 transition-all duration-150', { 'rotate-90': opened })} />
+    {night.name}
+  </div>
+  <div class="flex items-center gap-2">
     <Popover.Root>
       <Popover.Trigger class="shrink-0" onclick={(ev) => ev.stopPropagation()}>
         <Button variant="outline" size="icon-sm">
@@ -66,15 +64,10 @@
       onclick={(ev) => {
         ev.stopPropagation();
 
-        appState.removeFiles(night);
+        appState.removeFiles(night.name);
       }}
     >
       <XIcon class="h-4 w-4" />
     </Button>
-  </Collapsible.Trigger>
-  <Collapsible.Content class="gap-0">
-    {#each files.filter((file) => isShown(file)) as file (file.path)}
-      <FileComponent {night} {file} {appState} />
-    {/each}
-  </Collapsible.Content>
-</Collapsible.Root>
+  </div>
+</button>

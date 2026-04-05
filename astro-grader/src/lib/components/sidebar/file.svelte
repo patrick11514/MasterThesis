@@ -15,6 +15,14 @@
     appState: AppStateType;
   }
   const { night, file, appState }: Props = $props();
+
+  /*
+    <Collapsible.Content class="gap-0">
+    {#each files as file (file.path)}
+      <FileComponent {night} {file} {appState} />
+    {/each}
+  </Collapsible.Content>
+  */
 </script>
 
 <Item.Root class="w-full px-4 py-0">
