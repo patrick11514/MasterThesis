@@ -26,6 +26,7 @@ pub async fn fits_read_image(
     mut options: Option<ImageOptions>,
     state: tauri::State<'_, Mutex<AppState>>,
 ) -> Result<ImageData, String> {
+    let preview_path = path.to_string_lossy().to_string();
     let mut state = state.lock().unwrap();
 
     let mut image = if let Some(current_image) = &state.rust_state.current_image
@@ -60,16 +61,6 @@ pub async fn fits_read_image(
             .rust_state
             .current_image
             .replace(current_image.clone());
-
-        //at the end, we debayer the image, because we have saved the original Grayscale
-        if !current_image.data.debayer(
-            None, /* This will use the bayerpattern from FITS if presented */
-        ) {
-            //If we don't debayer, we set options to default, so we apply
-            //The 50% downscaling, so we don't transfer huge grayscale images to FE
-            options.replace(ImageOptions::default());
-        }
-
         current_image.data
     };
 
@@ -82,18 +73,26 @@ pub async fn fits_read_image(
         if options.scale != image.data.applied_options.scale {
             image.scale(options.scale);
         }
+    } else {
+        //we debayer the image, because we have saved the original Grayscale
+        if !image.debayer(
+            None, /* This will use the bayerpattern from FITS if presented */
+        ) {
+            //If we don't debayer, we set options to default, so we apply
+            //The 50% downscaling, so we don't transfer huge grayscale images to FE
+            options.replace(ImageOptions::default());
+        }
     }
 
     //calculate auto-STF
     image.calculate_stf();
-
-    println!("{:?}", image.data);
 
     let converted = image
         .to_js_imagedata()
         .ok_or("Unable to convert image data to js imagedata, unsupported layout")?;
 
     state.rust_state.current_image_data.replace(converted);
+    state.fe_state.current_preview_file.replace(preview_path);
 
     Ok(image.data)
 }

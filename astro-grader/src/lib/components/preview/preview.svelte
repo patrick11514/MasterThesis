@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getAppState } from '$/lib/state.svelte';
   import type { ImageData } from '$/lib/types/ImageData';
   import type { ImageOptions } from '$/lib/types/ImageOptions';
   import { getData } from '$/lib/utils';
@@ -10,6 +11,8 @@
   import fragmentShaderSource from './shaders/fragment.glsl?raw';
   import vertextShaderSource from './shaders/vertex.glsl?raw';
   import { previewState } from './state.svelte';
+
+  const appState = await getAppState();
 
   let canvasElement = $state<HTMLCanvasElement | null>(null);
   let rawData = $state<{
@@ -74,6 +77,28 @@
       console.log('loading image');
       loadImage(previewState.previewImage, previewState.imageOptions);
     }
+  });
+
+  $effect(() => {
+    if (previewState.previewImage) {
+      return;
+    }
+
+    if (!appState.currentPreviewFilePath) {
+      return;
+    }
+
+    const restoredFile = Object.values(appState.files)
+      .flat()
+      .find((file) => file.path === appState.currentPreviewFilePath);
+
+    if (!restoredFile) {
+      appState.setCurrentPreviewFile(null);
+      return;
+    }
+
+    previewState.previewImage = restoredFile;
+    previewState.imageOptions = undefined;
   });
 
   //https://gemini.google.com/app/3d31b5f253a4e981

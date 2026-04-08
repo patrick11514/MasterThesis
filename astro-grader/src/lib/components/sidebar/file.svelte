@@ -28,6 +28,7 @@
 
       previewState.previewImage = file;
       previewState.imageOptions = undefined;
+      appState.setCurrentPreviewFile(file.path);
     }}
   >
     <FileImageIcon class={FILE_COLORS[file.type]} />

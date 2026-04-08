@@ -62,6 +62,8 @@ pub fn run() {
             fits::fits_read_image,
             //State
             state::get_fe_state,
+            state::set_fe_state,
+            state::set_fe_current_preview_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
