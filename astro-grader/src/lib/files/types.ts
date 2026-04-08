@@ -1,9 +1,4 @@
-import type { File } from '../types/File';
 import type { FileType } from '../types/FileType';
-
-export type Files = {
-  [night: string]: File[];
-};
 
 export const FILE_TYPES = [
   'Bias',

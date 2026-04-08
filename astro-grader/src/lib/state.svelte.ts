@@ -1,18 +1,17 @@
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'svelte-sonner';
 import { parseFiles } from './files';
-import { FILE_TYPES, type Files } from './files/types';
+import { FILE_TYPES } from './files/types';
 import type { Config } from './types/Config';
+import type { FeState } from './types/FeState';
 import type { File } from './types/File';
 import type { NightPrefix } from './types/NightPrefix';
-
-type FeState = {
-  nights: Files;
-  current_preview_file?: string | null;
-};
+import type { Nights } from './types/Nights';
 
 class AppState {
-  public files = $state<Files>({});
+  public files = $state<Nights>({
+    PreviewNights: {}
+  });
   public nightPrefixes = $state<NightPrefix[]>([]);
   public currentPreviewFilePath = $state<string | null>(null);
   public loaded = false;
@@ -43,7 +42,11 @@ class AppState {
       return false;
     }
 
-    return Object.values(this.files)
+    if (!('PreviewNights' in this.files)) {
+      return false;
+    }
+
+    return Object.values(this.files.PreviewNights)
       .flat()
       .some((file) => file.path === this.currentPreviewFilePath);
   }
@@ -86,13 +89,18 @@ class AppState {
   }
 
   storeFiles(newFiles: File[]) {
-    const allFiles = Object.values(appState.files).flat();
+    const prevFiles =
+      'PreviewFiles' in this.files
+        ? Object.values(this.files.PreviewFiles as Record<string, File[]>).flat()
+        : [];
 
-    const dedup = newFiles.filter((file) => !allFiles.some((f) => f.path === file.path));
-    const files = [...allFiles, ...dedup];
+    const dedup = newFiles.filter((file) => !prevFiles.some((f) => f.path === file.path));
+    const files = [...prevFiles, ...dedup];
 
     const parsed = parseFiles(files, this.nightPrefixes);
-    this.files = parsed;
+    this.files = {
+      PreviewNights: parsed
+    };
 
     if (!this.currentPreviewStillExists()) {
       this.currentPreviewFilePath = null;
@@ -104,9 +112,14 @@ class AppState {
   }
 
   reApplyFilters() {
-    const allFiles = Object.values(appState.files).flat();
-    const parsed = parseFiles(allFiles, this.nightPrefixes);
-    this.files = parsed;
+    const prevFiles =
+      'PreviewFiles' in this.files
+        ? Object.values(this.files.PreviewFiles as Record<string, File[]>).flat()
+        : [];
+    const parsed = parseFiles(prevFiles, this.nightPrefixes);
+    this.files = {
+      PreviewNights: parsed
+    };
 
     if (!this.currentPreviewStillExists()) {
       this.currentPreviewFilePath = null;
@@ -116,14 +129,20 @@ class AppState {
   }
 
   removeFiles(night: string, filePath: string | null = null) {
-    if (filePath) {
-      this.files[night] = this.files[night].filter((file) => file.path !== filePath);
+    if (!('PreviewNights' in this.files)) {
+      return;
+    }
 
-      if (this.files[night].length === 0) {
-        delete this.files[night];
+    if (filePath) {
+      this.files.PreviewNights[night] = this.files.PreviewNights[night].filter(
+        (file) => file.path !== filePath
+      );
+
+      if (this.files.PreviewNights[night].length === 0) {
+        delete this.files.PreviewNights[night];
       }
     } else {
-      delete this.files[night];
+      delete this.files.PreviewNights[night];
     }
 
     if (!this.currentPreviewStillExists()) {

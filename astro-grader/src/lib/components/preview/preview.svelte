@@ -80,6 +80,8 @@
   });
 
   $effect(() => {
+    console.log(previewState.previewImage, appState.currentPreviewFilePath, appState.files);
+
     if (previewState.previewImage) {
       return;
     }
@@ -88,9 +90,15 @@
       return;
     }
 
-    const restoredFile = Object.values(appState.files)
+    if (!('PreviewNights' in appState.files)) {
+      return;
+    }
+
+    const restoredFile = Object.values(appState.files.PreviewNights)
       .flat()
       .find((file) => file.path === appState.currentPreviewFilePath);
+
+    console.log(restoredFile);
 
     if (!restoredFile) {
       appState.setCurrentPreviewFile(null);

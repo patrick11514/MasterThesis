@@ -1,56 +1,10 @@
 <script lang="ts">
-  import { FILE_BADGES } from '$/lib/files/types';
-  import { getAppState } from '../../state.svelte';
-  import { Badge } from '../ui/badge';
-  import * as Resizable from '../ui/resizable';
-  import FileImport from './file-import.svelte';
-  import NightConfig from './night-config.svelte';
-  import VirtualList from './virtual-list.svelte';
+  import { getAppState } from '$/lib/state.svelte';
+  import RawNights from './raw-nights.svelte';
 
   const appState = await getAppState();
-
-  const nights = $derived(
-    Object.entries(appState.files).map(([night, files], idx) => ({
-      id: idx,
-      name: night,
-      files
-    }))
-  );
-
-  $effect(() => {
-    console.log('outside');
-    console.log(nights);
-  });
 </script>
 
-<Resizable.Pane defaultSize={20} class="flex flex-col items-center gap-2 p-2">
-  <FileImport />
-
-  <NightConfig />
-
-  <div class="flex w-full flex-wrap items-center justify-center gap-2">
-    {#each Object.entries(appState.framesShown) as [type, shown] (type)}
-      <Badge
-        onclick={() => {
-          appState.framesShown[type] = !appState.framesShown[type];
-        }}
-        variant="outline"
-        class={{
-          [FILE_BADGES[type]]: true,
-          'line-through': !shown,
-          'cursor-pointer': true
-        }}
-      >
-        {type}
-      </Badge>
-    {/each}
-  </div>
-
-  <div class="h-full min-h-0 w-full flex-1">
-    {#if Object.keys(appState.files).length === 0}
-      <p class="text-center text-muted-foreground">No files imported.</p>
-    {:else}
-      <VirtualList {nights} {appState} />
-    {/if}
-  </div>
-</Resizable.Pane>
+{#if 'PreviewNights' in appState.files}
+  <RawNights {appState} nights={appState.files.PreviewNights} />
+{/if}

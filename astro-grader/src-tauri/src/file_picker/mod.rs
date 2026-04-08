@@ -8,7 +8,7 @@ use walkdir::WalkDir;
 
 use crate::fits::FileType;
 
-#[derive(serde::Serialize, serde::Deserialize, TS)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]
 pub struct File {
     path: PathBuf,

@@ -1,6 +1,6 @@
 use ts_rs::TS;
 
-#[derive(serde::Serialize, serde::Deserialize, TS)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]
 pub enum FileType {
     Light,
