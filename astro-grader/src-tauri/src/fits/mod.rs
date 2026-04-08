@@ -1,10 +1,13 @@
-use std::{path::PathBuf, sync::Mutex, thread::current};
+use std::{path::PathBuf, sync::Mutex};
 
-use crate::fits::{
-    file::ReadImageError,
-    image_data_pixels::{ImageData, ImageOptions},
-    structs::FitsOpenError,
-    utils::normalize_data,
+use crate::{
+    fits::{
+        file::ReadImageError,
+        image_data_pixels::{ImageData, ImageOptions},
+        structs::FitsOpenError,
+        utils::normalize_data,
+    },
+    state::AppState,
 };
 
 mod file;
@@ -21,11 +24,11 @@ pub use structs::FileType;
 pub async fn fits_read_image(
     path: PathBuf,
     mut options: Option<ImageOptions>,
-    state: tauri::State<'_, Mutex<crate::AppState>>,
+    state: tauri::State<'_, Mutex<AppState>>,
 ) -> Result<ImageData, String> {
     let mut state = state.lock().unwrap();
 
-    let mut image = if let Some(current_image) = &state.current_image
+    let mut image = if let Some(current_image) = &state.rust_state.current_image
         && current_image.path == path
     {
         current_image.data.clone()
@@ -50,10 +53,13 @@ pub async fn fits_read_image(
         normalize_data(&mut image.pixels, &image_type);
         image.to_rgb_layout();
 
-        let mut current_image = crate::app_state::CurrentImage { path, data: image };
+        let mut current_image = crate::state::CurrentImage { path, data: image };
 
         //save current image to app state
-        state.current_image.replace(current_image.clone());
+        state
+            .rust_state
+            .current_image
+            .replace(current_image.clone());
 
         //at the end, we debayer the image, because we have saved the original Grayscale
         if !current_image.data.debayer(
@@ -87,7 +93,7 @@ pub async fn fits_read_image(
         .to_js_imagedata()
         .ok_or("Unable to convert image data to js imagedata, unsupported layout")?;
 
-    state.current_image_data.replace(converted);
+    state.rust_state.current_image_data.replace(converted);
 
     Ok(image.data)
 }

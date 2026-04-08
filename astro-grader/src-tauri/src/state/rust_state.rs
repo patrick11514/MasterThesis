@@ -1,4 +1,4 @@
-use std::{path::PathBuf, sync::Mutex};
+use std::path::PathBuf;
 
 use crate::fits::ImageDataPixels;
 
@@ -9,7 +9,7 @@ pub struct CurrentImage {
 }
 
 #[derive(Debug, Default)]
-pub struct AppState {
+pub struct RustState {
     pub current_image: Option<CurrentImage>,
     pub current_image_data: Option<Vec<u8>>,
 }

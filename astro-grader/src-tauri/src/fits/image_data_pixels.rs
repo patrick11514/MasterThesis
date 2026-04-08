@@ -1,4 +1,3 @@
-use fitsio::images::ReadImage;
 use rayon::{
     iter::{IndexedParallelIterator, ParallelIterator},
     slice::ParallelSliceMut,

@@ -15,17 +15,9 @@
     appState: AppStateType;
   }
   const { night, file, appState }: Props = $props();
-
-  /*
-    <Collapsible.Content class="gap-0">
-    {#each files as file (file.path)}
-      <FileComponent {night} {file} {appState} />
-    {/each}
-  </Collapsible.Content>
-  */
 </script>
 
-<Item.Root class="w-full p-0">
+<Item.Root class="w-full border-none p-0">
   <Item.Content
     class="flex w-full flex-row items-center gap-2"
     onclick={(ev) => {
@@ -51,7 +43,7 @@
       </DropdownMenu.Trigger>
       <DropdownMenu.Content class="w-56">
         <DropdownMenu.Group>
-          <DropdownMenu.Label>Panel Position</DropdownMenu.Label>
+          <DropdownMenu.Label>File Type</DropdownMenu.Label>
           <DropdownMenu.Separator />
           <DropdownMenu.RadioGroup bind:value={file.type}>
             {#each FILE_TYPES as type (type)}
