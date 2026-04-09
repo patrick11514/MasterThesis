@@ -18,7 +18,9 @@ mod utils;
 
 //public re-exports
 pub use image_data_pixels::ImageDataPixels;
+pub use file::FitsFile;
 pub use structs::FileType;
+pub use tag::Tag;
 
 #[tauri::command]
 pub async fn fits_read_image(

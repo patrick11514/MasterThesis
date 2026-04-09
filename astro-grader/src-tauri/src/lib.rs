@@ -64,6 +64,7 @@ pub fn run() {
             state::get_fe_state,
             state::set_fe_state,
             state::set_fe_current_preview_file,
+            state::group_frames,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

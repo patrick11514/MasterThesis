@@ -43,6 +43,42 @@
             });
           }}>Add Night Filter</Button
         >
+        <div class="grid gap-4 rounded-lg border border-border bg-muted/20 p-4">
+          <div class="text-sm font-medium">Grouping offsets</div>
+          <div class="grid gap-2 sm:grid-cols-3">
+            <div class="grid gap-1">
+              <Label for="temperature-step">Temperature step</Label>
+              <Input
+                id="temperature-step"
+                type="number"
+                min="0"
+                step="0.1"
+                bind:value={appState.temperatureStep}
+              />
+              <p class="text-xs text-muted-foreground">-19.5 becomes -20 with a step of 1.0.</p>
+            </div>
+            <div class="grid gap-1">
+              <Label for="exposure-step">Exposure step</Label>
+              <Input
+                id="exposure-step"
+                type="number"
+                min="0"
+                step="0.1"
+                bind:value={appState.exposureStep}
+              />
+            </div>
+            <div class="grid gap-1">
+              <Label for="gain-step">Gain step</Label>
+              <Input
+                id="gain-step"
+                type="number"
+                min="0"
+                step="0.1"
+                bind:value={appState.gainStep}
+              />
+            </div>
+          </div>
+        </div>
         <div class="grid gap-4">
           {#each appState.nightPrefixes as filter, index (index)}
             <div class="flex items-center gap-2">

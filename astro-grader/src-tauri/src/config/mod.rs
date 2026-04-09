@@ -16,10 +16,35 @@ pub struct NightPrefix {
     prefix_type: Type,
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Default, TS)]
+fn default_temperature_step() -> f32 {
+    1.0
+}
+
+fn default_zero_step() -> f32 {
+    0.0
+}
+
+#[derive(serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]
 pub struct Config {
-    night_prefixes: Vec<NightPrefix>,
+    pub night_prefixes: Vec<NightPrefix>,
+    #[serde(default = "default_temperature_step")]
+    pub temperature_step: f32,
+    #[serde(default = "default_zero_step")]
+    pub exposure_step: f32,
+    #[serde(default = "default_zero_step")]
+    pub gain_step: f32,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            night_prefixes: Vec::new(),
+            temperature_step: default_temperature_step(),
+            exposure_step: default_zero_step(),
+            gain_step: default_zero_step(),
+        }
+    }
 }
 
 #[derive(Debug)]

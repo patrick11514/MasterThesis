@@ -17,6 +17,16 @@ pub struct File {
     file_type: FileType,
 }
 
+impl File {
+    pub fn path(&self) -> &PathBuf {
+        &self.path
+    }
+
+    pub fn file_type(&self) -> &FileType {
+        &self.file_type
+    }
+}
+
 fn path_to_file(file_path: PathBuf) -> Option<File> {
     if let Ok(mut fits_file) = fitsio::FitsFile::open(&file_path) {
         if let Ok(hdu) = fits_file.primary_hdu() {

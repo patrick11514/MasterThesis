@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { FolderIcon, FolderPlusIcon, PlusIcon, SearchIcon } from '@lucide/svelte';
+  import { FolderIcon, FolderPlusIcon, LoaderIcon, PlusIcon, SearchIcon } from '@lucide/svelte';
   import { Channel } from '@tauri-apps/api/core';
   import { tick } from 'svelte';
   import { toast } from 'svelte-sonner';
@@ -12,11 +12,13 @@
   enum State {
     Idle,
     Scanning,
+    Grouping,
     Finished
   }
 
-  let currentState = $state(State.Idle);
+  let currentState: State = $state(State.Idle);
   let scannedFiles = $state(0);
+  let groupingProgress = $state({ processed: 0, total: 0 });
 
   const appState = await getAppState();
 
@@ -51,6 +53,32 @@
 
     currentState = State.Finished;
   };
+
+  const groupFrames = async () => {
+    currentState = State.Grouping;
+    groupingProgress = {
+      processed: 0,
+      total: 'PreviewNights' in appState.files
+        ? Object.values(appState.files.PreviewNights).flat().length
+        : 0
+    };
+
+    const grouped = await appState.groupFrames((progress) => {
+      groupingProgress = progress;
+    });
+
+    currentState = grouped ? State.Finished : State.Idle;
+  };
+
+  const groupPercent = $derived.by(() => {
+    if (groupingProgress.total === 0) {
+      return 0;
+    }
+
+    return Math.min(100, Math.round((groupingProgress.processed / groupingProgress.total) * 100));
+  });
+
+  const busy = $derived.by(() => currentState === State.Scanning || currentState === State.Grouping);
 </script>
 
 <div class="flex w-full flex-col items-center justify-center gap-2">
@@ -61,6 +89,8 @@
         <FolderIcon class="h-4 w-4" /> Import files
       {:else if currentState === State.Scanning}
         <SearchIcon class="h-4 w-4" /> Scanning... {scannedFiles} found
+      {:else if currentState === State.Grouping}
+        <LoaderIcon class="h-4 w-4 animate-spin" /> Grouping... {groupPercent}%
       {:else if currentState === State.Finished}
         <FolderIcon class="h-4 w-4" /> Done!
       {/if}
@@ -69,7 +99,7 @@
   </div>
   <div class="flex flex-wrap gap-2">
     <Button
-      disabled={currentState === State.Scanning}
+      disabled={busy}
       onclick={() => selectFiles(false)}
       variant="outline"
       size="sm"
@@ -77,12 +107,35 @@
       <PlusIcon class="h-4 w-4" /> Add new files
     </Button>
     <Button
-      disabled={currentState === State.Scanning}
+      disabled={busy}
       onclick={() => selectFiles(true)}
       variant="outline"
       size="sm"
     >
       <FolderPlusIcon class="h-4 w-4" />
     </Button>
+    <Button disabled={busy} onclick={groupFrames} variant="default" size="sm">
+      <LoaderIcon class="h-4 w-4" /> Group frames
+    </Button>
   </div>
+
+  {#if currentState === State.Grouping}
+    <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+      <div class="w-full max-w-sm rounded-xl border border-border bg-background p-5 shadow-2xl">
+        <div class="mb-3 flex items-center gap-2 text-base font-medium">
+          <LoaderIcon class="h-4 w-4 animate-spin" /> Grouping frames
+        </div>
+        <div class="mb-2 flex items-center justify-between text-sm text-muted-foreground">
+          <span>{groupingProgress.processed} / {groupingProgress.total} files</span>
+          <span>{groupPercent}%</span>
+        </div>
+        <div class="h-2 overflow-hidden rounded-full bg-muted">
+          <div
+            class="h-full rounded-full bg-primary transition-all duration-200"
+            style={`width: ${groupPercent}%`}
+          ></div>
+        </div>
+      </div>
+    </div>
+  {/if}
 </div>

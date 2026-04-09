@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { Channel, invoke } from '@tauri-apps/api/core';
 import { toast } from 'svelte-sonner';
 import { parseFiles } from './files';
 import { FILE_TYPES } from './files/types';
@@ -13,6 +13,9 @@ class AppState {
     PreviewNights: {}
   });
   public nightPrefixes = $state<NightPrefix[]>([]);
+  public temperatureStep = $state(1);
+  public exposureStep = $state(0);
+  public gainStep = $state(0);
   public currentPreviewFilePath = $state<string | null>(null);
   public loaded = false;
   public framesShown = $state(Object.fromEntries(FILE_TYPES.map((type) => [type, true])));
@@ -57,6 +60,9 @@ class AppState {
       const feState = await invoke<FeState>('get_fe_state');
 
       this.nightPrefixes = config.night_prefixes;
+      this.temperatureStep = config.temperature_step ?? 1;
+      this.exposureStep = config.exposure_step ?? 0;
+      this.gainStep = config.gain_step ?? 0;
       this.files = feState.nights ?? {};
       this.currentPreviewFilePath = feState.current_preview_file ?? null;
 
@@ -76,7 +82,10 @@ class AppState {
   async saveConfig() {
     try {
       const config = {
-        night_prefixes: this.nightPrefixes
+        night_prefixes: this.nightPrefixes,
+        temperature_step: this.temperatureStep,
+        exposure_step: this.exposureStep,
+        gain_step: this.gainStep
       } satisfies Config;
 
       await invoke('config_set', { config });
@@ -90,8 +99,8 @@ class AppState {
 
   storeFiles(newFiles: File[]) {
     const prevFiles =
-      'PreviewFiles' in this.files
-        ? Object.values(this.files.PreviewFiles as Record<string, File[]>).flat()
+      'PreviewNights' in this.files
+        ? Object.values(this.files.PreviewNights as Record<string, File[]>).flat()
         : [];
 
     const dedup = newFiles.filter((file) => !prevFiles.some((f) => f.path === file.path));
@@ -113,8 +122,8 @@ class AppState {
 
   reApplyFilters() {
     const prevFiles =
-      'PreviewFiles' in this.files
-        ? Object.values(this.files.PreviewFiles as Record<string, File[]>).flat()
+      'PreviewNights' in this.files
+        ? Object.values(this.files.PreviewNights as Record<string, File[]>).flat()
         : [];
     const parsed = parseFiles(prevFiles, this.nightPrefixes);
     this.files = {
@@ -150,6 +159,45 @@ class AppState {
     }
 
     void this.persistFeState();
+  }
+
+  async groupFrames(onProgress?: (progress: { processed: number; total: number }) => void) {
+    if (!('PreviewNights' in this.files)) {
+      toast.error('Frames are already grouped');
+      return false;
+    }
+
+    const totalFiles = Object.values(this.files.PreviewNights).flat().length;
+    if (totalFiles === 0) {
+      toast.error('No preview frames to group');
+      return false;
+    }
+
+    try {
+      const channel = new Channel<{ processed: number; total: number }>();
+      channel.onmessage = (message) => {
+        onProgress?.(message);
+      };
+
+      const feState = await invoke<FeState>('group_frames', { channel });
+
+      this.files = feState.nights;
+      this.currentPreviewFilePath = feState.current_preview_file ?? null;
+
+      if (!this.currentPreviewStillExists()) {
+        this.currentPreviewFilePath = null;
+      }
+
+      void this.persistFeState();
+      toast.success('Frames grouped');
+
+      return true;
+    } catch (error) {
+      toast.error('Failed to group frames', {
+        description: error as string
+      });
+      return false;
+    }
   }
 }
 
