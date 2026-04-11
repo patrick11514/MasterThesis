@@ -202,9 +202,9 @@ fn calibration_matches_session(
                 .as_deref()
                 .is_none_or(|value| session.camera == value)
                 && metadata
-                .filter
-                .as_deref()
-                .is_none_or(|value| session.filter == value)
+                    .filter
+                    .as_deref()
+                    .is_none_or(|value| session.filter == value)
                 && metadata
                     .exposure
                     .is_none_or(|value| approx_equal(session.exposure, value))
@@ -221,8 +221,8 @@ fn calibration_matches_session(
                 .as_deref()
                 .is_none_or(|value| session.camera == value)
                 && metadata
-                .exposure
-                .is_none_or(|value| approx_equal(session.exposure, value))
+                    .exposure
+                    .is_none_or(|value| approx_equal(session.exposure, value))
                 && metadata
                     .gain
                     .is_none_or(|value| approx_equal(session.gain, value))
@@ -236,9 +236,9 @@ fn calibration_matches_session(
                 .as_deref()
                 .is_none_or(|value| session.camera == value)
                 && metadata
-                .filter
-                .as_deref()
-                .is_none_or(|value| session.filter == value)
+                    .filter
+                    .as_deref()
+                    .is_none_or(|value| session.filter == value)
                 && metadata
                     .gain
                     .is_none_or(|value| approx_equal(session.gain, value))

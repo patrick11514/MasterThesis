@@ -1,12 +1,5 @@
 <script lang="ts">
-  import {
-    FolderIcon,
-    FolderPlusIcon,
-    LoaderIcon,
-    PlusIcon,
-    SearchIcon,
-    XIcon
-  } from '@lucide/svelte';
+  import { FolderPlusIcon, LoaderIcon, PlusIcon, SearchIcon, XIcon } from '@lucide/svelte';
   import { Channel } from '@tauri-apps/api/core';
   import { tick } from 'svelte';
   import { toast } from 'svelte-sonner';
@@ -109,38 +102,38 @@
 </script>
 
 <div class="flex w-full flex-col items-center justify-center gap-2">
-  <div class="flex w-full flex-wrap items-center text-center text-lg">
+  <div class="flex w-full flex-wrap gap-2">
     <ModeButton class="mr-auto" />
-    <div class="mr-auto flex flex-wrap items-center gap-2">
-      {#if currentState === State.Idle}
-        <FolderIcon class="h-4 w-4" /> Import files
-      {:else if currentState === State.Scanning}
-        <SearchIcon class="h-4 w-4" />
-        <span>{cancelRequested ? 'Stopping scan...' : `Scanning... ${scannedFiles} found`}</span>
-        <Button
-          variant="destructive"
-          size="icon-sm"
-          onclick={cancelScan}
-          disabled={cancelRequested}
-        >
-          <XIcon class="h-4 w-4" />
-        </Button>
-      {:else if currentState === State.Grouping}
-        <LoaderIcon class="h-4 w-4 animate-spin" /> Grouping... {groupPercent}%
-      {:else if currentState === State.Finished}
-        <FolderIcon class="h-4 w-4" /> Done!
-      {/if}
-    </div>
-    <ModeButton class="invisible" />
-  </div>
-  <div class="flex flex-wrap gap-2">
     <Button disabled={busy} onclick={() => selectFiles(false)} variant="outline" size="sm">
       <PlusIcon class="h-4 w-4" /> Add new files
     </Button>
     <Button disabled={busy} onclick={() => selectFiles(true)} variant="outline" size="sm">
       <FolderPlusIcon class="h-4 w-4" />
     </Button>
+    <ModeButton class="invisible ml-auto" />
   </div>
+
+  {#if currentState === State.Scanning}
+    <div
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+    >
+      <div class="w-full max-w-sm rounded-xl border border-border bg-background p-5 shadow-2xl">
+        <div class="mb-3 flex items-center gap-2 text-base font-medium">
+          <SearchIcon class="h-4 w-4 animate-pulse" /> Scanning files
+        </div>
+        <div class="mb-2 flex items-center justify-between text-sm text-muted-foreground">
+          <span>
+            {cancelRequested ? 'Stopping scan...' : `Scanned ${scannedFiles} files`}
+          </span>
+        </div>
+        <div class="flex justify-end gap-2">
+          <Button variant="destructive" size="sm" onclick={cancelScan} disabled={cancelRequested}>
+            <XIcon class="h-4 w-4" /> Stop
+          </Button>
+        </div>
+      </div>
+    </div>
+  {/if}
 
   <div class="flex">
     {#if Object.keys(appState.rawNights).length > 0}
