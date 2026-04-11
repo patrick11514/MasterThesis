@@ -15,6 +15,11 @@
     appState: AppStateType;
   }
   const { night, file, appState }: Props = $props();
+
+  const getType = () => file.type;
+  const setType = (type: File['type']) => {
+    appState.updateFileType(night, file.path, type);
+  };
 </script>
 
 <Item.Root class="w-full border-none p-0">
@@ -46,7 +51,7 @@
         <DropdownMenu.Group>
           <DropdownMenu.Label>File Type</DropdownMenu.Label>
           <DropdownMenu.Separator />
-          <DropdownMenu.RadioGroup bind:value={file.type}>
+          <DropdownMenu.RadioGroup bind:value={getType, setType}>
             {#each FILE_TYPES as type (type)}
               <DropdownMenu.RadioItem value={type}>{type}</DropdownMenu.RadioItem>
             {/each}

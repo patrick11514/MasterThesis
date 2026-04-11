@@ -8,6 +8,7 @@ use crate::file_picker::File;
 #[ts(export)]
 pub struct SessionFingerprint {
     pub name: String,
+    pub camera: String,
     pub filter: String,
     pub exposure: f32,
     pub gain: f32,

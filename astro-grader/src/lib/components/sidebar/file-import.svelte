@@ -117,8 +117,13 @@
       {:else if currentState === State.Scanning}
         <SearchIcon class="h-4 w-4" />
         <span>{cancelRequested ? 'Stopping scan...' : `Scanning... ${scannedFiles} found`}</span>
-        <Button variant="destructive" size="sm" onclick={cancelScan} disabled={cancelRequested}>
-          <XIcon class="h-4 w-4" /> Stop
+        <Button
+          variant="destructive"
+          size="icon-sm"
+          onclick={cancelScan}
+          disabled={cancelRequested}
+        >
+          <XIcon class="h-4 w-4" />
         </Button>
       {:else if currentState === State.Grouping}
         <LoaderIcon class="h-4 w-4 animate-spin" /> Grouping... {groupPercent}%
@@ -135,9 +140,14 @@
     <Button disabled={busy} onclick={() => selectFiles(true)} variant="outline" size="sm">
       <FolderPlusIcon class="h-4 w-4" />
     </Button>
-    <Button disabled={busy} onclick={groupFrames} variant="default" size="sm">
-      <LoaderIcon class="h-4 w-4" /> Group frames
-    </Button>
+  </div>
+
+  <div class="flex">
+    {#if Object.keys(appState.rawNights).length > 0}
+      <Button disabled={busy} onclick={groupFrames} variant="default" size="sm">
+        <LoaderIcon class="h-4 w-4" /> Group frames
+      </Button>
+    {/if}
   </div>
 
   {#if currentState === State.Grouping}

@@ -31,6 +31,7 @@ pub struct GroupFramesProgress {
 #[derive(Debug, Clone)]
 struct FrameMetadata {
     source_night: String,
+    camera: Option<String>,
     filter: Option<String>,
     exposure: Option<f32>,
     gain: Option<f32>,
@@ -133,6 +134,10 @@ fn read_frame_metadata(file: &File, source_night: &str) -> Option<FrameMetadata>
 
     Some(FrameMetadata {
         source_night: source_night.to_string(),
+        camera: fits
+            .get_tag_value(Tag::Camera)
+            .map(|value| value.trim().to_lowercase())
+            .filter(|value| !value.is_empty()),
         filter: fits
             .get_tag_value(Tag::Filter)
             .map(|value| value.trim().to_lowercase())
@@ -145,8 +150,9 @@ fn read_frame_metadata(file: &File, source_night: &str) -> Option<FrameMetadata>
 
 fn light_session_key(metadata: &FrameMetadata) -> String {
     format!(
-        "light:{}:{}:{}:{}:{}",
+        "light:{}:{}:{}:{}:{}:{}",
         metadata.source_night,
+        format_optional_text(metadata.camera.as_deref()),
         format_optional_text(metadata.filter.as_deref()),
         format_optional_float(metadata.exposure),
         format_optional_float(metadata.gain),
@@ -163,8 +169,9 @@ fn calibration_session_key(kind: SessionKind, metadata: &FrameMetadata) -> Strin
     };
 
     format!(
-        "{kind_prefix}:{}:{}:{}:{}:{}",
+        "{kind_prefix}:{}:{}:{}:{}:{}:{}",
         metadata.source_night,
+        format_optional_text(metadata.camera.as_deref()),
         format_optional_text(metadata.filter.as_deref()),
         format_optional_float(metadata.exposure),
         format_optional_float(metadata.gain),
@@ -175,6 +182,7 @@ fn calibration_session_key(kind: SessionKind, metadata: &FrameMetadata) -> Strin
 fn create_session_fingerprint(metadata: &FrameMetadata) -> SessionFingerprint {
     SessionFingerprint {
         name: metadata.source_night.clone(),
+        camera: metadata.camera.clone().unwrap_or_default(),
         filter: metadata.filter.clone().unwrap_or_default(),
         exposure: metadata.exposure.unwrap_or_default(),
         gain: metadata.gain.unwrap_or_default(),
@@ -190,6 +198,10 @@ fn calibration_matches_session(
     match kind {
         SessionKind::Light => {
             metadata
+                .camera
+                .as_deref()
+                .is_none_or(|value| session.camera == value)
+                && metadata
                 .filter
                 .as_deref()
                 .is_none_or(|value| session.filter == value)
@@ -205,6 +217,10 @@ fn calibration_matches_session(
         }
         SessionKind::Dark => {
             metadata
+                .camera
+                .as_deref()
+                .is_none_or(|value| session.camera == value)
+                && metadata
                 .exposure
                 .is_none_or(|value| approx_equal(session.exposure, value))
                 && metadata
@@ -216,23 +232,25 @@ fn calibration_matches_session(
         }
         SessionKind::Flat => {
             metadata
+                .camera
+                .as_deref()
+                .is_none_or(|value| session.camera == value)
+                && metadata
                 .filter
                 .as_deref()
                 .is_none_or(|value| session.filter == value)
                 && metadata
                     .gain
                     .is_none_or(|value| approx_equal(session.gain, value))
-                && metadata
-                    .temperature
-                    .is_none_or(|value| approx_equal(session.temperature, value))
         }
         SessionKind::Bias => {
             metadata
-                .gain
-                .is_none_or(|value| approx_equal(session.gain, value))
+                .camera
+                .as_deref()
+                .is_none_or(|value| session.camera == value)
                 && metadata
-                    .temperature
-                    .is_none_or(|value| approx_equal(session.temperature, value))
+                    .gain
+                    .is_none_or(|value| approx_equal(session.gain, value))
         }
     }
 }
@@ -269,6 +287,7 @@ fn group_preview_nights(
 
             let metadata = FrameMetadata {
                 source_night: metadata.source_night,
+                camera: metadata.camera,
                 filter: metadata.filter,
                 exposure: round_to_step(metadata.exposure, exposure_step),
                 gain: round_to_step(metadata.gain, gain_step),
@@ -294,6 +313,10 @@ fn group_preview_nights(
         let mut matched_any = false;
 
         for bucket in light_sessions.values_mut() {
+            if kind == SessionKind::Flat && bucket.fingerprint.name != metadata.source_night {
+                continue;
+            }
+
             if calibration_matches_session(kind, &bucket.fingerprint, &metadata) {
                 bucket.push(kind, file.clone());
                 matched_any = true;

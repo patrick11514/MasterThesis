@@ -7,6 +7,7 @@ import type { Config } from './types/Config';
 import type { FeState } from './types/FeState';
 import type { File } from './types/File';
 import type { NightPrefix } from './types/NightPrefix';
+import { sortFunction } from './utils';
 
 class AppState {
   public rawNights = $state<Record<string, File[]>>({});
@@ -19,6 +20,24 @@ class AppState {
   public currentPreviewFilePath = $state<string | null>(null);
   public loaded = false;
   public framesShown = $state(Object.fromEntries(FILE_TYPES.map((type) => [type, true])));
+
+  private sortRawNights(rawNights: Record<string, File[]>) {
+    const sortedRawNights: Record<string, File[]> = {};
+
+    if (rawNights.Unsorted) {
+      sortedRawNights.Unsorted = rawNights.Unsorted;
+    }
+
+    const sortedKeys = Object.keys(rawNights)
+      .filter((key) => key !== 'Unsorted')
+      .sort((left, right) => sortFunction(left, right));
+
+    for (const key of sortedKeys) {
+      sortedRawNights[key] = rawNights[key];
+    }
+
+    return sortedRawNights;
+  }
 
   private persistFeState = async () => {
     try {
@@ -45,6 +64,11 @@ class AppState {
   public setActiveGroupedSession(uuid: string | null) {
     this.activeGroupedSessionUuid = uuid;
     void this.persistFeState();
+  }
+
+  private invalidateGroupedSessions() {
+    this.groupedNights = [];
+    this.activeGroupedSessionUuid = null;
   }
 
   private normalizeActiveGroupedSession() {
@@ -80,7 +104,7 @@ class AppState {
       this.temperatureStep = config.temperature_step ?? 1;
       this.exposureStep = config.exposure_step ?? 0;
       this.gainStep = config.gain_step ?? 0;
-      this.rawNights = feState.raw_nights ?? {};
+      this.rawNights = this.sortRawNights(feState.raw_nights ?? {});
       this.groupedNights = feState.grouped_nights ?? [];
       this.activeGroupedSessionUuid = feState.active_grouped_session_uuid ?? null;
       this.currentPreviewFilePath = feState.current_preview_file ?? null;
@@ -126,8 +150,7 @@ class AppState {
 
     const parsed = parseFiles(files, this.nightPrefixes);
     this.rawNights = parsed;
-    this.groupedNights = [];
-    this.activeGroupedSessionUuid = null;
+    this.invalidateGroupedSessions();
 
     if (!this.currentPreviewStillExists()) {
       this.currentPreviewFilePath = null;
@@ -142,8 +165,7 @@ class AppState {
     const prevFiles = Object.values(this.rawNights).flat();
     const parsed = parseFiles(prevFiles, this.nightPrefixes);
     this.rawNights = parsed;
-    this.groupedNights = [];
-    this.activeGroupedSessionUuid = null;
+    this.invalidateGroupedSessions();
 
     if (!this.currentPreviewStillExists()) {
       this.currentPreviewFilePath = null;
@@ -167,8 +189,7 @@ class AppState {
       delete this.rawNights[night];
     }
 
-    this.groupedNights = [];
-    this.activeGroupedSessionUuid = null;
+    this.invalidateGroupedSessions();
 
     if (!this.currentPreviewStillExists()) {
       this.currentPreviewFilePath = null;
@@ -192,7 +213,7 @@ class AppState {
 
       const feState = await invoke<FeState>('group_frames', { channel });
 
-      this.rawNights = feState.raw_nights ?? {};
+      this.rawNights = this.sortRawNights(feState.raw_nights ?? {});
       this.groupedNights = feState.grouped_nights ?? [];
       this.activeGroupedSessionUuid = feState.active_grouped_session_uuid ?? null;
       this.currentPreviewFilePath = feState.current_preview_file ?? null;
@@ -213,6 +234,22 @@ class AppState {
       });
       return false;
     }
+  }
+
+  updateFileType(night: string, filePath: string, type: File['type']) {
+    const files = this.rawNights[night];
+    if (!files) {
+      return;
+    }
+
+    const target = files.find((file) => file.path === filePath);
+    if (!target) {
+      return;
+    }
+
+    target.type = type;
+    this.invalidateGroupedSessions();
+    void this.persistFeState();
   }
 }
 
