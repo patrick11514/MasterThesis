@@ -51,6 +51,10 @@ export const promptDirectory = async (channel: Channel<number>) => {
   });
 };
 
+export const cancelDirectoryScan = async () => {
+  await invoke('file_picker_cancel_recursive');
+};
+
 /*
  * Parses an array of File objects and groups them based on the provided NightPrefix filters.
  * Iterates through all path segments and COMBINES all matching filters into a single group key.

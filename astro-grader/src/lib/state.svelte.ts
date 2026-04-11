@@ -2,16 +2,16 @@ import { Channel, invoke } from '@tauri-apps/api/core';
 import { toast } from 'svelte-sonner';
 import { parseFiles } from './files';
 import { FILE_TYPES } from './files/types';
+import type { AstroSession } from './types/AstroSession';
 import type { Config } from './types/Config';
 import type { FeState } from './types/FeState';
 import type { File } from './types/File';
 import type { NightPrefix } from './types/NightPrefix';
-import type { Nights } from './types/Nights';
 
 class AppState {
-  public files = $state<Nights>({
-    PreviewNights: {}
-  });
+  public rawNights = $state<Record<string, File[]>>({});
+  public groupedNights = $state<AstroSession[]>([]);
+  public activeGroupedSessionUuid = $state<string | null>(null);
   public nightPrefixes = $state<NightPrefix[]>([]);
   public temperatureStep = $state(1);
   public exposureStep = $state(0);
@@ -24,7 +24,9 @@ class AppState {
     try {
       await invoke('set_fe_state', {
         feState: {
-          nights: this.files,
+          raw_nights: this.rawNights,
+          grouped_nights: this.groupedNights,
+          active_grouped_session_uuid: this.activeGroupedSessionUuid,
           current_preview_file: this.currentPreviewFilePath
         } satisfies FeState
       });
@@ -40,16 +42,31 @@ class AppState {
     void invoke('set_fe_current_preview_file', { path });
   }
 
+  public setActiveGroupedSession(uuid: string | null) {
+    this.activeGroupedSessionUuid = uuid;
+    void this.persistFeState();
+  }
+
+  private normalizeActiveGroupedSession() {
+    if (this.groupedNights.length === 0) {
+      this.activeGroupedSessionUuid = null;
+      return;
+    }
+
+    const exists = this.groupedNights.some(
+      (session) => session.uuid === this.activeGroupedSessionUuid
+    );
+    if (!exists) {
+      this.activeGroupedSessionUuid = this.groupedNights[0]?.uuid ?? null;
+    }
+  }
+
   private currentPreviewStillExists() {
     if (!this.currentPreviewFilePath) {
       return false;
     }
 
-    if (!('PreviewNights' in this.files)) {
-      return false;
-    }
-
-    return Object.values(this.files.PreviewNights)
+    return Object.values(this.rawNights)
       .flat()
       .some((file) => file.path === this.currentPreviewFilePath);
   }
@@ -63,8 +80,12 @@ class AppState {
       this.temperatureStep = config.temperature_step ?? 1;
       this.exposureStep = config.exposure_step ?? 0;
       this.gainStep = config.gain_step ?? 0;
-      this.files = feState.nights ?? {};
+      this.rawNights = feState.raw_nights ?? {};
+      this.groupedNights = feState.grouped_nights ?? [];
+      this.activeGroupedSessionUuid = feState.active_grouped_session_uuid ?? null;
       this.currentPreviewFilePath = feState.current_preview_file ?? null;
+
+      this.normalizeActiveGroupedSession();
 
       if (!this.currentPreviewStillExists()) {
         this.currentPreviewFilePath = null;
@@ -98,18 +119,15 @@ class AppState {
   }
 
   storeFiles(newFiles: File[]) {
-    const prevFiles =
-      'PreviewNights' in this.files
-        ? Object.values(this.files.PreviewNights as Record<string, File[]>).flat()
-        : [];
+    const prevFiles = Object.values(this.rawNights).flat();
 
     const dedup = newFiles.filter((file) => !prevFiles.some((f) => f.path === file.path));
     const files = [...prevFiles, ...dedup];
 
     const parsed = parseFiles(files, this.nightPrefixes);
-    this.files = {
-      PreviewNights: parsed
-    };
+    this.rawNights = parsed;
+    this.groupedNights = [];
+    this.activeGroupedSessionUuid = null;
 
     if (!this.currentPreviewStillExists()) {
       this.currentPreviewFilePath = null;
@@ -121,14 +139,11 @@ class AppState {
   }
 
   reApplyFilters() {
-    const prevFiles =
-      'PreviewNights' in this.files
-        ? Object.values(this.files.PreviewNights as Record<string, File[]>).flat()
-        : [];
+    const prevFiles = Object.values(this.rawNights).flat();
     const parsed = parseFiles(prevFiles, this.nightPrefixes);
-    this.files = {
-      PreviewNights: parsed
-    };
+    this.rawNights = parsed;
+    this.groupedNights = [];
+    this.activeGroupedSessionUuid = null;
 
     if (!this.currentPreviewStillExists()) {
       this.currentPreviewFilePath = null;
@@ -138,21 +153,22 @@ class AppState {
   }
 
   removeFiles(night: string, filePath: string | null = null) {
-    if (!('PreviewNights' in this.files)) {
+    if (!(night in this.rawNights)) {
       return;
     }
 
     if (filePath) {
-      this.files.PreviewNights[night] = this.files.PreviewNights[night].filter(
-        (file) => file.path !== filePath
-      );
+      this.rawNights[night] = this.rawNights[night].filter((file) => file.path !== filePath);
 
-      if (this.files.PreviewNights[night].length === 0) {
-        delete this.files.PreviewNights[night];
+      if (this.rawNights[night].length === 0) {
+        delete this.rawNights[night];
       }
     } else {
-      delete this.files.PreviewNights[night];
+      delete this.rawNights[night];
     }
+
+    this.groupedNights = [];
+    this.activeGroupedSessionUuid = null;
 
     if (!this.currentPreviewStillExists()) {
       this.currentPreviewFilePath = null;
@@ -162,12 +178,7 @@ class AppState {
   }
 
   async groupFrames(onProgress?: (progress: { processed: number; total: number }) => void) {
-    if (!('PreviewNights' in this.files)) {
-      toast.error('Frames are already grouped');
-      return false;
-    }
-
-    const totalFiles = Object.values(this.files.PreviewNights).flat().length;
+    const totalFiles = Object.values(this.rawNights).flat().length;
     if (totalFiles === 0) {
       toast.error('No preview frames to group');
       return false;
@@ -181,8 +192,12 @@ class AppState {
 
       const feState = await invoke<FeState>('group_frames', { channel });
 
-      this.files = feState.nights;
+      this.rawNights = feState.raw_nights ?? {};
+      this.groupedNights = feState.grouped_nights ?? [];
+      this.activeGroupedSessionUuid = feState.active_grouped_session_uuid ?? null;
       this.currentPreviewFilePath = feState.current_preview_file ?? null;
+
+      this.normalizeActiveGroupedSession();
 
       if (!this.currentPreviewStillExists()) {
         this.currentPreviewFilePath = null;

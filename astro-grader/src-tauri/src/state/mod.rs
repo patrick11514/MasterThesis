@@ -6,7 +6,7 @@ use crate::{
     file_picker::File,
     fits::{FileType, FitsFile, Tag},
     state::{
-        fe_state::{AstroSession, FeState, Nights, SessionFingerprint},
+        fe_state::{AstroSession, FeState, SessionFingerprint},
         rust_state::RustState,
     },
 };
@@ -122,7 +122,10 @@ fn normalize_file_type(file_type: &FileType) -> SessionKind {
 fn read_optional_float(fits: &mut FitsFile, tag: Tag) -> Option<f32> {
     fits.get_tag_custom::<f32>(tag)
         .or_else(|| fits.get_tag_custom::<f64>(tag).map(|value| value as f32))
-        .or_else(|| fits.get_tag_value(tag).and_then(|value| value.parse::<f32>().ok()))
+        .or_else(|| {
+            fits.get_tag_value(tag)
+                .and_then(|value| value.parse::<f32>().ok())
+        })
 }
 
 fn read_frame_metadata(file: &File, source_night: &str) -> Option<FrameMetadata> {
@@ -185,44 +188,52 @@ fn calibration_matches_session(
     metadata: &FrameMetadata,
 ) -> bool {
     match kind {
-        SessionKind::Light => metadata
-            .filter
-            .as_deref()
-            .is_none_or(|value| session.filter == value)
-            && metadata
+        SessionKind::Light => {
+            metadata
+                .filter
+                .as_deref()
+                .is_none_or(|value| session.filter == value)
+                && metadata
+                    .exposure
+                    .is_none_or(|value| approx_equal(session.exposure, value))
+                && metadata
+                    .gain
+                    .is_none_or(|value| approx_equal(session.gain, value))
+                && metadata
+                    .temperature
+                    .is_none_or(|value| approx_equal(session.temperature, value))
+        }
+        SessionKind::Dark => {
+            metadata
                 .exposure
                 .is_none_or(|value| approx_equal(session.exposure, value))
-            && metadata
+                && metadata
+                    .gain
+                    .is_none_or(|value| approx_equal(session.gain, value))
+                && metadata
+                    .temperature
+                    .is_none_or(|value| approx_equal(session.temperature, value))
+        }
+        SessionKind::Flat => {
+            metadata
+                .filter
+                .as_deref()
+                .is_none_or(|value| session.filter == value)
+                && metadata
+                    .gain
+                    .is_none_or(|value| approx_equal(session.gain, value))
+                && metadata
+                    .temperature
+                    .is_none_or(|value| approx_equal(session.temperature, value))
+        }
+        SessionKind::Bias => {
+            metadata
                 .gain
                 .is_none_or(|value| approx_equal(session.gain, value))
-            && metadata
-                .temperature
-                .is_none_or(|value| approx_equal(session.temperature, value)),
-        SessionKind::Dark => metadata
-            .exposure
-            .is_none_or(|value| approx_equal(session.exposure, value))
-            && metadata
-                .gain
-                .is_none_or(|value| approx_equal(session.gain, value))
-            && metadata
-                .temperature
-                .is_none_or(|value| approx_equal(session.temperature, value)),
-        SessionKind::Flat => metadata
-            .filter
-            .as_deref()
-            .is_none_or(|value| session.filter == value)
-            && metadata
-                .gain
-                .is_none_or(|value| approx_equal(session.gain, value))
-            && metadata
-                .temperature
-                .is_none_or(|value| approx_equal(session.temperature, value)),
-        SessionKind::Bias => metadata
-            .gain
-            .is_none_or(|value| approx_equal(session.gain, value))
-            && metadata
-                .temperature
-                .is_none_or(|value| approx_equal(session.temperature, value)),
+                && metadata
+                    .temperature
+                    .is_none_or(|value| approx_equal(session.temperature, value))
+        }
     }
 }
 
@@ -233,7 +244,10 @@ fn group_preview_nights(
     exposure_step: f32,
     gain_step: f32,
 ) -> Vec<AstroSession> {
-    let total_files = preview_nights.values().map(|files| files.len()).sum::<usize>();
+    let total_files = preview_nights
+        .values()
+        .map(|files| files.len())
+        .sum::<usize>();
     let mut processed_files = 0usize;
 
     let mut light_sessions: HashMap<String, SessionBucket> = HashMap::new();
@@ -288,9 +302,9 @@ fn group_preview_nights(
 
         if !matched_any {
             let key = calibration_session_key(kind, &metadata);
-            let bucket = light_sessions.entry(key.clone()).or_insert_with(|| {
-                SessionBucket::new(key, create_session_fingerprint(&metadata))
-            });
+            let bucket = light_sessions
+                .entry(key.clone())
+                .or_insert_with(|| SessionBucket::new(key, create_session_fingerprint(&metadata)));
             bucket.push(kind, file);
         }
     }
@@ -310,9 +324,17 @@ fn group_preview_nights(
             .name
             .cmp(&right.fingerprint.name)
             .then_with(|| left.fingerprint.filter.cmp(&right.fingerprint.filter))
-            .then_with(|| left.fingerprint.exposure.total_cmp(&right.fingerprint.exposure))
+            .then_with(|| {
+                left.fingerprint
+                    .exposure
+                    .total_cmp(&right.fingerprint.exposure)
+            })
             .then_with(|| left.fingerprint.gain.total_cmp(&right.fingerprint.gain))
-            .then_with(|| left.fingerprint.temperature.total_cmp(&right.fingerprint.temperature))
+            .then_with(|| {
+                left.fingerprint
+                    .temperature
+                    .total_cmp(&right.fingerprint.temperature)
+            })
     });
 
     grouped
@@ -356,33 +378,30 @@ pub async fn group_frames(
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, Mutex<AppState>>,
 ) -> Result<FeState, String> {
-    let config = config::read_config(&app_handle)
-        .await
-        .unwrap_or_default();
+    let config = config::read_config(&app_handle).await.unwrap_or_default();
 
     let preview_nights = {
         let state = state
             .lock()
             .map_err(|_| "Failed to acquire app state lock".to_string())?;
 
-        match &state.fe_state.nights {
-            Nights::PreviewNights(nights) => nights.clone(),
-            Nights::GroupedNights(_) => {
-                return Err("Frames are already grouped".to_string());
-            }
-        }
+        state.fe_state.raw_nights.clone()
     };
 
     let grouped_nights = group_preview_nights(
-        preview_nights,
+        preview_nights.clone(),
         channel,
         config.temperature_step,
         config.exposure_step,
         config.gain_step,
     );
 
+    let active_grouped_session_uuid = grouped_nights.first().map(|session| session.uuid.clone());
+
     let fe_state = FeState {
-        nights: Nights::GroupedNights(grouped_nights),
+        raw_nights: preview_nights,
+        grouped_nights,
+        active_grouped_session_uuid,
         current_preview_file: None,
     };
 

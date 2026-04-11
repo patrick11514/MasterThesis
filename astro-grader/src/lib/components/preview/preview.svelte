@@ -80,7 +80,7 @@
   });
 
   $effect(() => {
-    console.log(previewState.previewImage, appState.currentPreviewFilePath, appState.files);
+    console.log(previewState.previewImage, appState.currentPreviewFilePath, appState.rawNights);
 
     if (previewState.previewImage) {
       return;
@@ -90,11 +90,7 @@
       return;
     }
 
-    if (!('PreviewNights' in appState.files)) {
-      return;
-    }
-
-    const restoredFile = Object.values(appState.files.PreviewNights)
+    const restoredFile = Object.values(appState.rawNights)
       .flat()
       .find((file) => file.path === appState.currentPreviewFilePath);
 

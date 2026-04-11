@@ -1,6 +1,6 @@
 <script lang="ts">
   import { FILE_BADGES } from '$/lib/files/types';
-  import type { Nights } from '$/lib/types/Nights';
+  import type { File } from '$/lib/types/File';
   import { type AppStateType } from '../../state.svelte';
   import { Badge } from '../ui/badge';
   import * as Resizable from '../ui/resizable';
@@ -8,10 +8,8 @@
   import NightConfig from './night-config.svelte';
   import VirtualList from './virtual-list.svelte';
 
-  type ExtractPreview<Raw> = Raw extends { PreviewNights: infer T } ? T : never;
-
   type Props = {
-    nights: ExtractPreview<Nights>;
+    nights: Record<string, File[]>;
     appState: AppStateType;
   };
   const { nights: rawNights, appState }: Props = $props();
@@ -54,7 +52,7 @@
   </div>
 
   <div class="h-full min-h-0 w-full flex-1">
-    {#if Object.keys(appState.files).length === 0}
+    {#if Object.keys(appState.rawNights).length === 0}
       <p class="text-center text-muted-foreground">No files imported.</p>
     {:else}
       <VirtualList {nights} {appState} />

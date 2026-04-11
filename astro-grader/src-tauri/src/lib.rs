@@ -18,6 +18,7 @@ static URL_PREFIXES: [&str; 4] = [
 pub fn run() {
     tauri::Builder::default()
         .manage(Mutex::new(state::AppState::default()))
+        .manage(file_picker::ScanCancellation::default())
         .register_uri_scheme_protocol("astro-grader", |app, request| {
             let raw_uri = request.uri().to_string();
             let mut path = raw_uri;
@@ -54,6 +55,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             //File Picker Module
             file_picker::file_picker_recursive,
+            file_picker::file_picker_cancel_recursive,
             file_picker::file_picker_convert,
             //Config Module
             config::config_get,

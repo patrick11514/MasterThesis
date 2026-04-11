@@ -2,7 +2,7 @@ use fitsio::HeaderValue;
 use rayon::prelude::*;
 use std::ffi::OsString;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use ts_rs::TS;
 use walkdir::WalkDir;
 
@@ -15,6 +15,11 @@ pub struct File {
     name: String,
     #[serde(rename = "type")]
     file_type: FileType,
+}
+
+#[derive(Debug, Default)]
+pub struct ScanCancellation {
+    requested: AtomicBool,
 }
 
 impl File {
@@ -63,7 +68,10 @@ pub async fn file_picker_recursive(
     extensions: Vec<String>,
     directory: PathBuf,
     channel: tauri::ipc::Channel<usize>,
-) -> Vec<File> {
+    scan_cancellation: tauri::State<'_, ScanCancellation>,
+) -> Result<Vec<File>, String> {
+    scan_cancellation.requested.store(false, Ordering::Relaxed);
+
     let dir = WalkDir::new(directory);
 
     let extensions = extensions
@@ -73,35 +81,52 @@ pub async fn file_picker_recursive(
 
     let counter = AtomicUsize::new(0);
 
-    let result = dir
-        .into_iter()
-        .par_bridge()
-        .filter_map(|file| file.ok())
-        .filter_map(|file| {
-            if let Some(ext) = file.path().extension() {
-                if extensions.iter().any(|_ext| ext == _ext) {
-                    let current_count = counter.fetch_add(1, Ordering::Relaxed) + 1;
+    let mut result = Vec::new();
 
-                    if current_count % 50 == 0 {
-                        let _ = channel.send(current_count);
-                    }
+    for entry in dir.into_iter() {
+        if scan_cancellation.requested.load(Ordering::Relaxed) {
+            break;
+        }
 
-                    path_to_file(file.path().to_path_buf())
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>();
+        let Ok(file) = entry else {
+            continue;
+        };
+
+        let Some(ext) = file.path().extension() else {
+            continue;
+        };
+
+        if !extensions.iter().any(|_ext| ext == _ext) {
+            continue;
+        }
+
+        let current_count = counter.fetch_add(1, Ordering::Relaxed) + 1;
+
+        if current_count % 50 == 0 {
+            let _ = channel.send(current_count);
+        }
+
+        if let Some(parsed_file) = path_to_file(file.path().to_path_buf()) {
+            result.push(parsed_file);
+        }
+    }
 
     // 4. Send the final count.
     // If the loop finished at 143 files, the UI would be stuck at "100" without this.
     let final_count = counter.load(Ordering::Relaxed);
     let _ = channel.send(final_count);
 
-    result
+    scan_cancellation.requested.store(false, Ordering::Relaxed);
+
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn file_picker_cancel_recursive(
+    scan_cancellation: tauri::State<'_, ScanCancellation>,
+) -> Result<(), String> {
+    scan_cancellation.requested.store(true, Ordering::Relaxed);
+    Ok(())
 }
 
 #[tauri::command]

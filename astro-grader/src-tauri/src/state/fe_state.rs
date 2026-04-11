@@ -27,22 +27,11 @@ pub struct AstroSession {
     pub biases: Vec<File>,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
-#[ts(export)]
-pub enum Nights {
-    PreviewNights(HashMap<String, Vec<File>>),
-    GroupedNights(Vec<AstroSession>),
-}
-
-impl Default for Nights {
-    fn default() -> Self {
-        Nights::PreviewNights(HashMap::new())
-    }
-}
-
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]
 pub struct FeState {
-    pub nights: Nights,
+    pub raw_nights: HashMap<String, Vec<File>>,
+    pub grouped_nights: Vec<AstroSession>,
+    pub active_grouped_session_uuid: Option<String>,
     pub current_preview_file: Option<String>,
 }
