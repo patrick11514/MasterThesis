@@ -3,6 +3,7 @@
   import { getAppState } from '$/lib/state.svelte';
   import { Badge } from './ui/badge';
   import { Button } from './ui/button';
+  import ScrollArea from './ui/scroll-area/scroll-area.svelte';
 
   const appState = await getAppState();
 
@@ -34,18 +35,20 @@
     Grouped sessions
   </div>
 
-  <div class="flex flex-wrap items-center gap-2 overflow-x-auto">
-    {#each appState.groupedNights as session (session.uuid)}
-      <Button
-        variant={session.uuid === appState.activeGroupedSessionUuid ? 'default' : 'outline'}
-        size="sm"
-        onclick={() => appState.setActiveGroupedSession(session.uuid)}
-      >
-        {session.fingerprint.name} / {session.fingerprint.filter || 'n/a'} / {session.fingerprint
-          .exposure}s
-      </Button>
-    {/each}
-  </div>
+  <ScrollArea orientation="horizontal" class="w-full">
+    <div class="flex w-max gap-2">
+      {#each appState.groupedNights as session (session.uuid)}
+        <Button
+          variant={session.uuid === appState.activeGroupedSessionUuid ? 'default' : 'outline'}
+          size="sm"
+          onclick={() => appState.setActiveGroupedSession(session.uuid)}
+        >
+          {session.fingerprint.name} / {session.fingerprint.filter || 'n/a'} / {session.fingerprint
+            .exposure}s
+        </Button>
+      {/each}
+    </div>
+  </ScrollArea>
 
   {#if selectedSession}
     <div class="grid gap-1 text-sm text-muted-foreground">
