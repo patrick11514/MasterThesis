@@ -70,13 +70,15 @@
     </div>
 
     <div class="flex flex-wrap gap-2">
-      <Badge variant="outline" class={FILE_BADGES.Light}
-        >Light: {selectedSession.lights.length}</Badge
-      >
+      <Badge variant="outline" class={FILE_BADGES.Light}>
+        Light: {selectedSession.lights.length}
+      </Badge>
+
       <Badge variant="outline" class={FILE_BADGES.Dark}>Dark: {selectedSession.darks.length}</Badge>
       <Badge variant="outline" class={FILE_BADGES.Flat}>Flat: {selectedSession.flats.length}</Badge>
-      <Badge variant="outline" class={FILE_BADGES.Bias}>Bias: {selectedSession.biases.length}</Badge
-      >
+      <Badge variant="outline" class={FILE_BADGES.Bias}>
+        Bias: {selectedSession.biases.length}
+      </Badge>
     </div>
   {/if}
 </div>

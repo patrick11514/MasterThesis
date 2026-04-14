@@ -13,5 +13,6 @@
       }
     }
   ],
-  "tailwindStylesheet": "./src/routes/layout.css"
+  "tailwindStylesheet": "./src/routes/layout.css",
+  "htmlWhitespaceSensitivity": "ignore"
 }

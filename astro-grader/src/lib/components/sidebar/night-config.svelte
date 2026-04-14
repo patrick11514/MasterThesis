@@ -171,8 +171,10 @@
               type: 'Prefix',
               match_first: false
             });
-          }}>Add Night Filter</Button
+          }}
         >
+          Add Night Filter
+        </Button>
         <div class="grid gap-4">
           {#each appState.nightPrefixes as filter, index (index)}
             <div class="flex items-center gap-2">
