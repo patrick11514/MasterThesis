@@ -37,10 +37,10 @@
   }}
   class="flex w-full items-center justify-between gap-2"
 >
-  <div class="flex items-center gap-2">
-    <ChevronRightIcon class={cn('h-4 w-4 transition-all duration-150', { 'rotate-90': opened })} />
+  <ChevronRightIcon class={cn('h-4 w-4 transition-all duration-150', { 'rotate-90': opened })} />
+  <span class="flex-1 truncate">
     {night.name}
-  </div>
+  </span>
   <div class="flex items-center gap-2">
     <Popover.Root>
       <Popover.Trigger class="shrink-0" onclick={(ev) => ev.stopPropagation()}>

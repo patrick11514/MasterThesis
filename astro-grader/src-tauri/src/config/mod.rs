@@ -14,6 +14,8 @@ pub struct NightPrefix {
     text: String,
     #[serde(rename = "type")]
     prefix_type: Type,
+    #[serde(default)]
+    match_first: bool,
 }
 
 fn default_temperature_step() -> f32 {

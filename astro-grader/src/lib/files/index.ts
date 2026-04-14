@@ -70,16 +70,31 @@ export const parseFiles = (files: File[], filters: NightPrefix[]) => {
 
     // Use an array to accumulate all matched parts for this specific file
     const matchedParts: string[] = [];
+    const consumedMatchFirstFilters = new Set<number>();
 
     for (const path of paths) {
-      for (const filter of filters) {
+      for (const [filterIndex, filter] of filters.entries()) {
+        if (filter.match_first && consumedMatchFirstFilters.has(filterIndex)) {
+          continue;
+        }
+
         if (filter.type === 'Prefix' && path.startsWith(filter.text)) {
           // Extract the string without the prefix and save it
           matchedParts.push(path.slice(filter.text.length));
+
+          if (filter.match_first) {
+            consumedMatchFirstFilters.add(filterIndex);
+          }
+
           break; // Break the filter loop (move to the next path segment)
         } else if (filter.type === 'Suffix' && path.endsWith(filter.text)) {
           // Extract the string without the suffix and save it
           matchedParts.push(path.slice(0, -filter.text.length));
+
+          if (filter.match_first) {
+            consumedMatchFirstFilters.add(filterIndex);
+          }
+
           break; // Break the filter loop
         }
       }
