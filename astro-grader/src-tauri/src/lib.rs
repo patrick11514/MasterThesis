@@ -17,6 +17,7 @@ static URL_PREFIXES: [&str; 4] = [
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_os::init())
         .manage(Mutex::new(state::AppState::default()))
         .manage(file_picker::ScanCancellation::default())
         .register_uri_scheme_protocol("astro-grader", |app, request| {

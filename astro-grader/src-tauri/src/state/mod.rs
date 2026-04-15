@@ -400,7 +400,7 @@ pub async fn group_frames(
     channel: tauri::ipc::Channel<GroupFramesProgress>,
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, Mutex<AppState>>,
-) -> Result<FeState, String> {
+) -> Result<Vec<AstroSession>, String> {
     let config = config::read_config(&app_handle).await.unwrap_or_default();
 
     let preview_nights = {
@@ -412,26 +412,17 @@ pub async fn group_frames(
     };
 
     let grouped_nights = group_preview_nights(
-        preview_nights.clone(),
+        preview_nights,
         channel,
         config.temperature_step,
         config.exposure_step,
         config.gain_step,
     );
 
-    let active_grouped_session_uuid = grouped_nights.first().map(|session| session.uuid.clone());
-
-    let fe_state = FeState {
-        raw_nights: preview_nights,
-        grouped_nights,
-        active_grouped_session_uuid,
-        current_preview_file: None,
-    };
-
     let mut state = state
         .lock()
         .map_err(|_| "Failed to acquire app state lock".to_string())?;
-    state.fe_state = fe_state.clone();
+    state.fe_state.grouped_nights = grouped_nights.clone();
 
-    Ok(fe_state)
+    Ok(grouped_nights)
 }

@@ -50,35 +50,47 @@
     </div>
   </ScrollArea>
 
-  {#if selectedSession}
-    <div class="grid gap-1 text-sm text-muted-foreground">
-      <div>
-        Name: <span class="text-foreground">{selectedSession.fingerprint.name}</span>
-      </div>
-      <div>
-        Filter: <span class="text-foreground">{selectedSession.fingerprint.filter || 'n/a'}</span>
-      </div>
-      <div>
-        Exposure: <span class="text-foreground">{selectedSession.fingerprint.exposure}</span>
-      </div>
-      <div>
-        Gain: <span class="text-foreground">{selectedSession.fingerprint.gain}</span>
-      </div>
-      <div>
-        Temperature: <span class="text-foreground">{selectedSession.fingerprint.temperature}</span>
-      </div>
-    </div>
+  <ScrollArea orientation="vertical" class="min-h-0">
+    <div class="h-max w-full p-2">
+      {#if selectedSession}
+        <div class="grid gap-1 text-sm text-muted-foreground">
+          <div>
+            Name: <span class="text-foreground">{selectedSession.fingerprint.name}</span>
+          </div>
+          <div>
+            Filter: <span class="text-foreground">
+              {selectedSession.fingerprint.filter || 'n/a'}
+            </span>
+          </div>
+          <div>
+            Exposure: <span class="text-foreground">{selectedSession.fingerprint.exposure}</span>
+          </div>
+          <div>
+            Gain: <span class="text-foreground">{selectedSession.fingerprint.gain}</span>
+          </div>
+          <div>
+            Temperature: <span class="text-foreground">
+              {selectedSession.fingerprint.temperature}
+            </span>
+          </div>
+        </div>
 
-    <div class="flex flex-wrap gap-2">
-      <Badge variant="outline" class={FILE_BADGES.Light}>
-        Light: {selectedSession.lights.length}
-      </Badge>
+        <div class="flex flex-wrap gap-2">
+          <Badge variant="outline" class={FILE_BADGES.Light}>
+            Light: {selectedSession.lights.length}
+          </Badge>
 
-      <Badge variant="outline" class={FILE_BADGES.Dark}>Dark: {selectedSession.darks.length}</Badge>
-      <Badge variant="outline" class={FILE_BADGES.Flat}>Flat: {selectedSession.flats.length}</Badge>
-      <Badge variant="outline" class={FILE_BADGES.Bias}>
-        Bias: {selectedSession.biases.length}
-      </Badge>
+          <Badge variant="outline" class={FILE_BADGES.Dark}>
+            Dark: {selectedSession.darks.length}
+          </Badge>
+          <Badge variant="outline" class={FILE_BADGES.Flat}>
+            Flat: {selectedSession.flats.length}
+          </Badge>
+          <Badge variant="outline" class={FILE_BADGES.Bias}>
+            Bias: {selectedSession.biases.length}
+          </Badge>
+        </div>
+      {/if}
     </div>
-  {/if}
+  </ScrollArea>
 </div>

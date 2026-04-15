@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Command from '$/lib/components/command/index.svelte';
   import GroupedSessionsPanel from '$/lib/components/grouped-sessions-panel.svelte';
   import MainUi from '$/lib/components/main-ui.svelte';
   import * as Resizable from '$/lib/components/ui/resizable';
@@ -6,6 +7,8 @@
 
   const appState = await getAppState();
 </script>
+
+<Command />
 
 <Resizable.PaneGroup direction="vertical" class="flex flex-col" autoSaveId="main-layout">
   <MainUi />

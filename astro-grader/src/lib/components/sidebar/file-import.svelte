@@ -7,7 +7,6 @@
   import { getAppState } from '../../state.svelte';
   import type { File } from '../../types/File';
   import { Button } from '../ui/button';
-  import ModeButton from '../ui/mode-button.svelte';
 
   enum State {
     Idle,
@@ -102,15 +101,13 @@
 </script>
 
 <div class="flex w-full flex-col items-center justify-center gap-2">
-  <div class="flex w-full flex-wrap gap-2">
-    <ModeButton class="mr-auto" />
+  <div class="flex w-full flex-wrap justify-center gap-2">
     <Button disabled={busy} onclick={() => selectFiles(false)} variant="outline" size="sm">
       <PlusIcon class="h-4 w-4" /> Add new files
     </Button>
     <Button disabled={busy} onclick={() => selectFiles(true)} variant="outline" size="sm">
       <FolderPlusIcon class="h-4 w-4" />
     </Button>
-    <ModeButton class="invisible ml-auto" />
   </div>
 
   {#if currentState === State.Scanning}

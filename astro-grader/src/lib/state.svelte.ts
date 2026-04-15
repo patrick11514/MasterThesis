@@ -211,12 +211,7 @@ class AppState {
         onProgress?.(message);
       };
 
-      const feState = await invoke<FeState>('group_frames', { channel });
-
-      this.rawNights = this.sortRawNights(feState.raw_nights ?? {});
-      this.groupedNights = feState.grouped_nights ?? [];
-      this.activeGroupedSessionUuid = feState.active_grouped_session_uuid ?? null;
-      this.currentPreviewFilePath = feState.current_preview_file ?? null;
+      this.groupedNights = await invoke<AstroSession[]>('group_frames', { channel });
 
       this.normalizeActiveGroupedSession();
 
