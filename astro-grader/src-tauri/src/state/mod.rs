@@ -6,7 +6,7 @@ use crate::{
     file_picker::File,
     fits::{FileType, FitsFile, Tag},
     state::{
-        fe_state::{AstroSession, FeState, SessionFingerprint},
+        fe_state::{AstroSession, FeState, SessionFingerprint, load_fe_state, save_fe_state},
         rust_state::RustState,
     },
 };
@@ -425,4 +425,36 @@ pub async fn group_frames(
     state.fe_state.grouped_nights = grouped_nights.clone();
 
     Ok(grouped_nights)
+}
+
+#[tauri::command]
+pub async fn save_state(
+    path: String,
+    state: tauri::State<'_, Mutex<AppState>>,
+) -> Result<(), String> {
+    let state = {
+        state
+            .lock()
+            .map_err(|_| "Failed to acquire app state lock".to_string())?
+            .fe_state
+            .clone()
+    };
+
+    save_fe_state(path, state).await
+}
+
+#[tauri::command]
+pub async fn load_state(
+    path: String,
+    state: tauri::State<'_, Mutex<AppState>>,
+) -> Result<(), String> {
+    let data = load_fe_state(path).await?;
+
+    let mut state = state
+        .lock()
+        .map_err(|_| "Failed to acquire app state lock".to_string())?;
+
+    state.fe_state = data;
+
+    Ok(())
 }

@@ -1,5 +1,7 @@
 import { Channel, invoke } from '@tauri-apps/api/core';
+import { open, save } from '@tauri-apps/plugin-dialog';
 import { toast } from 'svelte-sonner';
+import { appEvents } from './events.svelte';
 import { parseFiles } from './files';
 import { FILE_TYPES } from './files/types';
 import type { AstroSession } from './types/AstroSession';
@@ -259,3 +261,52 @@ export const getAppState = async () => {
 };
 
 export type AppStateType = typeof appState;
+
+appEvents.on('Save', async () => {
+  try {
+    const path = await save({
+      title: 'Save opened files',
+      defaultPath: 'save.agproj'
+    });
+
+    await invoke('save_state', {
+      path
+    });
+
+    toast.success('State saved', {
+      description:
+        "App data successfully saved to file. You can load it later using the 'Load' button."
+    });
+  } catch (error) {
+    toast.error('Failed to save state', {
+      description: error as string
+    });
+  }
+});
+
+appEvents.on('Load', async () => {
+  try {
+    const file = await open({
+      title: 'Load saved state',
+      filters: [
+        {
+          name: 'Astro Grader Project',
+          extensions: ['agproj']
+        }
+      ]
+    });
+
+    if (!file) return;
+
+    await invoke<FeState>('load_state', { path: file });
+    await appState.loadConfig();
+
+    toast.success('State loaded', {
+      description: 'App data successfully loaded from file.'
+    });
+  } catch (error) {
+    toast.error('Failed to load state', {
+      description: error as string
+    });
+  }
+});

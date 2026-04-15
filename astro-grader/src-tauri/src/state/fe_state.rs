@@ -36,3 +36,21 @@ pub struct FeState {
     pub active_grouped_session_uuid: Option<String>,
     pub current_preview_file: Option<String>,
 }
+
+pub async fn save_fe_state(path: String, state: FeState) -> Result<(), String> {
+    let json =
+        serde_json::to_string(&state).map_err(|_| "Failed to serialize state".to_string())?;
+    tokio::fs::write(path, json)
+        .await
+        .map_err(|_| "Failed to write state to file".to_string())?;
+    Ok(())
+}
+
+pub async fn load_fe_state(path: String) -> Result<FeState, String> {
+    let data = tokio::fs::read_to_string(path)
+        .await
+        .map_err(|_| "Failed to read state file".to_string())?;
+    let state =
+        serde_json::from_str(&data).map_err(|_| "Failed to parse state file".to_string())?;
+    Ok(state)
+}

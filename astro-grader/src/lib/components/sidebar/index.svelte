@@ -3,7 +3,6 @@
   import { getAppState } from '../../state.svelte';
   import { Badge } from '../ui/badge';
   import * as Resizable from '../ui/resizable';
-  import Separator from '../ui/separator/separator.svelte';
   import FileImport from './file-import.svelte';
   import Header from './header.svelte';
   import NightConfig from './night-config.svelte';
@@ -20,11 +19,9 @@
   );
 </script>
 
-<Resizable.Pane defaultSize={20} class="flex flex-col items-center gap-2 p-2">
+<Resizable.Pane defaultSize={20} class="flex flex-col items-center p-2">
   <Header />
   <FileImport />
-
-  <Separator orientation="horizontal" />
 
   <NightConfig />
 

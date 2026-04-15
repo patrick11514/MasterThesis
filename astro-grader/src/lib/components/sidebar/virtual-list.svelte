@@ -48,6 +48,9 @@
     const elements: Element[] = [];
 
     for (const night of nights) {
+      const files = night.files.filter((file) => appState.framesShown[file.type]);
+      if (files.length === 0) continue;
+
       elements.push({
         _type: 'night',
         ...night
@@ -55,14 +58,16 @@
 
       if (openedNights.includes(night.id)) {
         elements.push(
-          ...night.files.map(
-            (file) =>
-              ({
-                _type: 'file',
-                file,
-                night: night.name
-              }) as const
-          )
+          ...night.files
+            .filter((file) => appState.framesShown[file.type])
+            .map(
+              (file) =>
+                ({
+                  _type: 'file',
+                  file,
+                  night: night.name
+                }) as const
+            )
         );
       }
     }

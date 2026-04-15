@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { FolderPlusIcon, LoaderIcon, PlusIcon, SearchIcon, XIcon } from '@lucide/svelte';
+  import { appEvents } from '$/lib/events.svelte';
+  import { LoaderIcon, SearchIcon, XIcon } from '@lucide/svelte';
   import { Channel } from '@tauri-apps/api/core';
   import { tick } from 'svelte';
   import { toast } from 'svelte-sonner';
@@ -98,18 +99,25 @@
   const busy = $derived.by(
     () => currentState === State.Scanning || currentState === State.Grouping
   );
+
+  appEvents.on('ImportFITS', () => {
+    selectFiles(false);
+  });
+
+  appEvents.on('ImportFITSDirectory', () => {
+    selectFiles(true);
+  });
+
+  appEvents.on('GroupFrames', () => {
+    if (!busy) {
+      groupFrames();
+    } else {
+      toast.error('Cannot group frames while busy scanning or grouping.');
+    }
+  });
 </script>
 
 <div class="flex w-full flex-col items-center justify-center gap-2">
-  <div class="flex w-full flex-wrap justify-center gap-2">
-    <Button disabled={busy} onclick={() => selectFiles(false)} variant="outline" size="sm">
-      <PlusIcon class="h-4 w-4" /> Add new files
-    </Button>
-    <Button disabled={busy} onclick={() => selectFiles(true)} variant="outline" size="sm">
-      <FolderPlusIcon class="h-4 w-4" />
-    </Button>
-  </div>
-
   {#if currentState === State.Scanning}
     <div
       class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
@@ -131,14 +139,6 @@
       </div>
     </div>
   {/if}
-
-  <div class="flex">
-    {#if Object.keys(appState.rawNights).length > 0}
-      <Button disabled={busy} onclick={groupFrames} variant="default" size="sm">
-        <LoaderIcon class="h-4 w-4" /> Group frames
-      </Button>
-    {/if}
-  </div>
 
   {#if currentState === State.Grouping}
     <div
