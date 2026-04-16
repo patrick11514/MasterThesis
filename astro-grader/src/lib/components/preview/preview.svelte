@@ -40,8 +40,6 @@
         return;
       }
 
-      previewState.imageState = undefined;
-
       rawData = {
         width: previewData.width,
         height: previewData.height,
@@ -55,6 +53,8 @@
         description: err
       });
     }
+
+    previewState.imageState = undefined;
   };
 
   const compileShader = (gl: WebGLRenderingContext, type: number, source: string) => {
