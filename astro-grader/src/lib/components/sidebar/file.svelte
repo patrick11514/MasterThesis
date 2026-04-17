@@ -80,6 +80,24 @@
           <strong>Type:</strong>
           {file.type}
         </div>
+        {#if file.default_headers.temperature !== undefined}
+          <div>
+            <strong>Temperature:</strong>
+            {file.default_headers.temperature}
+          </div>
+        {/if}
+        {#if file.default_headers.exposure_time !== undefined}
+          <div>
+            <strong>Exposure Time:</strong>
+            {file.default_headers.exposure_time}
+          </div>
+        {/if}
+        {#if file.default_headers.gain !== undefined}
+          <div>
+            <strong>Gain:</strong>
+            {file.default_headers.gain}
+          </div>
+        {/if}
       </Popover.Content>
     </Popover.Root>
     <Button

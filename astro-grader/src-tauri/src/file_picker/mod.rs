@@ -6,7 +6,15 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use ts_rs::TS;
 use walkdir::WalkDir;
 
-use crate::fits::FileType;
+use crate::fits::{FileType, FitsFile, FrameState, ImageStats, Tag};
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+pub struct DefaultHeaders {
+    pub exposure_time: Option<f32>,
+    pub gain: Option<f32>,
+    pub temperature: Option<f32>,
+}
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]
@@ -15,6 +23,13 @@ pub struct File {
     name: String,
     #[serde(rename = "type")]
     file_type: FileType,
+    default_headers: DefaultHeaders,
+    #[serde(default)]
+    stats: Option<ImageStats>,
+    #[serde(default)]
+    calibrated_frame: Option<Vec<u8>>,
+    #[serde(default)]
+    state: FrameState,
 }
 
 #[derive(Debug, Default)]
@@ -33,34 +48,40 @@ impl File {
 }
 
 fn path_to_file(file_path: PathBuf) -> Option<File> {
-    if let Ok(mut fits_file) = fitsio::FitsFile::open(&file_path) {
-        if let Ok(hdu) = fits_file.primary_hdu() {
-            let file_type = match hdu.read_key::<HeaderValue<String>>(&mut fits_file, "IMAGETYP") {
-                Ok(result) => match result.value.to_lowercase().as_str() {
-                    "light" | "master light" => FileType::Light,
-                    "dark" => FileType::Dark,
-                    "flat" => FileType::Flat,
-                    "bias" => FileType::Bias,
-                    "master dark" => FileType::MasterDark,
-                    "master flat" => FileType::MasterFlat,
-                    "master bias" => FileType::MasterBias,
-                    _ => FileType::Light, // Default to Light if the value is unrecognized
-                },
-                Err(_) => FileType::Light, // Default to Light if the key is missing or cannot be read
-            };
+    let mut fits_file = FitsFile::new(file_path.clone()).ok()?;
+    let file_type = match fits_file.get_tag_value(Tag::ImageType) {
+        Some(result) => match result.to_lowercase().as_str() {
+            "light" | "master light" => FileType::Light,
+            "dark" => FileType::Dark,
+            "flat" => FileType::Flat,
+            "bias" => FileType::Bias,
+            "master dark" => FileType::MasterDark,
+            "master flat" => FileType::MasterFlat,
+            "master bias" => FileType::MasterBias,
+            _ => FileType::Light, // Default to Light if the value is unrecognized
+        },
+        None => FileType::Light, // Default to Light if the key is missing or cannot be read;
+    };
 
-            return Some(File {
-                file_type,
-                path: file_path.clone(),
-                name: file_path
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .into_owned(),
-            });
-        }
-    }
-    None
+    let headers = DefaultHeaders {
+        exposure_time: fits_file.get_tag_custom(Tag::ExposureTime),
+        gain: fits_file.get_tag_custom(Tag::Gain),
+        temperature: fits_file.get_tag_custom(Tag::Temperature),
+    };
+
+    return Some(File {
+        file_type,
+        path: file_path.clone(),
+        name: file_path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned(),
+        stats: None,
+        calibrated_frame: None,
+        state: FrameState::Default,
+        default_headers: headers,
+    });
 }
 
 #[tauri::command]

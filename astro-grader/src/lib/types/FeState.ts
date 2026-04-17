@@ -2,9 +2,4 @@
 import type { AstroSession } from "./AstroSession";
 import type { File } from "./File";
 
-export type FeState = {
-	raw_nights: { [key in string]: Array<File> },
-	grouped_nights: Array<AstroSession>,
-	active_grouped_session_uuid: string | null,
-	current_preview_file: string | null,
-};
+export type FeState = { raw_nights: { [key in string]: Array<File> }, grouped_nights: Array<AstroSession>, active_grouped_session_uuid: string | null, current_preview_file: string | null, };

@@ -28,6 +28,14 @@
       appState.setActiveGroupedSession(selectedSession.uuid);
     }
   });
+
+  function formatMetric(value: number | null | undefined, decimals = 2): string {
+    if (value === null || value === undefined) {
+      return '-';
+    }
+
+    return value.toFixed(decimals);
+  }
 </script>
 
 <div class="flex h-full w-full flex-col gap-2 border-t border-border bg-muted/20 p-3">
@@ -89,6 +97,47 @@
           <Badge variant="outline" class={FILE_BADGES.Bias}>
             Bias: {selectedSession.biases.length}
           </Badge>
+        </div>
+
+        <div class="mt-3 overflow-x-auto rounded-md border border-border bg-background/60">
+          <table class="w-full min-w-140 text-sm">
+            <thead
+              class="bg-muted/40 text-left text-xs tracking-wide text-muted-foreground uppercase"
+            >
+              <tr>
+                <th class="px-3 py-2 font-medium">Filename</th>
+                <th class="px-3 py-2 font-medium">Star count</th>
+                <th class="px-3 py-2 font-medium">FWHM</th>
+                <th class="px-3 py-2 font-medium">Background contrast</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#if selectedSession.lights.length === 0}
+                <tr class="border-t border-border/70">
+                  <td colspan={4} class="px-3 py-3 text-muted-foreground">
+                    No light frames in this grouped session.
+                  </td>
+                </tr>
+              {:else}
+                {#each selectedSession.lights as light (light.path)}
+                  <tr class="border-t border-border/70">
+                    <td class="max-w-[320px] truncate px-3 py-2 text-foreground" title={light.name}>
+                      {light.name}
+                    </td>
+                    <td class="px-3 py-2 text-muted-foreground">
+                      {light.stats?.star_count ?? '-'}
+                    </td>
+                    <td class="px-3 py-2 text-muted-foreground">
+                      {formatMetric(light.stats?.fwhm)}
+                    </td>
+                    <td class="px-3 py-2 text-muted-foreground">
+                      {formatMetric(light.stats?.background_contrast, 3)}
+                    </td>
+                  </tr>
+                {/each}
+              {/if}
+            </tbody>
+          </table>
         </div>
       {/if}
     </div>

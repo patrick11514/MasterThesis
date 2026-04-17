@@ -19,7 +19,7 @@ mod utils;
 //public re-exports
 pub use file::FitsFile;
 pub use image_data_pixels::ImageDataPixels;
-pub use structs::FileType;
+pub use structs::{FileType, FrameState, ImageStats};
 pub use tag::Tag;
 
 #[tauri::command]
@@ -56,7 +56,7 @@ pub async fn fits_read_image(
         normalize_data(&mut image.pixels, &image_type);
         image.to_rgb_layout();
 
-        let mut current_image = crate::state::CurrentImage { path, data: image };
+        let current_image = crate::state::CurrentImage { path, data: image };
 
         //save current image to app state
         state

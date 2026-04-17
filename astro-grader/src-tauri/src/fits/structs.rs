@@ -12,6 +12,24 @@ pub enum FileType {
     MasterBias,
 }
 
+#[derive(Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+pub enum FrameState {
+    #[default]
+    Default,
+    Calibrated,
+    Accepted,
+    Rejected,
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+pub struct ImageStats {
+    pub star_count: Option<u32>,
+    pub fwhm: Option<f32>,
+    pub background_contrast: Option<f32>,
+}
+
 #[derive(Debug)]
 pub enum FitsOpenError {
     OpenError,
