@@ -269,6 +269,8 @@ appEvents.on('Save', async () => {
       defaultPath: 'save.agproj'
     });
 
+    if (!path) return;
+
     await invoke('save_state', {
       path
     });
