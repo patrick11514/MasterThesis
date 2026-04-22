@@ -6,7 +6,9 @@ use crate::{
     file_picker::File,
     fits::{FileType, FitsFile, Tag},
     state::{
-        fe_state::{AstroSession, FeState, SessionFingerprint, load_fe_state, save_fe_state},
+        fe_state::{
+            AstroSession, FeState, MasterOrFrames, SessionFingerprint, load_fe_state, save_fe_state,
+        },
         rust_state::RustState,
     },
 };
@@ -70,12 +72,12 @@ struct SessionBucket {
     fingerprint: SessionFingerprint,
     match_data: SessionMatchData,
     lights: Vec<File>,
+    master_dark: Option<File>,
     darks: Vec<File>,
+    master_flat: Option<File>,
     flats: Vec<File>,
+    master_bias: Option<File>,
     biases: Vec<File>,
-    has_master_dark: bool,
-    has_master_flat: bool,
-    has_master_bias: bool,
 }
 
 impl SessionBucket {
@@ -85,43 +87,48 @@ impl SessionBucket {
             fingerprint,
             match_data,
             lights: Vec::new(),
+            master_dark: None,
             darks: Vec::new(),
+            master_flat: None,
             flats: Vec::new(),
+            master_bias: None,
             biases: Vec::new(),
-            has_master_dark: false,
-            has_master_flat: false,
-            has_master_bias: false,
         }
     }
 
     fn has_master(&self, kind: SessionKind) -> bool {
         match kind {
             SessionKind::Light => false,
-            SessionKind::Dark => self.has_master_dark,
-            SessionKind::Flat => self.has_master_flat,
-            SessionKind::Bias => self.has_master_bias,
-        }
-    }
-
-    fn mark_master(&mut self, kind: SessionKind) {
-        match kind {
-            SessionKind::Light => {}
-            SessionKind::Dark => self.has_master_dark = true,
-            SessionKind::Flat => self.has_master_flat = true,
-            SessionKind::Bias => self.has_master_bias = true,
+            SessionKind::Dark => self.master_dark.is_some(),
+            SessionKind::Flat => self.master_flat.is_some(),
+            SessionKind::Bias => self.master_bias.is_some(),
         }
     }
 
     fn push(&mut self, kind: SessionKind, is_master: bool, file: File) {
-        if is_master {
-            self.mark_master(kind);
-        }
-
         match kind {
             SessionKind::Light => self.lights.push(file),
-            SessionKind::Dark => self.darks.push(file),
-            SessionKind::Flat => self.flats.push(file),
-            SessionKind::Bias => self.biases.push(file),
+            SessionKind::Dark => {
+                if is_master {
+                    self.master_dark = Some(file);
+                } else {
+                    self.darks.push(file);
+                }
+            }
+            SessionKind::Flat => {
+                if is_master {
+                    self.master_flat = Some(file);
+                } else {
+                    self.flats.push(file);
+                }
+            }
+            SessionKind::Bias => {
+                if is_master {
+                    self.master_bias = Some(file);
+                } else {
+                    self.biases.push(file);
+                }
+            }
         }
     }
 
@@ -130,9 +137,21 @@ impl SessionBucket {
             uuid: self.key,
             fingerprint: self.fingerprint,
             lights: self.lights,
-            darks: self.darks,
-            flats: self.flats,
-            biases: self.biases,
+            darks: if let Some(master) = self.master_dark {
+                MasterOrFrames::Master(master)
+            } else {
+                MasterOrFrames::Frames(self.darks)
+            },
+            flats: if let Some(master) = self.master_flat {
+                MasterOrFrames::Master(master)
+            } else {
+                MasterOrFrames::Frames(self.flats)
+            },
+            biases: if let Some(master) = self.master_bias {
+                MasterOrFrames::Master(master)
+            } else {
+                MasterOrFrames::Frames(self.biases)
+            },
         }
     }
 }
@@ -755,8 +774,8 @@ mod tests {
         );
 
         let bucket = buckets.values().next().expect("bucket should exist");
-        assert_eq!(bucket.darks.len(), 1);
-        assert!(bucket.has_master_dark);
+        assert_eq!(bucket.darks.len(), 0);
+        assert!(bucket.master_dark.is_some());
     }
 
     #[test]
