@@ -7,10 +7,12 @@
     "dev": "vite dev",
     "build": "vite build",
     "preview": "vite preview",
+    "test:be": "cd src-tauri && cargo test",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "lint": "prettier --check . && eslint .",
     "format": "prettier --write .",
+    "verify": "pnpm run test:be && pnpm run sync:types && pnpm run check",
     "tauri": "NO_STRIP=true  tauri",
     "sync:types": "cd src-tauri && cargo test export_bindings"
   },

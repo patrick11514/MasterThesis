@@ -1,6 +1,7 @@
 <script lang="ts">
   import { FILE_BADGES } from '$/lib/files/types';
   import { getAppState } from '$/lib/state.svelte';
+  import type { MasterOrFrames } from '$lib/types/MasterOrFrames';
   import { Badge } from './ui/badge';
   import { Button } from './ui/button';
   import ScrollArea from './ui/scroll-area/scroll-area.svelte';
@@ -35,6 +36,10 @@
     }
 
     return value.toFixed(decimals);
+  }
+
+  function countMasterOrFrames(frames: MasterOrFrames): number {
+    return 'Frames' in frames ? frames.Frames.length : 1;
   }
 </script>
 
@@ -88,15 +93,29 @@
             Light: {selectedSession.lights.length}
           </Badge>
 
-          <Badge variant="outline" class={FILE_BADGES.Dark}>
-            Dark: {selectedSession.darks.length}
-          </Badge>
-          <Badge variant="outline" class={FILE_BADGES.Flat}>
-            Flat: {selectedSession.flats.length}
-          </Badge>
-          <Badge variant="outline" class={FILE_BADGES.Bias}>
-            Bias: {selectedSession.biases.length}
-          </Badge>
+          {#if 'Master' in selectedSession.darks}
+            <Badge variant="outline" class={FILE_BADGES.Dark}>Master Dark found</Badge>
+          {:else}
+            <Badge variant="outline" class={FILE_BADGES.Dark}>
+              Dark: {countMasterOrFrames(selectedSession.darks)}
+            </Badge>
+          {/if}
+
+          {#if 'Master' in selectedSession.flats}
+            <Badge variant="outline" class={FILE_BADGES.Flat}>Master Flat found</Badge>
+          {:else}
+            <Badge variant="outline" class={FILE_BADGES.Flat}>
+              Flat: {countMasterOrFrames(selectedSession.flats)}
+            </Badge>
+          {/if}
+
+          {#if 'Master' in selectedSession.biases}
+            <Badge variant="outline" class={FILE_BADGES.Bias}>Master Bias found</Badge>
+          {:else}
+            <Badge variant="outline" class={FILE_BADGES.Bias}>
+              Bias: {countMasterOrFrames(selectedSession.biases)}
+            </Badge>
+          {/if}
         </div>
 
         <div class="mt-3 overflow-x-auto rounded-md border border-border bg-background/60">
