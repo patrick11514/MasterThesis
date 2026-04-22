@@ -33,6 +33,7 @@ struct FrameMetadata {
     source_night: String,
     camera: Option<String>,
     filter: Option<String>,
+    telescope: Option<String>,
     exposure: Option<f32>,
     gain: Option<f32>,
     temperature: Option<f32>,
@@ -46,29 +47,76 @@ enum SessionKind {
     Bias,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FileKind {
+    Light,
+    Calibration { kind: SessionKind, is_master: bool },
+}
+
+#[derive(Debug, Clone)]
+struct SessionMatchData {
+    source_night: String,
+    camera: Option<String>,
+    filter: Option<String>,
+    telescope: Option<String>,
+    exposure: Option<f32>,
+    gain: Option<f32>,
+    temperature: Option<f32>,
+}
+
 #[derive(Debug, Clone)]
 struct SessionBucket {
     key: String,
     fingerprint: SessionFingerprint,
+    match_data: SessionMatchData,
     lights: Vec<File>,
     darks: Vec<File>,
     flats: Vec<File>,
     biases: Vec<File>,
+    has_master_dark: bool,
+    has_master_flat: bool,
+    has_master_bias: bool,
 }
 
 impl SessionBucket {
-    fn new(key: String, fingerprint: SessionFingerprint) -> Self {
+    fn new(key: String, fingerprint: SessionFingerprint, match_data: SessionMatchData) -> Self {
         Self {
             key,
             fingerprint,
+            match_data,
             lights: Vec::new(),
             darks: Vec::new(),
             flats: Vec::new(),
             biases: Vec::new(),
+            has_master_dark: false,
+            has_master_flat: false,
+            has_master_bias: false,
         }
     }
 
-    fn push(&mut self, kind: SessionKind, file: File) {
+    fn has_master(&self, kind: SessionKind) -> bool {
+        match kind {
+            SessionKind::Light => false,
+            SessionKind::Dark => self.has_master_dark,
+            SessionKind::Flat => self.has_master_flat,
+            SessionKind::Bias => self.has_master_bias,
+        }
+    }
+
+    fn mark_master(&mut self, kind: SessionKind) {
+        match kind {
+            SessionKind::Light => {}
+            SessionKind::Dark => self.has_master_dark = true,
+            SessionKind::Flat => self.has_master_flat = true,
+            SessionKind::Bias => self.has_master_bias = true,
+        }
+    }
+
+    fn push(&mut self, kind: SessionKind, is_master: bool, file: File) {
+        if is_master {
+            self.mark_master(kind);
+        }
+
         match kind {
             SessionKind::Light => self.lights.push(file),
             SessionKind::Dark => self.darks.push(file),
@@ -111,12 +159,33 @@ fn round_to_step(value: Option<f32>, step: f32) -> Option<f32> {
     Some((value / step).round() * step)
 }
 
-fn normalize_file_type(file_type: &FileType) -> SessionKind {
+fn normalize_file_type(file_type: &FileType) -> FileKind {
     match file_type {
-        FileType::Light => SessionKind::Light,
-        FileType::Dark | FileType::MasterDark => SessionKind::Dark,
-        FileType::Flat | FileType::MasterFlat => SessionKind::Flat,
-        FileType::Bias | FileType::MasterBias => SessionKind::Bias,
+        FileType::Light => FileKind::Light,
+        FileType::Dark => FileKind::Calibration {
+            kind: SessionKind::Dark,
+            is_master: false,
+        },
+        FileType::MasterDark => FileKind::Calibration {
+            kind: SessionKind::Dark,
+            is_master: true,
+        },
+        FileType::Flat => FileKind::Calibration {
+            kind: SessionKind::Flat,
+            is_master: false,
+        },
+        FileType::MasterFlat => FileKind::Calibration {
+            kind: SessionKind::Flat,
+            is_master: true,
+        },
+        FileType::Bias => FileKind::Calibration {
+            kind: SessionKind::Bias,
+            is_master: false,
+        },
+        FileType::MasterBias => FileKind::Calibration {
+            kind: SessionKind::Bias,
+            is_master: true,
+        },
     }
 }
 
@@ -142,6 +211,10 @@ fn read_frame_metadata(file: &File, source_night: &str) -> Option<FrameMetadata>
             .get_tag_value(Tag::Filter)
             .map(|value| value.trim().to_lowercase())
             .filter(|value| !value.is_empty()),
+        telescope: fits
+            .get_tag_value(Tag::Telescope)
+            .map(|value| value.trim().to_lowercase())
+            .filter(|value| !value.is_empty()),
         exposure: read_optional_float(&mut fits, Tag::ExposureTime),
         gain: read_optional_float(&mut fits, Tag::Gain),
         temperature: read_optional_float(&mut fits, Tag::Temperature),
@@ -150,10 +223,11 @@ fn read_frame_metadata(file: &File, source_night: &str) -> Option<FrameMetadata>
 
 fn light_session_key(metadata: &FrameMetadata) -> String {
     format!(
-        "light:{}:{}:{}:{}:{}:{}",
+        "light:{}:{}:{}:{}:{}:{}:{}",
         metadata.source_night,
         format_optional_text(metadata.camera.as_deref()),
         format_optional_text(metadata.filter.as_deref()),
+        format_optional_text(metadata.telescope.as_deref()),
         format_optional_float(metadata.exposure),
         format_optional_float(metadata.gain),
         format_optional_float(metadata.temperature)
@@ -169,13 +243,32 @@ fn calibration_session_key(kind: SessionKind, metadata: &FrameMetadata) -> Strin
     };
 
     format!(
-        "{kind_prefix}:{}:{}:{}:{}:{}:{}",
+        "{kind_prefix}:{}:{}:{}:{}:{}:{}:{}",
         metadata.source_night,
         format_optional_text(metadata.camera.as_deref()),
         format_optional_text(metadata.filter.as_deref()),
+        format_optional_text(metadata.telescope.as_deref()),
         format_optional_float(metadata.exposure),
         format_optional_float(metadata.gain),
         format_optional_float(metadata.temperature)
+    )
+}
+
+fn master_calibration_session_key(kind: SessionKind, metadata: &FrameMetadata) -> String {
+    let kind_prefix = match kind {
+        SessionKind::Light => "light",
+        SessionKind::Dark => "master-dark",
+        SessionKind::Flat => "master-flat",
+        SessionKind::Bias => "master-bias",
+    };
+
+    format!(
+        "{kind_prefix}:{}:{}:{}:{}:{}",
+        metadata.source_night,
+        format_optional_text(metadata.camera.as_deref()),
+        format_optional_text(metadata.filter.as_deref()),
+        format_optional_text(metadata.telescope.as_deref()),
+        format_optional_float(metadata.exposure)
     )
 }
 
@@ -190,69 +283,139 @@ fn create_session_fingerprint(metadata: &FrameMetadata) -> SessionFingerprint {
     }
 }
 
+fn create_session_match_data(metadata: &FrameMetadata) -> SessionMatchData {
+    SessionMatchData {
+        source_night: metadata.source_night.clone(),
+        camera: metadata.camera.clone(),
+        filter: metadata.filter.clone(),
+        telescope: metadata.telescope.clone(),
+        exposure: metadata.exposure,
+        gain: metadata.gain,
+        temperature: metadata.temperature,
+    }
+}
+
+fn matches_optional_text(session_value: Option<&str>, metadata_value: Option<&str>) -> bool {
+    metadata_value.is_none_or(|value| session_value == Some(value))
+}
+
+fn matches_optional_float(session_value: Option<f32>, metadata_value: Option<f32>) -> bool {
+    metadata_value
+        .is_none_or(|value| session_value.is_some_and(|session| approx_equal(session, value)))
+}
+
+fn master_calibration_matches_session(
+    kind: SessionKind,
+    session: &SessionMatchData,
+    metadata: &FrameMetadata,
+) -> bool {
+    matches_optional_text(session.camera.as_deref(), metadata.camera.as_deref())
+        && matches_optional_text(session.telescope.as_deref(), metadata.telescope.as_deref())
+        && matches_optional_float(session.exposure, metadata.exposure)
+        && match kind {
+            SessionKind::Flat => {
+                matches_optional_text(session.filter.as_deref(), metadata.filter.as_deref())
+            }
+            SessionKind::Light | SessionKind::Dark | SessionKind::Bias => true,
+        }
+}
+
 fn calibration_matches_session(
     kind: SessionKind,
-    session: &SessionFingerprint,
+    session: &SessionMatchData,
     metadata: &FrameMetadata,
 ) -> bool {
     match kind {
         SessionKind::Light => {
-            metadata
-                .camera
-                .as_deref()
-                .is_none_or(|value| session.camera == value)
-                && metadata
-                    .filter
-                    .as_deref()
-                    .is_none_or(|value| session.filter == value)
-                && metadata
-                    .exposure
-                    .is_none_or(|value| approx_equal(session.exposure, value))
-                && metadata
-                    .gain
-                    .is_none_or(|value| approx_equal(session.gain, value))
-                && metadata
-                    .temperature
-                    .is_none_or(|value| approx_equal(session.temperature, value))
+            matches_optional_text(session.camera.as_deref(), metadata.camera.as_deref())
+                && matches_optional_text(session.filter.as_deref(), metadata.filter.as_deref())
+                && matches_optional_float(session.exposure, metadata.exposure)
+                && matches_optional_float(session.gain, metadata.gain)
+                && matches_optional_float(session.temperature, metadata.temperature)
         }
         SessionKind::Dark => {
-            metadata
-                .camera
-                .as_deref()
-                .is_none_or(|value| session.camera == value)
-                && metadata
-                    .exposure
-                    .is_none_or(|value| approx_equal(session.exposure, value))
-                && metadata
-                    .gain
-                    .is_none_or(|value| approx_equal(session.gain, value))
-                && metadata
-                    .temperature
-                    .is_none_or(|value| approx_equal(session.temperature, value))
+            matches_optional_text(session.camera.as_deref(), metadata.camera.as_deref())
+                && matches_optional_float(session.exposure, metadata.exposure)
+                && matches_optional_float(session.gain, metadata.gain)
+                && matches_optional_float(session.temperature, metadata.temperature)
         }
         SessionKind::Flat => {
-            metadata
-                .camera
-                .as_deref()
-                .is_none_or(|value| session.camera == value)
-                && metadata
-                    .filter
-                    .as_deref()
-                    .is_none_or(|value| session.filter == value)
-                && metadata
-                    .gain
-                    .is_none_or(|value| approx_equal(session.gain, value))
+            matches_optional_text(session.camera.as_deref(), metadata.camera.as_deref())
+                && matches_optional_text(session.filter.as_deref(), metadata.filter.as_deref())
+                && matches_optional_float(session.gain, metadata.gain)
         }
         SessionKind::Bias => {
-            metadata
-                .camera
-                .as_deref()
-                .is_none_or(|value| session.camera == value)
-                && metadata
-                    .gain
-                    .is_none_or(|value| approx_equal(session.gain, value))
+            matches_optional_text(session.camera.as_deref(), metadata.camera.as_deref())
+                && matches_optional_float(session.gain, metadata.gain)
         }
     }
+}
+
+fn bucket_has_master_match(
+    bucket: &SessionBucket,
+    kind: SessionKind,
+    metadata: &FrameMetadata,
+) -> bool {
+    bucket.has_master(kind)
+        && master_calibration_matches_session(kind, &bucket.match_data, metadata)
+}
+
+fn insert_calibration_file(
+    light_sessions: &mut HashMap<String, SessionBucket>,
+    kind: SessionKind,
+    is_master: bool,
+    metadata: FrameMetadata,
+    file: File,
+) {
+    if !is_master
+        && light_sessions
+            .values()
+            .any(|bucket| bucket_has_master_match(bucket, kind, &metadata))
+    {
+        return;
+    }
+
+    let mut matched_any = false;
+
+    for bucket in light_sessions.values_mut() {
+        if !is_master
+            && kind == SessionKind::Flat
+            && bucket.match_data.source_night != metadata.source_night
+        {
+            continue;
+        }
+
+        let matches = if is_master {
+            master_calibration_matches_session(kind, &bucket.match_data, &metadata)
+        } else {
+            calibration_matches_session(kind, &bucket.match_data, &metadata)
+        };
+
+        if matches {
+            bucket.push(kind, is_master, file.clone());
+            matched_any = true;
+        }
+    }
+
+    if matched_any {
+        return;
+    }
+
+    let key = if is_master {
+        master_calibration_session_key(kind, &metadata)
+    } else {
+        calibration_session_key(kind, &metadata)
+    };
+
+    let bucket = light_sessions.entry(key.clone()).or_insert_with(|| {
+        SessionBucket::new(
+            key,
+            create_session_fingerprint(&metadata),
+            create_session_match_data(&metadata),
+        )
+    });
+
+    bucket.push(kind, is_master, file);
 }
 
 fn group_preview_nights(
@@ -269,6 +432,7 @@ fn group_preview_nights(
     let mut processed_files = 0usize;
 
     let mut light_sessions: HashMap<String, SessionBucket> = HashMap::new();
+    let mut master_calibration_files: Vec<(SessionKind, FrameMetadata, File)> = Vec::new();
     let mut calibration_files: Vec<(SessionKind, FrameMetadata, File)> = Vec::new();
 
     for (night_name, files) in preview_nights {
@@ -289,47 +453,41 @@ fn group_preview_nights(
                 source_night: metadata.source_night,
                 camera: metadata.camera,
                 filter: metadata.filter,
+                telescope: metadata.telescope,
                 exposure: round_to_step(metadata.exposure, exposure_step),
                 gain: round_to_step(metadata.gain, gain_step),
                 temperature: round_to_step(metadata.temperature, temperature_step),
             };
 
             match file_kind {
-                SessionKind::Light => {
+                FileKind::Light => {
                     let key = light_session_key(&metadata);
                     let bucket = light_sessions.entry(key.clone()).or_insert_with(|| {
-                        SessionBucket::new(key, create_session_fingerprint(&metadata))
+                        SessionBucket::new(
+                            key,
+                            create_session_fingerprint(&metadata),
+                            create_session_match_data(&metadata),
+                        )
                     });
-                    bucket.push(SessionKind::Light, file);
+                    bucket.push(SessionKind::Light, false, file);
                 }
-                SessionKind::Dark | SessionKind::Flat | SessionKind::Bias => {
-                    calibration_files.push((file_kind, metadata, file));
+                FileKind::Calibration { kind, is_master } => {
+                    if is_master {
+                        master_calibration_files.push((kind, metadata, file));
+                    } else {
+                        calibration_files.push((kind, metadata, file));
+                    }
                 }
             }
         }
     }
 
+    for (kind, metadata, file) in master_calibration_files {
+        insert_calibration_file(&mut light_sessions, kind, true, metadata, file);
+    }
+
     for (kind, metadata, file) in calibration_files {
-        let mut matched_any = false;
-
-        for bucket in light_sessions.values_mut() {
-            if kind == SessionKind::Flat && bucket.fingerprint.name != metadata.source_night {
-                continue;
-            }
-
-            if calibration_matches_session(kind, &bucket.fingerprint, &metadata) {
-                bucket.push(kind, file.clone());
-                matched_any = true;
-            }
-        }
-
-        if !matched_any {
-            let key = calibration_session_key(kind, &metadata);
-            let bucket = light_sessions
-                .entry(key.clone())
-                .or_insert_with(|| SessionBucket::new(key, create_session_fingerprint(&metadata)));
-            bucket.push(kind, file);
-        }
+        insert_calibration_file(&mut light_sessions, kind, false, metadata, file);
     }
 
     let _ = channel.send(GroupFramesProgress {
@@ -457,4 +615,190 @@ pub async fn load_state(
     state.fe_state = data;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_file(file_type: FileType) -> File {
+        serde_json::from_value(serde_json::json!({
+            "path": "/tmp/test.fits",
+            "name": "test.fits",
+            "type": file_type,
+            "default_headers": {
+                "exposure_time": 60.0,
+                "gain": 1.0,
+                "temperature": -20.0
+            },
+            "stats": null,
+            "calibrated_frame": null,
+            "state": "Default"
+        }))
+        .expect("test file should deserialize")
+    }
+
+    fn test_metadata(source_night: &str) -> FrameMetadata {
+        FrameMetadata {
+            source_night: source_night.to_string(),
+            camera: Some("camera-a".to_string()),
+            filter: Some("luminance".to_string()),
+            telescope: Some("f/5 scope".to_string()),
+            exposure: Some(60.0),
+            gain: Some(1.0),
+            temperature: Some(-20.0),
+        }
+    }
+
+    #[test]
+    fn normalize_file_type_distinguishes_master_variants() {
+        assert_eq!(
+            normalize_file_type(&FileType::MasterDark),
+            FileKind::Calibration {
+                kind: SessionKind::Dark,
+                is_master: true,
+            }
+        );
+        assert_eq!(
+            normalize_file_type(&FileType::MasterFlat),
+            FileKind::Calibration {
+                kind: SessionKind::Flat,
+                is_master: true,
+            }
+        );
+        assert_eq!(
+            normalize_file_type(&FileType::MasterBias),
+            FileKind::Calibration {
+                kind: SessionKind::Bias,
+                is_master: true,
+            }
+        );
+    }
+
+    #[test]
+    fn master_matching_ignores_temperature_but_keeps_core_tags() {
+        let session = SessionMatchData {
+            source_night: "2026-03-09".to_string(),
+            camera: Some("camera-a".to_string()),
+            filter: Some("luminance".to_string()),
+            telescope: Some("f/5 scope".to_string()),
+            exposure: Some(60.0),
+            gain: Some(2.0),
+            temperature: Some(-5.0),
+        };
+
+        let matching = FrameMetadata {
+            source_night: "2026-03-09".to_string(),
+            camera: Some("camera-a".to_string()),
+            filter: Some("luminance".to_string()),
+            telescope: Some("f/5 scope".to_string()),
+            exposure: Some(60.0),
+            gain: Some(1.0),
+            temperature: Some(-20.0),
+        };
+
+        let different_temperature = FrameMetadata {
+            temperature: Some(-30.0),
+            ..matching.clone()
+        };
+
+        assert!(master_calibration_matches_session(
+            SessionKind::Flat,
+            &session,
+            &different_temperature
+        ));
+
+        let missing_filter = FrameMetadata {
+            filter: Some("red".to_string()),
+            ..matching.clone()
+        };
+
+        assert!(!master_calibration_matches_session(
+            SessionKind::Flat,
+            &session,
+            &missing_filter
+        ));
+    }
+
+    #[test]
+    fn master_dark_prevents_matching_normal_dark_frames() {
+        let master_file = test_file(FileType::MasterDark);
+        let normal_file = test_file(FileType::Dark);
+
+        let mut buckets = HashMap::new();
+        let metadata = test_metadata("2026-03-09");
+
+        let bucket = SessionBucket::new(
+            "light:2026-03-09:camera-a:luminance:f/5 scope:60.000:1.000:-20.000".to_string(),
+            create_session_fingerprint(&metadata),
+            create_session_match_data(&metadata),
+        );
+        buckets.insert(bucket.key.clone(), bucket);
+
+        insert_calibration_file(
+            &mut buckets,
+            SessionKind::Dark,
+            true,
+            metadata.clone(),
+            master_file,
+        );
+
+        insert_calibration_file(
+            &mut buckets,
+            SessionKind::Dark,
+            false,
+            FrameMetadata {
+                temperature: Some(-35.0),
+                ..metadata
+            },
+            normal_file,
+        );
+
+        let bucket = buckets.values().next().expect("bucket should exist");
+        assert_eq!(bucket.darks.len(), 1);
+        assert!(bucket.has_master_dark);
+    }
+
+    #[test]
+    fn normal_dark_can_match_across_nights_when_metadata_matches() {
+        let mut buckets = HashMap::new();
+
+        let light_metadata = FrameMetadata {
+            source_night: "2026-03-05".to_string(),
+            camera: Some("camera-a".to_string()),
+            filter: Some("luminance".to_string()),
+            telescope: None,
+            exposure: Some(60.0),
+            gain: Some(200.0),
+            temperature: Some(-20.0),
+        };
+
+        let bucket = SessionBucket::new(
+            "light:2026-03-05:camera-a:luminance::60.000:200.000:-20.000".to_string(),
+            create_session_fingerprint(&light_metadata),
+            create_session_match_data(&light_metadata),
+        );
+        buckets.insert(bucket.key.clone(), bucket);
+
+        let dark_metadata_other_night = FrameMetadata {
+            source_night: "2026-03-09".to_string(),
+            camera: Some("camera-a".to_string()),
+            filter: None,
+            telescope: Some("scope value present only on dark".to_string()),
+            exposure: Some(60.0),
+            gain: Some(200.0),
+            temperature: Some(-20.0),
+        };
+
+        insert_calibration_file(
+            &mut buckets,
+            SessionKind::Dark,
+            false,
+            dark_metadata_other_night,
+            test_file(FileType::Dark),
+        );
+
+        let bucket = buckets.values().next().expect("bucket should exist");
+        assert_eq!(bucket.darks.len(), 1);
+    }
 }
