@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use serde::de;
 use ts_rs::TS;
 
 use crate::file_picker::File;
@@ -15,6 +16,19 @@ pub struct SessionFingerprint {
     pub temperature: f32,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
+pub enum MasterOrFrames {
+    Master(File),
+    Frames(Vec<File>),
+}
+
+impl Default for MasterOrFrames {
+    fn default() -> Self {
+        MasterOrFrames::Frames(vec![])
+    }
+}
+
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]
 pub struct AstroSession {
@@ -23,9 +37,9 @@ pub struct AstroSession {
 
     //data
     pub lights: Vec<File>,
-    pub darks: Vec<File>,
-    pub flats: Vec<File>,
-    pub biases: Vec<File>,
+    pub darks: MasterOrFrames,
+    pub flats: MasterOrFrames,
+    pub biases: MasterOrFrames,
 }
 
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize, TS)]
