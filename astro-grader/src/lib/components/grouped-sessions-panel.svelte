@@ -2,6 +2,7 @@
   import { FILE_BADGES } from '$/lib/files/types';
   import { getAppState } from '$/lib/state.svelte';
   import type { MasterOrFrames } from '$lib/types/MasterOrFrames';
+  import { CheckIcon, XIcon } from '@lucide/svelte';
   import { Badge } from './ui/badge';
   import { Button } from './ui/button';
   import ScrollArea from './ui/scroll-area/scroll-area.svelte';
@@ -49,7 +50,7 @@
   </div>
 
   <ScrollArea orientation="horizontal" class="w-full">
-    <div class="flex w-max gap-2">
+    <div class="flex w-max gap-2 py-1">
       {#each appState.groupedNights as session (session.uuid)}
         <Button
           variant={session.uuid === appState.activeGroupedSessionUuid ? 'default' : 'outline'}
@@ -118,6 +119,8 @@
           {/if}
         </div>
 
+        <h1 class="mt-2 text-xl font-bold">Light frames</h1>
+
         <div class="mt-3 overflow-x-auto rounded-md border border-border bg-background/60">
           <table class="w-full min-w-140 text-sm">
             <thead
@@ -125,6 +128,7 @@
             >
               <tr>
                 <th class="px-3 py-2 font-medium">Filename</th>
+                <th class="px-3 py-2 font-medium">Calibrated</th>
                 <th class="px-3 py-2 font-medium">Star count</th>
                 <th class="px-3 py-2 font-medium">FWHM</th>
                 <th class="px-3 py-2 font-medium">Background contrast</th>
@@ -140,8 +144,15 @@
               {:else}
                 {#each selectedSession.lights as light (light.path)}
                   <tr class="border-t border-border/70">
-                    <td class="max-w-[320px] truncate px-3 py-2 text-foreground" title={light.name}>
+                    <td class="max-w-[320px] truncate px-3 py-2 text-foreground" title={light.path}>
                       {light.name}
+                    </td>
+                    <td>
+                      {#if light.calibrated_frame}
+                        <CheckIcon class="size-5 text-green-500" />
+                      {:else}
+                        <XIcon class="size-5 text-red-500" />
+                      {/if}
                     </td>
                     <td class="px-3 py-2 text-muted-foreground">
                       {light.stats?.star_count ?? '-'}
