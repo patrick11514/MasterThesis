@@ -4,6 +4,7 @@
   import { Button } from '../ui/button';
   import * as Kbd from '../ui/kbd';
   import ModeButton from '../ui/mode-button.svelte';
+  import Settings from './settings.svelte';
 
   const _platform = platform();
   console.log(_platform);
@@ -30,5 +31,5 @@
     </Kbd.Group>
   </Button>
 
-  <ModeButton class="invisible" />
+  <Settings />
 </div>

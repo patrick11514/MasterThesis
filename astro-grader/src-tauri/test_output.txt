@@ -40,33 +40,46 @@ warning: variants `ObservationDate`, `XBinding`, and `YBinding` are never constr
    |
    = note: `Tag` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
 
-warning: `astro-grader` (lib test) generated 4 warnings (run `cargo fix --lib -p astro-grader --tests` to apply 2 suggestions)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.45s
+warning: `astro-grader` (lib) generated 4 warnings (run `cargo fix --lib -p astro-grader` to apply 2 suggestions)
+warning: `astro-grader` (lib test) generated 4 warnings (4 duplicates)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.44s
      Running unittests src/lib.rs (target/debug/deps/astro_grader_lib-2e3c32b09b24febb)
 
 running 22 tests
-test file_picker::export_bindings_defaultheaders ... ok
-test fits::image_data_pixels::export_bindings_bayerpattern ... ok
-test fits::image_data_pixels::export_bindings_imagedatalayout ... ok
 test fits::image_data_pixels::export_bindings_imageoptions ... ok
+test fits::image_data_pixels::export_bindings_imagedatalayout ... ok
+test fits::image_data_pixels::export_bindings_bayerpattern ... ok
 test config::export_bindings_type ... ok
+test file_picker::export_bindings_defaultheaders ... ok
 test fits::image_data_pixels::export_bindings_stfpair ... ok
 test fits::structs::export_bindings_filetype ... ok
-test config::export_bindings_nightprefix ... ok
-test state::tests::master_matching_ignores_temperature_but_keeps_core_tags ... ok
+test fits::image_data_pixels::export_bindings_autosft ... ok
+test config::export_bindings_config ... ok
 test state::tests::master_dark_prevents_matching_normal_dark_frames ... ok
-test state::tests::normalize_file_type_distinguishes_master_variants ... ok
+test state::tests::master_matching_ignores_temperature_but_keeps_core_tags ... ok
 test state::tests::normal_dark_can_match_across_nights_when_metadata_matches ... ok
+test state::tests::normalize_file_type_distinguishes_master_variants ... ok
 test fits::structs::export_bindings_framestate ... ok
 test fits::structs::export_bindings_imagestats ... ok
-test fits::image_data_pixels::export_bindings_autosft ... ok
+test config::export_bindings_nightprefix ... ok
 test state::fe_state::export_bindings_sessionfingerprint ... ok
-test config::export_bindings_config ... ok
 test file_picker::export_bindings_file ... ok
 test fits::image_data_pixels::export_bindings_imagedata ... ok
-test state::fe_state::export_bindings_masterorframes ... ok
 test state::fe_state::export_bindings_astrosession ... ok
+test state::fe_state::export_bindings_masterorframes ... ok
 test state::fe_state::export_bindings_festate ... ok
 
-test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+     Running unittests src/main.rs (target/debug/deps/astro_grader-6beee46fb72b0db3)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests astro_grader_lib
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 

@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+use std::process::Command;
 use tauri::Manager;
 use ts_rs::TS;
 
@@ -51,16 +53,19 @@ impl Default for Config {
 
 #[derive(Debug)]
 pub enum ConfigError {
+    MissingConfigDirectory,
     CreateDirectoryError(std::io::Error),
     StringifyError(serde_json::Error),
     WriteFileError(std::io::Error),
     ReadFileError(std::io::Error),
     ParseError(serde_json::Error),
+    OpenFolderError(std::io::Error),
 }
 
 impl std::fmt::Display for ConfigError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            ConfigError::MissingConfigDirectory => write!(f, "Could not find config directory"),
             ConfigError::CreateDirectoryError(e) => {
                 write!(f, "Failed to create config directory: {}", e)
             }
@@ -68,19 +73,55 @@ impl std::fmt::Display for ConfigError {
             ConfigError::WriteFileError(e) => write!(f, "Failed to write config file: {}", e),
             ConfigError::ReadFileError(e) => write!(f, "Failed to read config file: {}", e),
             ConfigError::ParseError(e) => write!(f, "Failed to parse config file: {}", e),
+            ConfigError::OpenFolderError(e) => {
+                write!(f, "Failed to open config folder in file manager: {}", e)
+            }
         }
     }
+}
+
+fn config_dir_path(app_handle: &tauri::AppHandle) -> Result<PathBuf, ConfigError> {
+    app_handle
+        .path()
+        .app_config_dir()
+        .map_err(|_| ConfigError::MissingConfigDirectory)
+}
+
+fn config_file_path(app_handle: &tauri::AppHandle) -> Result<PathBuf, ConfigError> {
+    Ok(config_dir_path(app_handle)?.join("config.json"))
+}
+
+fn open_folder(path: &std::path::Path) -> Result<(), ConfigError> {
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut cmd = Command::new("explorer");
+        cmd.arg(path);
+        cmd
+    };
+
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut cmd = Command::new("open");
+        cmd.arg(path);
+        cmd
+    };
+
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    let mut command = {
+        let mut cmd = Command::new("xdg-open");
+        cmd.arg(path);
+        cmd
+    };
+
+    command.spawn().map_err(ConfigError::OpenFolderError)?;
+    Ok(())
 }
 
 pub async fn write_config(
     app_handle: &tauri::AppHandle,
     config: &Config,
 ) -> Result<(), ConfigError> {
-    let config_path = app_handle
-        .path()
-        .app_config_dir()
-        .expect("Could not find config directory")
-        .join("config.json");
+    let config_path = config_file_path(app_handle)?;
 
     if let Some(parent) = config_path.parent() {
         tokio::fs::create_dir_all(parent)
@@ -97,11 +138,7 @@ pub async fn write_config(
 }
 
 pub async fn read_config(app_handle: &tauri::AppHandle) -> Result<Config, ConfigError> {
-    let config_path = app_handle
-        .path()
-        .app_config_dir()
-        .expect("Could not find config directory")
-        .join("config.json");
+    let config_path = config_file_path(app_handle)?;
 
     if !config_path.exists() {
         return Ok(Config::default());
@@ -125,4 +162,22 @@ pub async fn config_set(app_handle: tauri::AppHandle, config: Config) -> Result<
     write_config(&app_handle, &config)
         .await
         .map_err(|e| format!("{}", e))
+}
+
+#[tauri::command]
+pub async fn config_path_get(app_handle: tauri::AppHandle) -> Result<String, String> {
+    config_file_path(&app_handle)
+        .map(|path| path.to_string_lossy().into_owned())
+        .map_err(|e| format!("{}", e))
+}
+
+#[tauri::command]
+pub async fn config_open_folder(app_handle: tauri::AppHandle) -> Result<(), String> {
+    let config_dir = config_dir_path(&app_handle).map_err(|e| format!("{}", e))?;
+
+    tokio::fs::create_dir_all(&config_dir)
+        .await
+        .map_err(|e| format!("{}", ConfigError::CreateDirectoryError(e)))?;
+
+    open_folder(&config_dir).map_err(|e| format!("{}", e))
 }

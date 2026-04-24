@@ -5,7 +5,6 @@
   import * as Resizable from '../ui/resizable';
   import FileImport from './file-import.svelte';
   import Header from './header.svelte';
-  import NightConfig from './night-config.svelte';
   import VirtualList from './virtual-list.svelte';
 
   const appState = await getAppState();
@@ -23,7 +22,7 @@
   <Header />
   <FileImport />
 
-  <NightConfig />
+  <h2 class="text-lg">Night list</h2>
 
   <div class="flex w-full flex-wrap items-center justify-center gap-2">
     {#each Object.entries(appState.framesShown) as [type, shown] (type)}

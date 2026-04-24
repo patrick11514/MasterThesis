@@ -61,6 +61,8 @@ pub fn run() {
             //Config Module
             config::config_get,
             config::config_set,
+            config::config_path_get,
+            config::config_open_folder,
             //Fits
             fits::fits_read_image,
             //State

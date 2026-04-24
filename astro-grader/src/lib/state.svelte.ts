@@ -260,6 +260,8 @@ export const getAppState = async () => {
   return appState;
 };
 
+export const getAppStateSync = () => appState;
+
 export type AppStateType = typeof appState;
 
 appEvents.on('Save', async () => {

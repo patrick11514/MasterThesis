@@ -1,5 +1,7 @@
 # Copilot Test Instructions
 
+Always install new shadcn-svelte components with `pnpx shadcn-svelte@latest add %component% -o -y` (example: `pnpx shadcn-svelte@latest add button -o -y`). The `-o` flag overwrites existing component files, and `-y` auto-confirms prompts.
+
 Use this repository verification flow when checking code integrity. Start with Rust, regenerate shared types, then validate the Svelte frontend.
 
 ## Verification Order
