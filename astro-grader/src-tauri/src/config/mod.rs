@@ -3,6 +3,18 @@ use std::process::Command;
 use tauri::Manager;
 use ts_rs::TS;
 
+fn default_temp_folder_path() -> String {
+    std::env::temp_dir().to_string_lossy().into_owned()
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq, Hash, TS, Default)]
+#[ts(export)]
+pub enum CalibrationStorageMode {
+    #[default]
+    NextToOriginal,
+    TempFolder,
+}
+
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq, Hash, TS)]
 #[ts(export)]
 enum Type {
@@ -32,6 +44,10 @@ fn default_zero_step() -> f32 {
 #[ts(export)]
 pub struct Config {
     pub night_prefixes: Vec<NightPrefix>,
+    #[serde(default)]
+    pub calibration_storage_mode: CalibrationStorageMode,
+    #[serde(default = "default_temp_folder_path")]
+    pub temp_folder_path: String,
     #[serde(default = "default_temperature_step")]
     pub temperature_step: f32,
     #[serde(default = "default_zero_step")]
@@ -44,6 +60,8 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             night_prefixes: Vec::new(),
+            calibration_storage_mode: CalibrationStorageMode::NextToOriginal,
+            temp_folder_path: default_temp_folder_path(),
             temperature_step: default_temperature_step(),
             exposure_step: default_zero_step(),
             gain_step: default_zero_step(),

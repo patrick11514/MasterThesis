@@ -70,6 +70,7 @@ pub fn run() {
             state::set_fe_state,
             state::set_fe_current_preview_file,
             state::group_frames,
+            state::calibrate,
             state::save_state,
             state::load_state
         ])

@@ -5,6 +5,7 @@ import { appEvents } from './events.svelte';
 import { parseFiles } from './files';
 import { FILE_TYPES } from './files/types';
 import type { AstroSession } from './types/AstroSession';
+import type { CalibrationStorageMode } from './types/CalibrationStorageMode';
 import type { Config } from './types/Config';
 import type { FeState } from './types/FeState';
 import type { File } from './types/File';
@@ -20,6 +21,8 @@ class AppState {
   public exposureStep = $state(0);
   public gainStep = $state(0);
   public currentPreviewFilePath = $state<string | null>(null);
+  public calibrationStorageMode = $state<CalibrationStorageMode>('NextToOriginal');
+  public tempFolderPath = $state('');
   public loaded = false;
   public framesShown = $state(Object.fromEntries(FILE_TYPES.map((type) => [type, true])));
 
@@ -41,14 +44,15 @@ class AppState {
     return sortedRawNights;
   }
 
-  private persistFeState = async () => {
+  public persistFeState = async () => {
     try {
       await invoke('set_fe_state', {
         feState: {
           raw_nights: this.rawNights,
           grouped_nights: this.groupedNights,
           active_grouped_session_uuid: this.activeGroupedSessionUuid,
-          current_preview_file: this.currentPreviewFilePath
+          current_preview_file: this.currentPreviewFilePath,
+          calibration_storage_mode: this.calibrationStorageMode
         } satisfies FeState
       });
     } catch (error) {
@@ -103,6 +107,9 @@ class AppState {
       const feState = await invoke<FeState>('get_fe_state');
 
       this.nightPrefixes = config.night_prefixes;
+      this.calibrationStorageMode =
+        feState.calibration_storage_mode ?? config.calibration_storage_mode;
+      this.tempFolderPath = config.temp_folder_path;
       this.temperatureStep = config.temperature_step ?? 1;
       this.exposureStep = config.exposure_step ?? 0;
       this.gainStep = config.gain_step ?? 0;
@@ -130,12 +137,15 @@ class AppState {
     try {
       const config = {
         night_prefixes: this.nightPrefixes,
+        calibration_storage_mode: this.calibrationStorageMode,
+        temp_folder_path: this.tempFolderPath,
         temperature_step: this.temperatureStep,
         exposure_step: this.exposureStep,
         gain_step: this.gainStep
       } satisfies Config;
 
       await invoke('config_set', { config });
+      void this.persistFeState();
       toast.success('Config saved');
     } catch (error) {
       toast.error('Failed to save config', {

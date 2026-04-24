@@ -30,6 +30,21 @@ pub struct GroupFramesProgress {
     pub total: usize,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+#[ts(export)]
+pub struct CalibrateFrameTarget {
+    pub source_path: String,
+    pub calibrated_path: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+#[ts(export)]
+pub struct CalibrateRequest {
+    pub storage_mode: config::CalibrationStorageMode,
+    pub temp_folder_path: String,
+    pub targets: Vec<CalibrateFrameTarget>,
+}
+
 #[derive(Debug, Clone)]
 struct FrameMetadata {
     source_night: String,
@@ -632,6 +647,33 @@ pub async fn load_state(
         .map_err(|_| "Failed to acquire app state lock".to_string())?;
 
     state.fe_state = data;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn calibrate(
+    request: CalibrateRequest,
+    state: tauri::State<'_, Mutex<AppState>>,
+) -> Result<(), String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to acquire app state lock".to_string())?;
+
+    println!(
+        "calibrate command stub: mode={:?}, targets={}, temp_folder={}, grouped_sessions={}",
+        request.storage_mode,
+        request.targets.len(),
+        request.temp_folder_path,
+        state.fe_state.grouped_nights.len()
+    );
+
+    for target in &request.targets {
+        println!(
+            "calibrate target: source={} calibrated={}",
+            target.source_path, target.calibrated_path
+        );
+    }
 
     Ok(())
 }

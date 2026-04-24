@@ -1,8 +1,10 @@
 <script lang="ts">
   import { getAppStateSync } from '$/lib/state.svelte';
+  import type { CalibrationStorageMode } from '$/lib/types/CalibrationStorageMode';
   import type { NightPrefix } from '$/lib/types/NightPrefix';
   import { FolderOpenIcon, InfoIcon, SettingsIcon, XIcon } from '@lucide/svelte';
   import { invoke } from '@tauri-apps/api/core';
+  import { open } from '@tauri-apps/plugin-dialog';
   import { tick } from 'svelte';
   import { toast } from 'svelte-sonner';
   import { cubicOut } from 'svelte/easing';
@@ -16,26 +18,29 @@
 
   const appState = getAppStateSync();
   let isDialogOpen = $state(false);
-  let activePage = $state<'processing.grouping' | 'file-list.night-parsing'>(
-    'file-list.night-parsing'
-  );
+  let activePage = $state<
+    'general' | 'processing.grouping' | 'processing.calibration' | 'file-list.night-parsing'
+  >('general');
   let isSaving = $state(false);
   let configPath = $state('Loading...');
 
+  let draftCalibrationStorageMode = $state<CalibrationStorageMode>('NextToOriginal');
+  let draftTempFolderPath = $state('');
   let draftTemperatureStep = $state(1);
   let draftExposureStep = $state(0);
   let draftGainStep = $state(0);
   let draftNightPrefixes = $state<NightPrefix[]>([]);
 
+  let tempFolderInput = $state<HTMLInputElement | null>(null);
   let temperatureStepInput = $state<HTMLInputElement | null>(null);
 
   const helpCopy = {
-    nightList: {
-      title: 'Night list',
+    general: {
+      title: 'Temp folder',
       description:
-        'This section controls how nights are grouped in the sidebar and how the list is displayed.',
+        'This path is used when calibrated frames should be stored outside the source folder.',
       example:
-        'Example: keep related sessions together by tuning the temperature, exposure, and gain steps.'
+        'Example: keep the path on a fast local disk if your source data lives on slower storage.'
     },
     groupingOffsets: {
       title: 'Grouping offsets',
@@ -50,12 +55,21 @@
         'These filters tell the app which part of the filename should be treated as the night label.',
       example:
         'Example: Prefix=2026 with Match first enabled on /path/to/2026-24/2026-89.fit gives -24 and ignores later 2026 parts.'
+    },
+    calibrationMode: {
+      title: 'Calibration storage mode',
+      description:
+        'This controls where calibrated frames are written or resolved from when running calibration.',
+      example:
+        'Example: Next to original writes frame_cal.fit beside the source file, while Temp folder uses the configured temp path.'
     }
   };
 
   const cloneNightPrefixes = (prefixes: NightPrefix[]) => prefixes.map((prefix) => ({ ...prefix }));
 
   const resetDraftState = () => {
+    draftCalibrationStorageMode = appState.calibrationStorageMode;
+    draftTempFolderPath = appState.tempFolderPath;
     draftTemperatureStep = appState.temperatureStep;
     draftExposureStep = appState.exposureStep;
     draftGainStep = appState.gainStep;
@@ -78,7 +92,7 @@
       return;
     }
 
-    activePage = 'processing.grouping';
+    activePage = 'general';
     resetDraftState();
     void loadConfigPath();
   });
@@ -86,6 +100,8 @@
   const onSaveAndApply = async () => {
     isSaving = true;
 
+    appState.calibrationStorageMode = draftCalibrationStorageMode;
+    appState.tempFolderPath = draftTempFolderPath;
     appState.temperatureStep = draftTemperatureStep;
     appState.exposureStep = draftExposureStep;
     appState.gainStep = draftGainStep;
@@ -123,10 +139,24 @@
     }
   };
 
+  const onPickTempFolder = async () => {
+    try {
+      const directory = await open({ directory: true, defaultPath: draftTempFolderPath });
+
+      if (typeof directory === 'string') {
+        draftTempFolderPath = directory;
+      }
+    } catch (error) {
+      toast.error('Failed to choose temp folder', {
+        description: error as string
+      });
+    }
+  };
+
   const onOpenOverlay = async () => {
     isDialogOpen = true;
     await tick();
-    temperatureStepInput?.focus();
+    tempFolderInput?.focus();
   };
 
   const onOverlayKeyDown = (event: KeyboardEvent) => {
@@ -154,7 +184,7 @@
     class="fixed top-1/2 left-1/2 z-50 flex h-[90vh] w-[95vw] max-w-none -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-lg border bg-background p-0 shadow-lg md:w-[92vw]"
     role="dialog"
     aria-modal="true"
-    aria-label="General settings"
+    aria-label="Settings"
     tabindex="-1"
     onkeydown={onOverlayKeyDown}
     onclick={(event) => event.stopPropagation()}
@@ -162,11 +192,29 @@
     out:scale={{ start: 0.96, duration: 140, easing: cubicOut }}
   >
     <div class="border-b px-6 py-4">
-      <h2 class="text-lg font-semibold">General settings</h2>
+      <h2 class="text-lg font-semibold">Settings</h2>
     </div>
 
     <div class="grid min-h-0 flex-1 grid-cols-1 overflow-hidden md:grid-cols-[280px_1fr]">
       <aside class="border-b p-2 md:border-r md:border-b-0" aria-label="Settings navigation">
+        <Sidebar.SidebarGroup>
+          <Sidebar.SidebarGroupLabel>General</Sidebar.SidebarGroupLabel>
+          <Sidebar.SidebarGroupContent>
+            <Sidebar.SidebarMenu>
+              <Sidebar.SidebarMenuItem>
+                <Sidebar.SidebarMenuButton
+                  isActive={activePage === 'general'}
+                  onclick={() => {
+                    activePage = 'general';
+                  }}
+                >
+                  General
+                </Sidebar.SidebarMenuButton>
+              </Sidebar.SidebarMenuItem>
+            </Sidebar.SidebarMenu>
+          </Sidebar.SidebarGroupContent>
+        </Sidebar.SidebarGroup>
+
         <Sidebar.SidebarGroup>
           <Sidebar.SidebarGroupLabel>File list settings</Sidebar.SidebarGroupLabel>
           <Sidebar.SidebarGroupContent>
@@ -199,13 +247,128 @@
                   Grouping
                 </Sidebar.SidebarMenuButton>
               </Sidebar.SidebarMenuItem>
+              <Sidebar.SidebarMenuItem>
+                <Sidebar.SidebarMenuButton
+                  isActive={activePage === 'processing.calibration'}
+                  onclick={() => {
+                    activePage = 'processing.calibration';
+                  }}
+                >
+                  Calibration
+                </Sidebar.SidebarMenuButton>
+              </Sidebar.SidebarMenuItem>
             </Sidebar.SidebarMenu>
           </Sidebar.SidebarGroupContent>
         </Sidebar.SidebarGroup>
       </aside>
 
       <section class="overflow-y-auto p-6">
-        {#if activePage === 'processing.grouping'}
+        {#if activePage === 'general'}
+          <div class="grid gap-6">
+            <h2 class="flex items-center gap-2 text-base font-medium">
+              <span>General</span>
+              <Tooltip.Root>
+                <Tooltip.Trigger>
+                  {#snippet child({ props })}
+                    <Button
+                      {...props}
+                      variant="ghost"
+                      size="icon-sm"
+                      class="shrink-0 text-muted-foreground hover:text-foreground"
+                      aria-label="Show temp folder help"
+                    >
+                      <InfoIcon class="h-4 w-4" />
+                    </Button>
+                  {/snippet}
+                </Tooltip.Trigger>
+                <Tooltip.Content class="max-w-sm">
+                  <div class="grid gap-1.5">
+                    <strong>{helpCopy.general.title}</strong>
+                    <p>{helpCopy.general.description}</p>
+                    <p>{helpCopy.general.example}</p>
+                  </div>
+                </Tooltip.Content>
+              </Tooltip.Root>
+            </h2>
+
+            <div class="grid gap-3">
+              <Label for="temp-folder-path">Temp folder</Label>
+              <div class="flex flex-col gap-2 sm:flex-row">
+                <Input
+                  bind:ref={tempFolderInput}
+                  id="temp-folder-path"
+                  bind:value={draftTempFolderPath}
+                  readonly
+                  class="min-w-0 flex-1"
+                />
+                <Button variant="outline" size="sm" class="sm:w-fit" onclick={onPickTempFolder}>
+                  <FolderOpenIcon class="h-4 w-4" />
+                  Choose folder
+                </Button>
+              </div>
+            </div>
+          </div>
+        {:else if activePage === 'processing.calibration'}
+          <div class="grid gap-6">
+            <h2 class="flex items-center gap-2 text-base font-medium">
+              <span>Calibration storage mode</span>
+              <Tooltip.Root>
+                <Tooltip.Trigger>
+                  {#snippet child({ props })}
+                    <Button
+                      {...props}
+                      variant="ghost"
+                      size="icon-sm"
+                      class="shrink-0 text-muted-foreground hover:text-foreground"
+                      aria-label="Show calibration storage help"
+                    >
+                      <InfoIcon class="h-4 w-4" />
+                    </Button>
+                  {/snippet}
+                </Tooltip.Trigger>
+                <Tooltip.Content class="max-w-sm">
+                  <div class="grid gap-1.5">
+                    <strong>{helpCopy.calibrationMode.title}</strong>
+                    <p>{helpCopy.calibrationMode.description}</p>
+                    <p>{helpCopy.calibrationMode.example}</p>
+                  </div>
+                </Tooltip.Content>
+              </Tooltip.Root>
+            </h2>
+
+            <div class="grid gap-3">
+              <Button
+                variant={draftCalibrationStorageMode === 'NextToOriginal' ? 'default' : 'outline'}
+                class="h-auto justify-start px-4 py-3 text-left"
+                onclick={() => {
+                  draftCalibrationStorageMode = 'NextToOriginal';
+                }}
+              >
+                <div class="grid gap-1">
+                  <span class="font-medium">Next to original</span>
+                  <span class="text-xs text-muted-foreground">
+                    Write ORIGINAL_NAME_cal.ORIGINAL_EXTENSION beside the source FITS file.
+                  </span>
+                </div>
+              </Button>
+
+              <Button
+                variant={draftCalibrationStorageMode === 'TempFolder' ? 'default' : 'outline'}
+                class="h-auto justify-start px-4 py-3 text-left"
+                onclick={() => {
+                  draftCalibrationStorageMode = 'TempFolder';
+                }}
+              >
+                <div class="grid gap-1">
+                  <span class="font-medium">Temp folder</span>
+                  <span class="text-xs text-muted-foreground">
+                    Resolve calibrated frames from the configured temp folder.
+                  </span>
+                </div>
+              </Button>
+            </div>
+          </div>
+        {:else if activePage === 'processing.grouping'}
           <div class="grid gap-6">
             <h2 class="flex items-center gap-2 text-base font-medium">
               <span>Grouping offsets</span>

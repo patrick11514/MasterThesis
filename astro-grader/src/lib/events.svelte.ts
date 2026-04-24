@@ -7,7 +7,7 @@ type AppEvent =
     // fits import
     'ImportFITS' | 'ImportFITSDirectory' |
     // processing
-    'GroupFrames' |
+  'GroupFrames' | 'CalibrateFrames' |
     // command palette
     "OpenCommandPalette"
 ;

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { appEvents } from '$/lib/events.svelte';
-  import { FileIcon, FolderIcon, LayersIcon, SaveIcon } from '@lucide/svelte';
+  import { BeakerIcon, FileIcon, FolderIcon, LayersIcon, SaveIcon } from '@lucide/svelte';
   import { platform } from '@tauri-apps/plugin-os';
   import * as Command from '../ui/command';
 
@@ -28,6 +28,10 @@
 
   const groupFrames = () => {
     appEvents.emit('GroupFrames');
+  };
+
+  const calibrateFrames = () => {
+    appEvents.emit('CalibrateFrames');
   };
 
   //This wrapper closes the command palette before executing the command
@@ -82,6 +86,11 @@
     if ((ctrl || meta) && G) {
       activated = true;
       groupFrames();
+    }
+    const C = e.key === 'c' || e.key === 'C';
+    if ((ctrl || meta) && shift && C) {
+      activated = true;
+      calibrateFrames();
     }
 
     if (activated) {
@@ -169,6 +178,18 @@
             CTRL
           {/if}
           G
+        </Command.Shortcut>
+      </Command.Item>
+      <Command.Item onclick={wrap(calibrateFrames)}>
+        <BeakerIcon class="me-2 size-4" />
+        <span>Calibrate frames</span>
+        <Command.Shortcut>
+          {#if _platform === 'macos'}
+            ⌘ + Shift
+          {:else}
+            CTRL + Shift +
+          {/if}
+          C
         </Command.Shortcut>
       </Command.Item>
     </Command.Group>

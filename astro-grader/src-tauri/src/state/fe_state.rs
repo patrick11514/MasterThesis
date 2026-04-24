@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use serde::de;
 use ts_rs::TS;
 
+use crate::config::CalibrationStorageMode;
 use crate::file_picker::File;
 
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize, TS)]
@@ -49,6 +50,8 @@ pub struct FeState {
     pub grouped_nights: Vec<AstroSession>,
     pub active_grouped_session_uuid: Option<String>,
     pub current_preview_file: Option<String>,
+    #[serde(default)]
+    pub calibration_storage_mode: CalibrationStorageMode,
 }
 
 pub async fn save_fe_state(path: String, state: FeState) -> Result<(), String> {
