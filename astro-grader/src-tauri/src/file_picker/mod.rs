@@ -4,6 +4,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use ts_rs::TS;
+use uuid::Uuid;
 use walkdir::WalkDir;
 
 use crate::fits::{FileType, FitsFile, FrameState, ImageStats, Tag};
@@ -19,6 +20,9 @@ pub struct DefaultHeaders {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]
 pub struct File {
+    #[serde(default = "Uuid::new_v4")]
+    #[ts(as = "String")]
+    uuid: Uuid,
     path: PathBuf,
     name: String,
     #[serde(rename = "type")]
@@ -26,8 +30,9 @@ pub struct File {
     default_headers: DefaultHeaders,
     #[serde(default)]
     stats: Option<ImageStats>,
-    #[serde(default)]
-    calibrated_frame: Option<Vec<u8>>,
+    //Only during processing
+    #[serde(skip)]
+    calibrated_frame: Option<PathBuf>,
     #[serde(default)]
     state: FrameState,
 }
@@ -70,6 +75,7 @@ fn path_to_file(file_path: PathBuf) -> Option<File> {
     };
 
     return Some(File {
+        uuid: Uuid::new_v4(),
         file_type,
         path: file_path.clone(),
         name: file_path
