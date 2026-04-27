@@ -31,7 +31,8 @@ pub struct File {
     #[serde(default)]
     stats: Option<ImageStats>,
     //Only during processing
-    #[serde(skip)]
+    #[serde(default)]
+    #[ts(as = "Option<String>")]
     calibrated_frame: Option<PathBuf>,
     #[serde(default)]
     state: FrameState,

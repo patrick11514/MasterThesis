@@ -4,4 +4,4 @@ import type { FileType } from "./FileType";
 import type { FrameState } from "./FrameState";
 import type { ImageStats } from "./ImageStats";
 
-export type File = { path: string, name: string, type: FileType, default_headers: DefaultHeaders, stats: ImageStats | null, calibrated_frame: Array<number> | null, state: FrameState, };
+export type File = { uuid: string, path: string, name: string, type: FileType, default_headers: DefaultHeaders, stats: ImageStats | null, calibrated_frame: string | null, state: FrameState, };

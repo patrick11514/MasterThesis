@@ -5,6 +5,7 @@ use tauri::{Manager, State, http};
 mod config;
 mod file_picker;
 mod fits;
+mod processing;
 mod state;
 
 static URL_PREFIXES: [&str; 4] = [
@@ -69,8 +70,8 @@ pub fn run() {
             state::get_fe_state,
             state::set_fe_state,
             state::set_fe_current_preview_file,
-            state::group_frames,
-            state::calibrate,
+            processing::group_frames,
+            processing::calibrate,
             state::save_state,
             state::load_state
         ])
