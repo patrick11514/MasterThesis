@@ -7,6 +7,18 @@
 
   let linked = $state(true);
 
+  const stfToSlider = (stf: SMH): SMH => {
+    const [shadows, midtoneParam, highlights] = stf;
+    const range = highlights - shadows;
+
+    if (range <= 0) {
+      return [shadows, shadows, highlights];
+    }
+
+    const midtoneAbsolute = shadows + midtoneParam * range;
+    return [shadows, Math.max(shadows, Math.min(highlights, midtoneAbsolute)), highlights];
+  };
+
   const channels = $derived.by(() => {
     if (!previewState.previewData) return [];
 
@@ -92,9 +104,9 @@
         ? previewState.previewData.auto_stf.linked
         : previewState.previewData.auto_stf.unlinked;
 
-      previewState.R = stf.r;
-      previewState.G = stf.g;
-      previewState.B = stf.b;
+      previewState.R = stfToSlider(stf.r);
+      previewState.G = stfToSlider(stf.g);
+      previewState.B = stfToSlider(stf.b);
 
       console.log('Applied');
     }}

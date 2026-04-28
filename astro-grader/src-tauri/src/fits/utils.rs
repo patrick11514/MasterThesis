@@ -212,7 +212,7 @@ pub fn calculate_stf(medians: &[f32], mads: &[f32], rgb_linked: bool) -> STFPair
             let m = mtf(c1 - (m_avg / n as f32), target_background);
 
             for c in 0..n {
-                channels[c] = [0.0, m, 1.0];
+                channels[c] = [0.0, m, c1];
             }
         }
     } else {
@@ -232,7 +232,7 @@ pub fn calculate_stf(medians: &[f32], mads: &[f32], rgb_linked: bool) -> STFPair
                     1.0
                 };
                 let m = mtf(c1 - medians[c], target_background);
-                channels[c] = [0.0, m, 1.0];
+                channels[c] = [0.0, m, c1];
             }
         }
     }

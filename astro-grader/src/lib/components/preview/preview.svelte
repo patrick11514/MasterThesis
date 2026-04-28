@@ -109,6 +109,17 @@
   let glContext = $state<WebGL2RenderingContext | null>(null);
   let glProgram = $state<WebGLProgram | null>(null);
 
+  const sliderMidtoneToStfParam = (smh: [number, number, number]): number => {
+    const [shadows, midtoneAbsolute, highlights] = smh;
+    const range = highlights - shadows;
+
+    if (range <= 0) {
+      return 0.5;
+    }
+
+    return Math.max(0, Math.min(1, (midtoneAbsolute - shadows) / range));
+  };
+
   $effect(() => {
     if (!canvasElement || !rawData) return;
 
@@ -200,7 +211,11 @@
     // 1. Transpose the SMH data into [R, G, B] vectors for WebGL
     // Index 0 = Shadows, Index 1 = Midtones, Index 2 = Highlights
     const shadows = new Float32Array([previewState.R[0], previewState.G[0], previewState.B[0]]);
-    const midtones = new Float32Array([previewState.R[1], previewState.G[1], previewState.B[1]]);
+    const midtones = new Float32Array([
+      sliderMidtoneToStfParam(previewState.R),
+      sliderMidtoneToStfParam(previewState.G),
+      sliderMidtoneToStfParam(previewState.B)
+    ]);
     const highlights = new Float32Array([previewState.R[2], previewState.G[2], previewState.B[2]]);
 
     console.log(shadows, midtones, highlights);
