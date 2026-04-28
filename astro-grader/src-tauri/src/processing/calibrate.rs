@@ -6,6 +6,7 @@ use std::{
 };
 
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
+use rayon::prelude::*;
 use twox_hash::XxHash3_64;
 
 use crate::{
@@ -76,9 +77,6 @@ fn write_master_metadata(
     let filter = src.get_tag_value(Tag::Filter);
     let exposure = src.get_tag_custom::<f32>(Tag::ExposureTime);
     let gain = src.get_tag_custom::<f32>(Tag::Gain);
-    let bayer = src.get_tag_value(Tag::BayerPattern);
-    let x_bayer_offset = src.get_tag_custom::<i32>(Tag::XBayerOffset);
-    let y_bayer_offset = src.get_tag_custom::<i32>(Tag::YBayerOffset);
 
     let mut dst = FitsFile::edit(target_path.to_path_buf())
         .map_err(|_| "Unable to open output master frame for metadata write".to_string())?;
@@ -106,17 +104,19 @@ fn write_master_metadata(
         dst.write_key_f32("GAIN", value)
             .map_err(|_| "Unable to write GAIN into master frame".to_string())?;
     }
-    if let Some(value) = bayer {
+
+    // Copy Bayer metadata if present so masters can be properly debayered on load
+    if let Some(value) = src.get_tag_value(Tag::BayerPattern) {
         dst.write_key_string("BAYERPAT", value.trim())
-            .map_err(|_| "Unable to write BAYERPAT into master frame".to_string())?;
+            .map_err(|_| "Unable to write BAYERPAT into master frame".to_string())?
     }
-    if let Some(value) = x_bayer_offset {
+    if let Some(value) = src.get_tag_custom::<i32>(Tag::XBayerOffset) {
         dst.write_key_i32("XBAYROFF", value)
-            .map_err(|_| "Unable to write XBAYROFF into master frame".to_string())?;
+            .map_err(|_| "Unable to write XBAYROFF into master frame".to_string())?
     }
-    if let Some(value) = y_bayer_offset {
+    if let Some(value) = src.get_tag_custom::<i32>(Tag::YBayerOffset) {
         dst.write_key_i32("YBAYROFF", value)
-            .map_err(|_| "Unable to write YBAYROFF into master frame".to_string())?;
+            .map_err(|_| "Unable to write YBAYROFF into master frame".to_string())?
     }
 
     Ok(())
@@ -134,6 +134,8 @@ fn produce_master(
         ));
     }
 
+    // Streaming approach to avoid loading all frames simultaneously
+    // Read first frame to get dimensions
     let mut first_fits = FitsFile::new(frames[0].path().clone())
         .map_err(|_| "Unable to open first frame for master generation".to_string())?;
     let first_image = ImageDataPixels::from_fits(&mut first_fits)
@@ -144,12 +146,12 @@ fn produce_master(
     let expected_depth = first_image.data.depth;
     let expected_layout = first_image.data.layout.clone();
 
-    let mut accumulator = first_image.pixels.clone();
+    let pixel_count = first_image.pixels.len();
+    let nframes = frames.len();
 
     for frame in frames.iter().skip(1) {
         let mut fits = FitsFile::new(frame.path().clone())
             .map_err(|_| "Unable to open frame for master generation".to_string())?;
-
         let image = ImageDataPixels::from_fits(&mut fits)
             .map_err(|_| "Unable to read frame pixels for master generation".to_string())?;
 
@@ -157,27 +159,154 @@ fn produce_master(
             || image.data.height != expected_height
             || image.data.depth != expected_depth
             || image.data.layout != expected_layout
-            || image.pixels.len() != accumulator.len()
+            || image.pixels.len() != pixel_count
         {
             return Err(format!(
                 "Incompatible frame dimensions/layout while building master {}",
                 master_type.as_file_name_part()
             ));
         }
+    }
 
-        for (acc, px) in accumulator.iter_mut().zip(image.pixels.iter()) {
-            *acc += *px;
+    // Use median for Flats and Bias (naturally uniform, dust/defects are sparse)
+    // Use sigma-clipped mean for Darks (to reject cosmic rays)
+    let use_median = matches!(master_type, MasterType::Flat | MasterType::Bias);
+
+    // Median or unclipped mean path: buffer all samples
+    if use_median || nframes < 6 {
+        // allocate samples as contiguous [frame0_pixels..., frame1_pixels..., ...]
+        let mut samples: Vec<f32> = vec![0.0; pixel_count * nframes];
+
+        for (fi, frame) in frames.iter().enumerate() {
+            let mut fits = FitsFile::new(frame.path().clone())
+                .map_err(|_| "Unable to open frame for master generation".to_string())?;
+            let image = ImageDataPixels::from_fits(&mut fits)
+                .map_err(|_| "Unable to read frame pixels for master generation".to_string())?;
+
+            let offset = fi * pixel_count;
+            samples[offset..offset + pixel_count].copy_from_slice(&image.pixels);
+
+
+        }
+
+        // compute median per pixel
+        let out_pixels: Vec<f32> = (0..pixel_count)
+            .into_par_iter()
+            .map(|i| {
+                let mut vals: Vec<f32> = (0..nframes)
+                    .map(|fi| samples[fi * pixel_count + i])
+                    .collect();
+                let mid = vals.len() / 2;
+                vals.select_nth_unstable_by(mid, |a, b| a.partial_cmp(b).unwrap());
+                vals[mid]
+            })
+            .collect();
+
+
+
+        let mut out_pixels = out_pixels;
+        if matches!(master_type, MasterType::Flat) {
+            // Normalize flat master by its maximum value to achieve unity gain
+            let max_val = out_pixels
+                .iter()
+                .copied()
+                .fold(f32::NEG_INFINITY, f32::max);
+            if max_val.is_normal() && max_val > 0.0 {
+                for value in &mut out_pixels {
+                    *value /= max_val;
+                }
+            }
+        }
+
+        let master_image = ImageDataPixels {
+            data: first_image.data.clone(),
+            pixels: out_pixels,
+        };
+
+        master_image
+            .save_to_fits(target_path.to_path_buf())
+            .map_err(|_| "Unable to write produced master frame to FITS".to_string())?;
+
+
+
+        write_master_metadata(target_path, &frames[0], master_type)?;
+
+        return Ok(target_path.to_path_buf());
+    }
+
+    // Sigma-clipped mean path (two-pass Welford + clipping) to avoid holding all frames
+    // First pass: compute mean and M2 per pixel (Welford)
+    let mut mean: Vec<f64> = vec![0.0; pixel_count];
+    let mut m2: Vec<f64> = vec![0.0; pixel_count];
+
+    for (count_idx, frame) in frames.iter().enumerate() {
+        let mut fits = FitsFile::new(frame.path().clone())
+            .map_err(|_| "Unable to open frame for master generation".to_string())?;
+        let image = ImageDataPixels::from_fits(&mut fits)
+            .map_err(|_| "Unable to read frame pixels for master generation".to_string())?;
+
+        let k = (count_idx + 1) as f64;
+        for i in 0..pixel_count {
+            let x = image.pixels[i] as f64;
+            let delta = x - mean[i];
+            mean[i] += delta / k;
+            let delta2 = x - mean[i];
+            m2[i] += delta * delta2;
         }
     }
 
-    let count = frames.len() as f32;
-    for px in &mut accumulator {
-        *px /= count;
+    let mut std: Vec<f64> = vec![0.0; pixel_count];
+    for i in 0..pixel_count {
+        let var = if nframes > 0 {
+            m2[i] / (nframes as f64)
+        } else {
+            0.0
+        };
+        std[i] = var.sqrt();
     }
 
+    // Compute clipping bounds
+    let k_sigma = 3.0f64;
+    let mut lower: Vec<f64> = vec![0.0; pixel_count];
+    let mut upper: Vec<f64> = vec![0.0; pixel_count];
+    for i in 0..pixel_count {
+        lower[i] = mean[i] - k_sigma * std[i];
+        upper[i] = mean[i] + k_sigma * std[i];
+    }
+
+    // Second pass: accumulate sum and count of non-clipped samples
+    let mut sum: Vec<f64> = vec![0.0; pixel_count];
+    let mut cnt: Vec<u32> = vec![0; pixel_count];
+
+    for frame in frames {
+        let mut fits = FitsFile::new(frame.path().clone())
+            .map_err(|_| "Unable to open frame for master generation".to_string())?;
+        let image = ImageDataPixels::from_fits(&mut fits)
+            .map_err(|_| "Unable to read frame pixels for master generation".to_string())?;
+
+        for i in 0..pixel_count {
+            let x = image.pixels[i] as f64;
+            if x >= lower[i] && x <= upper[i] {
+                sum[i] += x;
+                cnt[i] += 1;
+            }
+        }
+    }
+
+    let out_pixels: Vec<f32> = (0..pixel_count)
+        .into_par_iter()
+        .map(|i| {
+            if cnt[i] > 0 {
+                (sum[i] / (cnt[i] as f64)) as f32
+            } else {
+                mean[i] as f32
+            }
+        })
+        .collect();
+
     let master_image = ImageDataPixels {
-        data: first_image.data,
-        pixels: accumulator,
+        data: first_image.data.clone(),
+        pixels: out_pixels,
     };
 
     master_image

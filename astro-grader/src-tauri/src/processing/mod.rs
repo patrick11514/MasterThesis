@@ -56,21 +56,5 @@ pub async fn calibrate(
 
     let temp_folder = PathBuf::from(&request.temp_folder_path);
     create_master_frames(&mut state.fe_state, &temp_folder)?;
-
-    println!(
-        "calibrate command master prep done: mode={:?}, targets={}, temp_folder={}, grouped_sessions={}",
-        request.storage_mode,
-        request.targets.len(),
-        request.temp_folder_path,
-        state.fe_state.grouped_nights.len()
-    );
-
-    for target in &request.targets {
-        println!(
-            "calibrate target: source={} calibrated={}",
-            target.source_path, target.calibrated_path
-        );
-    }
-
     Ok(())
 }

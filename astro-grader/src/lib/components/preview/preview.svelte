@@ -109,16 +109,7 @@
   let glContext = $state<WebGL2RenderingContext | null>(null);
   let glProgram = $state<WebGLProgram | null>(null);
 
-  const sliderMidtoneToStfParam = (smh: [number, number, number]): number => {
-    const [shadows, midtoneAbsolute, highlights] = smh;
-    const range = highlights - shadows;
-
-    if (range <= 0) {
-      return 0.5;
-    }
-
-    return Math.max(0, Math.min(1, (midtoneAbsolute - shadows) / range));
-  };
+  const sliderMidtoneToStfParam = (smh: [number, number, number]): number => smh[1];
 
   $effect(() => {
     if (!canvasElement || !rawData) return;
