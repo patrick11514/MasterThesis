@@ -44,6 +44,10 @@ pub struct ScanCancellation {
 }
 
 impl File {
+    pub fn uuid(&self) -> Uuid {
+        self.uuid
+    }
+
     pub fn path(&self) -> &PathBuf {
         &self.path
     }
@@ -139,8 +143,6 @@ pub async fn file_picker_recursive(
         }
     }
 
-    // 4. Send the final count.
-    // If the loop finished at 143 files, the UI would be stuck at "100" without this.
     let final_count = counter.load(Ordering::Relaxed);
     let _ = channel.send(final_count);
 

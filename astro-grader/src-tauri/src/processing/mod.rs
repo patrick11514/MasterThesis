@@ -1,14 +1,16 @@
-mod group;
 mod calibrate;
+mod group;
 
 pub use group::group_preview_nights;
 
+use calibrate::create_master_frames;
+use std::path::PathBuf;
 use std::sync::Mutex;
 
 use crate::{
     config,
-    state::{AppState, GroupFramesProgress, CalibrateRequest},
     state::fe_state::AstroSession,
+    state::{AppState, CalibrateRequest, GroupFramesProgress},
 };
 
 #[tauri::command]
@@ -48,12 +50,15 @@ pub async fn calibrate(
     request: CalibrateRequest,
     state: tauri::State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
-    let state = state
+    let mut state = state
         .lock()
         .map_err(|_| "Failed to acquire app state lock".to_string())?;
 
+    let temp_folder = PathBuf::from(&request.temp_folder_path);
+    create_master_frames(&mut state.fe_state, &temp_folder)?;
+
     println!(
-        "calibrate command stub: mode={:?}, targets={}, temp_folder={}, grouped_sessions={}",
+        "calibrate command master prep done: mode={:?}, targets={}, temp_folder={}, grouped_sessions={}",
         request.storage_mode,
         request.targets.len(),
         request.temp_folder_path,

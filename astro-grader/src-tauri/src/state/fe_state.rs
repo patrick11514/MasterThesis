@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use serde::de;
 use ts_rs::TS;
@@ -41,6 +42,14 @@ pub struct AstroSession {
     pub darks: MasterOrFrames,
     pub flats: MasterOrFrames,
     pub biases: MasterOrFrames,
+
+    //runtime data
+    #[serde(skip)]
+    pub master_dark: Option<PathBuf>,
+    #[serde(skip)]
+    pub master_flat: Option<PathBuf>,
+    #[serde(skip)]
+    pub master_bias: Option<PathBuf>,
 }
 
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize, TS)]

@@ -2,10 +2,11 @@ use rayon::{
     iter::{IndexedParallelIterator, ParallelIterator},
     slice::ParallelSliceMut,
 };
+use std::path::PathBuf;
 use ts_rs::TS;
 
 use crate::fits::{
-    file::{FitsFile, ReadImageError},
+    file::{FitsFile, FitsWriteError, ReadImageError},
     utils::{calculate_channel_stats, calculate_stf, debayer_data},
 };
 
@@ -139,6 +140,18 @@ impl ImageDataPixels {
             },
             pixels: data,
         })
+    }
+
+    pub fn save_to_fits(&self, path: PathBuf) -> Result<(), FitsWriteError> {
+        let shape = match self.data.layout {
+            ImageDataLayout::Grayscale => vec![self.data.height, self.data.width],
+            ImageDataLayout::RGBPlanar => vec![3, self.data.height, self.data.width],
+            // Master generation should always produce grayscale/RGBPlanar for now.
+            ImageDataLayout::RGB => return Err(FitsWriteError::WriteImageFailed),
+        };
+
+        let mut output = FitsFile::create(path, &shape, fitsio::images::ImageType::Float)?;
+        output.write_image_f32(&self.pixels)
     }
 
     // This function normalizes data into two formats:

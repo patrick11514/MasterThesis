@@ -11,6 +11,15 @@ pub enum ReadImageError {
     UnableToExtractImageSize,
 }
 
+#[derive(Debug)]
+pub enum FitsWriteError {
+    CreateFailed,
+    OpenForEditFailed,
+    OpenPrimaryHduFailed,
+    WriteImageFailed,
+    WriteHeaderFailed,
+}
+
 impl FitsFile {
     pub fn new(path: PathBuf) -> Result<Self, super::structs::FitsOpenError> {
         let mut file =
@@ -18,6 +27,38 @@ impl FitsFile {
         let hdu = file
             .primary_hdu()
             .map_err(|_| super::structs::FitsOpenError::NoHudFound)?;
+
+        Ok(FitsFile { file, hdu })
+    }
+
+    pub fn create(
+        path: PathBuf,
+        shape: &[usize],
+        image_type: fitsio::images::ImageType,
+    ) -> Result<Self, FitsWriteError> {
+        let image_description = fitsio::images::ImageDescription {
+            data_type: image_type,
+            dimensions: shape,
+        };
+
+        let mut file = fitsio::FitsFile::create(path)
+            .with_custom_primary(&image_description)
+            .open()
+            .map_err(|_| FitsWriteError::CreateFailed)?;
+
+        let hdu = file
+            .primary_hdu()
+            .map_err(|_| FitsWriteError::OpenPrimaryHduFailed)?;
+
+        Ok(FitsFile { file, hdu })
+    }
+
+    pub fn edit(path: PathBuf) -> Result<Self, FitsWriteError> {
+        let mut file =
+            fitsio::FitsFile::edit(path).map_err(|_| FitsWriteError::OpenForEditFailed)?;
+        let hdu = file
+            .primary_hdu()
+            .map_err(|_| FitsWriteError::OpenPrimaryHduFailed)?;
 
         Ok(FitsFile { file, hdu })
     }
@@ -63,5 +104,37 @@ impl FitsFile {
             .read_image(&mut self.file)
             .map_err(|_| ReadImageError::ReadImageFailed)?;
         Ok(data)
+    }
+
+    pub fn write_image_f32(&mut self, data: &[f32]) -> Result<(), FitsWriteError> {
+        self.hdu
+            .write_image(&mut self.file, data)
+            .map_err(|_| FitsWriteError::WriteImageFailed)?;
+
+        Ok(())
+    }
+
+    pub fn write_key_string(&mut self, key: &str, value: &str) -> Result<(), FitsWriteError> {
+        self.hdu
+            .write_key(&mut self.file, key, value)
+            .map_err(|_| FitsWriteError::WriteHeaderFailed)?;
+
+        Ok(())
+    }
+
+    pub fn write_key_f32(&mut self, key: &str, value: f32) -> Result<(), FitsWriteError> {
+        self.hdu
+            .write_key(&mut self.file, key, value)
+            .map_err(|_| FitsWriteError::WriteHeaderFailed)?;
+
+        Ok(())
+    }
+
+    pub fn write_key_i32(&mut self, key: &str, value: i32) -> Result<(), FitsWriteError> {
+        self.hdu
+            .write_key(&mut self.file, key, value)
+            .map_err(|_| FitsWriteError::WriteHeaderFailed)?;
+
+        Ok(())
     }
 }
