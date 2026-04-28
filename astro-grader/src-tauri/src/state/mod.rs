@@ -1,4 +1,5 @@
 use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
 
 use crate::{
     config,
@@ -23,6 +24,63 @@ pub struct AppState {
 pub struct GroupFramesProgress {
     pub processed: usize,
     pub total: usize,
+}
+
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+#[ts(export)]
+pub enum CalibrationStepKind {
+    Dark,
+    Flat,
+    Bias,
+}
+
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+#[ts(export)]
+pub enum CalibrationStepStatus {
+    Pending,
+    Running,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+#[ts(export)]
+pub enum CalibrationRunStatus {
+    Running,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+#[ts(export)]
+pub struct CalibrationProgressStep {
+    pub id: String,
+    pub kind: CalibrationStepKind,
+    pub label: String,
+    pub session_uuid: String,
+    pub session_label: String,
+    pub count: usize,
+    pub status: CalibrationStepStatus,
+    pub started_at: Option<u64>,
+    pub ended_at: Option<u64>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+#[ts(export)]
+pub struct CalibrationProgressMessage {
+    pub started_at: u64,
+    pub finished_at: Option<u64>,
+    pub status: CalibrationRunStatus,
+    pub current_step_id: Option<String>,
+    pub steps: Vec<CalibrationProgressStep>,
+}
+
+#[derive(Debug, Default)]
+pub struct CalibrationCancellation {
+    pub requested: AtomicBool,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, ts_rs::TS)]

@@ -21,6 +21,7 @@ pub fn run() {
         .plugin(tauri_plugin_os::init())
         .manage(Mutex::new(state::AppState::default()))
         .manage(file_picker::ScanCancellation::default())
+        .manage(state::CalibrationCancellation::default())
         .register_uri_scheme_protocol("astro-grader", |app, request| {
             let raw_uri = request.uri().to_string();
             let mut path = raw_uri;
@@ -72,6 +73,7 @@ pub fn run() {
             state::set_fe_current_preview_file,
             processing::group_frames,
             processing::calibrate,
+            processing::calibrate_cancel,
             state::save_state,
             state::load_state
         ])

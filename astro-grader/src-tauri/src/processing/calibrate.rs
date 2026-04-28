@@ -2,17 +2,22 @@ use std::{
     collections::HashMap,
     hash::Hasher,
     path::{Path, PathBuf},
+    sync::atomic::Ordering,
     sync::{Arc, Mutex},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
-use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use rayon::prelude::*;
 use twox_hash::XxHash3_64;
 
 use crate::{
     file_picker::File,
     fits::{FitsFile, ImageDataPixels, Tag},
-    state::fe_state::{FeState, MasterOrFrames},
+    state::fe_state::{AstroSession, FeState, MasterOrFrames},
+    state::{
+        CalibrationCancellation, CalibrationProgressMessage, CalibrationProgressStep,
+        CalibrationRunStatus, CalibrationStepKind, CalibrationStepStatus,
+    },
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -53,7 +58,7 @@ fn frames_signature(frames: &[File]) -> u64 {
 }
 
 fn set_session_master_path(
-    session: &mut crate::state::fe_state::AstroSession,
+    session: &mut AstroSession,
     master_type: MasterType,
     path: Option<PathBuf>,
 ) {
@@ -62,6 +67,135 @@ fn set_session_master_path(
         MasterType::Flat => session.master_flat = path,
         MasterType::Bias => session.master_bias = path,
     }
+}
+
+fn now_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn kind_label(kind: &CalibrationStepKind) -> &'static str {
+    match kind {
+        CalibrationStepKind::Dark => "Stacking dark frames",
+        CalibrationStepKind::Flat => "Stacking flat frames",
+        CalibrationStepKind::Bias => "Stacking bias frames",
+    }
+}
+
+fn master_type_to_step_kind(master_type: MasterType) -> CalibrationStepKind {
+    match master_type {
+        MasterType::Dark => CalibrationStepKind::Dark,
+        MasterType::Flat => CalibrationStepKind::Flat,
+        MasterType::Bias => CalibrationStepKind::Bias,
+    }
+}
+
+fn session_label(session: &AstroSession) -> String {
+    let fingerprint = &session.fingerprint;
+
+    if fingerprint.name.is_empty() {
+        return "Unnamed session".to_string();
+    }
+
+    format!(
+        "{} - {} - {:.2}s - gain {:.2} - {:.1}C",
+        fingerprint.name,
+        fingerprint.filter,
+        fingerprint.exposure,
+        fingerprint.gain,
+        fingerprint.temperature,
+    )
+}
+
+fn check_cancelled(calibration_cancellation: &CalibrationCancellation) -> Result<(), String> {
+    if calibration_cancellation.requested.load(Ordering::Relaxed) {
+        return Err("Calibration canceled".to_string());
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+struct CalibrationWorkItem {
+    session_index: usize,
+    master_type: MasterType,
+}
+
+fn build_calibration_pipeline(
+    state: &FeState,
+) -> (Vec<CalibrationWorkItem>, CalibrationProgressMessage) {
+    let mut work_items = Vec::new();
+    let mut steps = Vec::new();
+
+    for (session_index, session) in state.grouped_nights.iter().enumerate() {
+        let label = session_label(session);
+
+        for master_type in [MasterType::Dark, MasterType::Flat, MasterType::Bias] {
+            let slot = match master_type {
+                MasterType::Dark => &session.darks,
+                MasterType::Flat => &session.flats,
+                MasterType::Bias => &session.biases,
+            };
+
+            let MasterOrFrames::Frames(frames) = slot else {
+                continue;
+            };
+
+            if frames.is_empty() {
+                continue;
+            }
+
+            let kind = master_type_to_step_kind(master_type);
+
+            work_items.push(CalibrationWorkItem {
+                session_index,
+                master_type,
+            });
+
+            steps.push(CalibrationProgressStep {
+                id: format!("{}:{kind:?}", session.uuid),
+                kind,
+                label: kind_label(&kind).to_string(),
+                session_uuid: session.uuid.clone(),
+                session_label: label.clone(),
+                count: frames.len(),
+                status: CalibrationStepStatus::Pending,
+                started_at: None,
+                ended_at: None,
+                error: None,
+            });
+        }
+    }
+
+    let started_at = now_millis();
+    let status = if steps.is_empty() {
+        CalibrationRunStatus::Completed
+    } else {
+        CalibrationRunStatus::Running
+    };
+
+    let progress = CalibrationProgressMessage {
+        started_at,
+        finished_at: if steps.is_empty() {
+            Some(started_at)
+        } else {
+            None
+        },
+        status,
+        current_step_id: None,
+        steps,
+    };
+
+    (work_items, progress)
+}
+
+fn send_progress(
+    channel: &tauri::ipc::Channel<CalibrationProgressMessage>,
+    progress: &CalibrationProgressMessage,
+) {
+    let _ = channel.send(progress.clone());
 }
 
 fn write_master_metadata(
@@ -126,7 +260,10 @@ fn produce_master(
     master_type: MasterType,
     frames: &[File],
     target_path: &Path,
+    calibration_cancellation: &CalibrationCancellation,
 ) -> Result<PathBuf, String> {
+    check_cancelled(calibration_cancellation)?;
+
     if frames.is_empty() {
         return Err(format!(
             "Cannot produce master {} from empty frame list",
@@ -150,6 +287,8 @@ fn produce_master(
     let nframes = frames.len();
 
     for frame in frames.iter().skip(1) {
+        check_cancelled(calibration_cancellation)?;
+
         let mut fits = FitsFile::new(frame.path().clone())
             .map_err(|_| "Unable to open frame for master generation".to_string())?;
         let image = ImageDataPixels::from_fits(&mut fits)
@@ -178,6 +317,8 @@ fn produce_master(
         let mut samples: Vec<f32> = vec![0.0; pixel_count * nframes];
 
         for (fi, frame) in frames.iter().enumerate() {
+            check_cancelled(calibration_cancellation)?;
+
             let mut fits = FitsFile::new(frame.path().clone())
                 .map_err(|_| "Unable to open frame for master generation".to_string())?;
             let image = ImageDataPixels::from_fits(&mut fits)
@@ -185,8 +326,6 @@ fn produce_master(
 
             let offset = fi * pixel_count;
             samples[offset..offset + pixel_count].copy_from_slice(&image.pixels);
-
-
         }
 
         // compute median per pixel
@@ -202,15 +341,10 @@ fn produce_master(
             })
             .collect();
 
-
-
         let mut out_pixels = out_pixels;
         if matches!(master_type, MasterType::Flat) {
             // Normalize flat master by its maximum value to achieve unity gain
-            let max_val = out_pixels
-                .iter()
-                .copied()
-                .fold(f32::NEG_INFINITY, f32::max);
+            let max_val = out_pixels.iter().copied().fold(f32::NEG_INFINITY, f32::max);
             if max_val.is_normal() && max_val > 0.0 {
                 for value in &mut out_pixels {
                     *value /= max_val;
@@ -227,8 +361,6 @@ fn produce_master(
             .save_to_fits(target_path.to_path_buf())
             .map_err(|_| "Unable to write produced master frame to FITS".to_string())?;
 
-
-
         write_master_metadata(target_path, &frames[0], master_type)?;
 
         return Ok(target_path.to_path_buf());
@@ -240,6 +372,8 @@ fn produce_master(
     let mut m2: Vec<f64> = vec![0.0; pixel_count];
 
     for (count_idx, frame) in frames.iter().enumerate() {
+        check_cancelled(calibration_cancellation)?;
+
         let mut fits = FitsFile::new(frame.path().clone())
             .map_err(|_| "Unable to open frame for master generation".to_string())?;
         let image = ImageDataPixels::from_fits(&mut fits)
@@ -279,6 +413,8 @@ fn produce_master(
     let mut cnt: Vec<u32> = vec![0; pixel_count];
 
     for frame in frames {
+        check_cancelled(calibration_cancellation)?;
+
         let mut fits = FitsFile::new(frame.path().clone())
             .map_err(|_| "Unable to open frame for master generation".to_string())?;
         let image = ImageDataPixels::from_fits(&mut fits)
@@ -318,24 +454,52 @@ fn produce_master(
     Ok(target_path.to_path_buf())
 }
 
-fn produce_master_dark(frames: &[File], target_path: &Path) -> Result<PathBuf, String> {
-    produce_master(MasterType::Dark, frames, target_path)
+fn produce_master_dark(
+    frames: &[File],
+    target_path: &Path,
+    calibration_cancellation: &CalibrationCancellation,
+) -> Result<PathBuf, String> {
+    produce_master(
+        MasterType::Dark,
+        frames,
+        target_path,
+        calibration_cancellation,
+    )
 }
 
-fn produce_master_flat(frames: &[File], target_path: &Path) -> Result<PathBuf, String> {
-    produce_master(MasterType::Flat, frames, target_path)
+fn produce_master_flat(
+    frames: &[File],
+    target_path: &Path,
+    calibration_cancellation: &CalibrationCancellation,
+) -> Result<PathBuf, String> {
+    produce_master(
+        MasterType::Flat,
+        frames,
+        target_path,
+        calibration_cancellation,
+    )
 }
 
-fn produce_master_bias(frames: &[File], target_path: &Path) -> Result<PathBuf, String> {
-    produce_master(MasterType::Bias, frames, target_path)
+fn produce_master_bias(
+    frames: &[File],
+    target_path: &Path,
+    calibration_cancellation: &CalibrationCancellation,
+) -> Result<PathBuf, String> {
+    produce_master(
+        MasterType::Bias,
+        frames,
+        target_path,
+        calibration_cancellation,
+    )
 }
 
 fn resolve_master_for_slot(
-    session: &mut crate::state::fe_state::AstroSession,
+    session: &mut AstroSession,
     master_type: MasterType,
     slot: &MasterOrFrames,
     temp_folder_path: &Path,
     cache: &Arc<Mutex<HashMap<(MasterType, u64), PathBuf>>>,
+    calibration_cancellation: &CalibrationCancellation,
 ) -> Result<(), String> {
     match slot {
         MasterOrFrames::Master(file) => {
@@ -371,9 +535,15 @@ fn resolve_master_for_slot(
                 output_path.clone()
             } else {
                 match master_type {
-                    MasterType::Dark => produce_master_dark(frames, &output_path),
-                    MasterType::Flat => produce_master_flat(frames, &output_path),
-                    MasterType::Bias => produce_master_bias(frames, &output_path),
+                    MasterType::Dark => {
+                        produce_master_dark(frames, &output_path, calibration_cancellation)
+                    }
+                    MasterType::Flat => {
+                        produce_master_flat(frames, &output_path, calibration_cancellation)
+                    }
+                    MasterType::Bias => {
+                        produce_master_bias(frames, &output_path, calibration_cancellation)
+                    }
                 }?
             };
 
@@ -390,7 +560,12 @@ fn resolve_master_for_slot(
     }
 }
 
-pub fn create_master_frames(state: &mut FeState, temp_folder_path: &Path) -> Result<(), String> {
+pub fn create_master_frames(
+    state: &mut FeState,
+    temp_folder_path: &Path,
+    channel: tauri::ipc::Channel<CalibrationProgressMessage>,
+    calibration_cancellation: &CalibrationCancellation,
+) -> Result<(), String> {
     if !temp_folder_path.exists() {
         return Err(format!(
             "Temp folder for master frames does not exist: {}",
@@ -407,38 +582,102 @@ pub fn create_master_frames(state: &mut FeState, temp_folder_path: &Path) -> Res
     let cached_master_frames: Arc<Mutex<HashMap<(MasterType, u64), PathBuf>>> =
         Arc::new(Mutex::new(HashMap::new()));
 
-    state
-        .grouped_nights
-        .par_iter_mut()
-        .try_for_each(|session| -> Result<(), String> {
-            let darks = session.darks.clone();
-            let flats = session.flats.clone();
-            let biases = session.biases.clone();
+    let (work_items, mut progress) = build_calibration_pipeline(state);
+    send_progress(&channel, &progress);
 
-            resolve_master_for_slot(
-                session,
-                MasterType::Dark,
-                &darks,
-                temp_folder_path,
-                &cached_master_frames,
-            )?;
+    if work_items.is_empty() {
+        return Ok(());
+    }
 
-            resolve_master_for_slot(
-                session,
-                MasterType::Flat,
-                &flats,
-                temp_folder_path,
-                &cached_master_frames,
-            )?;
+    for (step_index, work_item) in work_items.iter().enumerate() {
+        check_cancelled(calibration_cancellation)?;
 
-            resolve_master_for_slot(
-                session,
-                MasterType::Bias,
-                &biases,
-                temp_folder_path,
-                &cached_master_frames,
-            )?;
+        let session = state
+            .grouped_nights
+            .get(work_item.session_index)
+            .ok_or_else(|| "Calibration session index out of bounds".to_string())?;
 
-            Ok(())
-        })
+        let slot = match work_item.master_type {
+            MasterType::Dark => session.darks.clone(),
+            MasterType::Flat => session.flats.clone(),
+            MasterType::Bias => session.biases.clone(),
+        };
+
+        let step = progress
+            .steps
+            .get_mut(step_index)
+            .ok_or_else(|| "Calibration step index out of bounds".to_string())?;
+        let started_at = now_millis();
+        step.status = CalibrationStepStatus::Running;
+        step.started_at = Some(started_at);
+        step.ended_at = None;
+        step.error = None;
+        progress.current_step_id = Some(step.id.clone());
+        progress.status = CalibrationRunStatus::Running;
+        send_progress(&channel, &progress);
+
+        let session = state
+            .grouped_nights
+            .get_mut(work_item.session_index)
+            .ok_or_else(|| "Calibration session index out of bounds".to_string())?;
+
+        let result = resolve_master_for_slot(
+            session,
+            work_item.master_type,
+            &slot,
+            temp_folder_path,
+            &cached_master_frames,
+            calibration_cancellation,
+        );
+
+        match result {
+            Ok(()) => {
+                let ended_at = now_millis();
+                let step = progress
+                    .steps
+                    .get_mut(step_index)
+                    .ok_or_else(|| "Calibration step index out of bounds".to_string())?;
+                step.status = CalibrationStepStatus::Completed;
+                step.ended_at = Some(ended_at);
+                progress.current_step_id = None;
+                send_progress(&channel, &progress);
+            }
+            Err(error) if error == "Calibration canceled" => {
+                let ended_at = now_millis();
+                let step = progress
+                    .steps
+                    .get_mut(step_index)
+                    .ok_or_else(|| "Calibration step index out of bounds".to_string())?;
+                step.status = CalibrationStepStatus::Cancelled;
+                step.ended_at = Some(ended_at);
+                progress.current_step_id = None;
+                progress.finished_at = Some(ended_at);
+                progress.status = CalibrationRunStatus::Cancelled;
+                send_progress(&channel, &progress);
+                return Err(error);
+            }
+            Err(error) => {
+                let ended_at = now_millis();
+                let step = progress
+                    .steps
+                    .get_mut(step_index)
+                    .ok_or_else(|| "Calibration step index out of bounds".to_string())?;
+                step.status = CalibrationStepStatus::Failed;
+                step.ended_at = Some(ended_at);
+                step.error = Some(error.clone());
+                progress.current_step_id = None;
+                progress.finished_at = Some(ended_at);
+                progress.status = CalibrationRunStatus::Failed;
+                send_progress(&channel, &progress);
+                return Err(error);
+            }
+        }
+    }
+
+    let finished_at = now_millis();
+    progress.finished_at = Some(finished_at);
+    progress.status = CalibrationRunStatus::Completed;
+    send_progress(&channel, &progress);
+
+    Ok(())
 }

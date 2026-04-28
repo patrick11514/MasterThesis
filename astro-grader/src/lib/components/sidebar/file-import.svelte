@@ -1,8 +1,7 @@
 <script lang="ts">
-  import { buildCalibrateRequest } from '$/lib/calibration';
   import { appEvents } from '$/lib/events.svelte';
   import { LoaderIcon, SearchIcon, XIcon } from '@lucide/svelte';
-  import { Channel, invoke } from '@tauri-apps/api/core';
+  import { Channel } from '@tauri-apps/api/core';
   import { tick } from 'svelte';
   import { toast } from 'svelte-sonner';
   import { cancelDirectoryScan, promptDirectory, promptFiles } from '../../files';
@@ -38,7 +37,7 @@
       currentState = State.Finished;
     } else {
       const channel = new Channel<number>();
-      channel.onmessage = (message) => {
+      channel.onmessage = (message: number) => {
         scannedFiles = message;
       };
 
@@ -95,25 +94,7 @@
       return;
     }
 
-    const request = buildCalibrateRequest(
-      Object.values(appState.rawNights).flat(),
-      appState.calibrationStorageMode,
-      appState.tempFolderPath
-    );
-
-    if (request.targets.length === 0) {
-      toast.error('No light frames to calibrate');
-      return;
-    }
-
-    try {
-      await invoke('calibrate', { request });
-      toast.success('Calibration command completed');
-    } catch (error) {
-      toast.error('Failed to calibrate frames', {
-        description: error as string
-      });
-    }
+    await appState.calibrateFrames();
   };
 
   const groupPercent = $derived.by(() => {

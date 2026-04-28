@@ -1,10 +1,12 @@
 import { Channel, invoke } from '@tauri-apps/api/core';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import { toast } from 'svelte-sonner';
+import { buildCalibrateRequest, buildCalibrationProgressPreview } from './calibration';
 import { appEvents } from './events.svelte';
 import { parseFiles } from './files';
 import { FILE_TYPES } from './files/types';
 import type { AstroSession } from './types/AstroSession';
+import type { CalibrationProgressMessage } from './types/CalibrationProgressMessage';
 import type { CalibrationStorageMode } from './types/CalibrationStorageMode';
 import type { Config } from './types/Config';
 import type { FeState } from './types/FeState';
@@ -23,6 +25,7 @@ class AppState {
   public currentPreviewFilePath = $state<string | null>(null);
   public calibrationStorageMode = $state<CalibrationStorageMode>('NextToOriginal');
   public tempFolderPath = $state('');
+  public calibrationProgress = $state<CalibrationProgressMessage | null>(null);
   public loaded = false;
   public framesShown = $state(Object.fromEntries(FILE_TYPES.map((type) => [type, true])));
 
@@ -240,6 +243,70 @@ class AppState {
         description: error as string
       });
       return false;
+    }
+  }
+
+  async calibrateFrames() {
+    if (this.calibrationProgress) {
+      toast.error('Calibration is already running');
+      return false;
+    }
+
+    const totalFiles = Object.values(this.rawNights).flat().length;
+    if (totalFiles === 0) {
+      toast.error('No frames to calibrate');
+      return false;
+    }
+
+    const request = buildCalibrateRequest(
+      Object.values(this.rawNights).flat(),
+      this.calibrationStorageMode,
+      this.tempFolderPath
+    );
+
+    const preview = buildCalibrationProgressPreview(this.groupedNights);
+    this.calibrationProgress = preview;
+
+    try {
+      const channel = new Channel<CalibrationProgressMessage>();
+      channel.onmessage = (message) => {
+        if (preview) {
+          this.calibrationProgress = message;
+        }
+      };
+
+      await invoke('calibrate', { request, channel });
+
+      // Don't clear calibrationProgress here - keep it open for user to see final status
+      toast.success('Calibration completed');
+      return true;
+    } catch (error) {
+      const errorMessage = String(error);
+
+      if (errorMessage.includes('Calibration canceled')) {
+        this.calibrationProgress = null;
+        toast.info('Calibration canceled');
+        return false;
+      }
+
+      toast.error('Failed to calibrate frames', {
+        description: errorMessage
+      });
+      return false;
+    }
+  }
+
+  closeCalibrationProgress() {
+    this.calibrationProgress = null;
+  }
+
+  async cancelCalibration() {
+    try {
+      await invoke('calibrate_cancel');
+    } catch (error) {
+      toast.error('Failed to cancel calibration', {
+        description: error as string
+      });
     }
   }
 

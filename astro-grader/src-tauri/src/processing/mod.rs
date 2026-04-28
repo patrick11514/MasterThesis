@@ -6,11 +6,15 @@ pub use group::group_preview_nights;
 use calibrate::create_master_frames;
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::sync::atomic::Ordering;
 
 use crate::{
     config,
     state::fe_state::AstroSession,
-    state::{AppState, CalibrateRequest, GroupFramesProgress},
+    state::{
+        AppState, CalibrateRequest, CalibrationCancellation, CalibrationProgressMessage,
+        GroupFramesProgress,
+    },
 };
 
 #[tauri::command]
@@ -48,13 +52,43 @@ pub async fn group_frames(
 #[tauri::command]
 pub async fn calibrate(
     request: CalibrateRequest,
+    channel: tauri::ipc::Channel<CalibrationProgressMessage>,
     state: tauri::State<'_, Mutex<AppState>>,
+    calibration_cancellation: tauri::State<'_, CalibrationCancellation>,
 ) -> Result<(), String> {
+    calibration_cancellation
+        .requested
+        .store(false, Ordering::Relaxed);
+
+    let mut fe_state = {
+        let state = state
+            .lock()
+            .map_err(|_| "Failed to acquire app state lock".to_string())?;
+
+        state.fe_state.clone()
+    };
+
+    let temp_folder = PathBuf::from(&request.temp_folder_path);
+    create_master_frames(
+        &mut fe_state,
+        &temp_folder,
+        channel,
+        &calibration_cancellation,
+    )?;
+
     let mut state = state
         .lock()
         .map_err(|_| "Failed to acquire app state lock".to_string())?;
+    state.fe_state = fe_state;
+    Ok(())
+}
 
-    let temp_folder = PathBuf::from(&request.temp_folder_path);
-    create_master_frames(&mut state.fe_state, &temp_folder)?;
+#[tauri::command]
+pub async fn calibrate_cancel(
+    calibration_cancellation: tauri::State<'_, CalibrationCancellation>,
+) -> Result<(), String> {
+    calibration_cancellation
+        .requested
+        .store(true, Ordering::Relaxed);
     Ok(())
 }

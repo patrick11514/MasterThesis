@@ -1,6 +1,13 @@
+import type { AstroSession } from './types/AstroSession';
 import type { CalibrateRequest } from './types/CalibrateRequest';
+import type { CalibrationProgressMessage } from './types/CalibrationProgressMessage';
+import type { CalibrationProgressStep } from './types/CalibrationProgressStep';
+import type { CalibrationRunStatus } from './types/CalibrationRunStatus';
+import type { CalibrationStepKind } from './types/CalibrationStepKind';
+import type { CalibrationStepStatus } from './types/CalibrationStepStatus';
 import type { CalibrationStorageMode } from './types/CalibrationStorageMode';
 import type { File } from './types/File';
+import type { MasterOrFrames } from './types/MasterOrFrames';
 
 const getFileNameParts = (filePath: string) => {
   const lastSlashIndex = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
@@ -56,5 +63,80 @@ export const buildCalibrateRequest = (
         source_path: file.path,
         calibrated_path: resolveCalibratedPath(file.path, storageMode, tempFolderPath)
       }))
+  };
+};
+
+const kindLabel = (kind: CalibrationStepKind) => {
+  switch (kind) {
+    case 'Dark':
+      return 'Stacking dark frames';
+    case 'Flat':
+      return 'Stacking flat frames';
+    case 'Bias':
+      return 'Stacking bias frames';
+  }
+};
+
+const sessionLabel = (session: AstroSession) => {
+  if (!session.fingerprint.name) {
+    return 'Unnamed session';
+  }
+
+  return `${session.fingerprint.name} - ${session.fingerprint.filter} - ${session.fingerprint.exposure.toFixed(2)}s - gain ${session.fingerprint.gain.toFixed(2)} - ${session.fingerprint.temperature.toFixed(1)}C`;
+};
+
+const collectFrames = (slot: MasterOrFrames) => {
+  if (!('Frames' in slot)) {
+    return null;
+  }
+
+  return slot.Frames.length > 0 ? slot.Frames : null;
+};
+
+export const buildCalibrationProgressPreview = (
+  sessions: AstroSession[]
+): CalibrationProgressMessage | null => {
+  const steps: CalibrationProgressStep[] = [];
+
+  for (const session of sessions) {
+    const label = sessionLabel(session);
+
+    const slots: Array<[CalibrationStepKind, MasterOrFrames]> = [
+      ['Dark', session.darks],
+      ['Flat', session.flats],
+      ['Bias', session.biases]
+    ];
+
+    for (const [kind, slot] of slots) {
+      const frames = collectFrames(slot);
+      if (!frames) {
+        continue;
+      }
+
+      steps.push({
+        id: `${session.uuid}:${kind}`,
+        kind,
+        label: kindLabel(kind),
+        session_uuid: session.uuid,
+        session_label: label,
+        count: frames.length,
+        status: 'Pending' as CalibrationStepStatus,
+        started_at: null,
+        ended_at: null,
+        error: null
+      });
+    }
+  }
+
+  if (steps.length === 0) {
+    return null;
+  }
+
+  return {
+    started_at: BigInt(Date.now()),
+    finished_at: null,
+    status: 'Running' as CalibrationRunStatus,
+    current_step_id: null,
+    steps
   };
 };
