@@ -243,15 +243,25 @@ fn calibration_session_key(kind: SessionKind, metadata: &FrameMetadata) -> Strin
         SessionKind::Bias => "bias",
     };
 
+    let exposure = match kind {
+        SessionKind::Light | SessionKind::Dark => format_optional_float(metadata.exposure),
+        SessionKind::Flat | SessionKind::Bias => "".to_string(),
+    };
+
+    let temperature = match kind {
+        SessionKind::Light | SessionKind::Dark => format_optional_float(metadata.temperature),
+        SessionKind::Flat | SessionKind::Bias => "".to_string(),
+    };
+
     format!(
         "{kind_prefix}:{}:{}:{}:{}:{}:{}:{}",
         metadata.source_night,
         format_optional_text(metadata.camera.as_deref()),
         format_optional_text(metadata.filter.as_deref()),
         format_optional_text(metadata.telescope.as_deref()),
-        format_optional_float(metadata.exposure),
+        exposure,
         format_optional_float(metadata.gain),
-        format_optional_float(metadata.temperature)
+        temperature
     )
 }
 
@@ -263,13 +273,18 @@ fn master_calibration_session_key(kind: SessionKind, metadata: &FrameMetadata) -
         SessionKind::Bias => "master-bias",
     };
 
+    let exposure = match kind {
+        SessionKind::Light | SessionKind::Dark => format_optional_float(metadata.exposure),
+        SessionKind::Flat | SessionKind::Bias => "".to_string(),
+    };
+
     format!(
         "{kind_prefix}:{}:{}:{}:{}:{}",
         metadata.source_night,
         format_optional_text(metadata.camera.as_deref()),
         format_optional_text(metadata.filter.as_deref()),
         format_optional_text(metadata.telescope.as_deref()),
-        format_optional_float(metadata.exposure)
+        exposure
     )
 }
 
@@ -382,6 +397,7 @@ fn insert_calibration_file(
         if !is_master
             && kind == SessionKind::Flat
             && bucket.match_data.source_night != metadata.source_night
+            && metadata.source_night != "Unsorted"
         {
             continue;
         }

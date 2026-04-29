@@ -3,7 +3,7 @@ mod group;
 
 pub use group::group_preview_nights;
 
-use calibrate::create_master_frames;
+use calibrate::run_calibration;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::atomic::Ordering;
@@ -69,9 +69,10 @@ pub async fn calibrate(
     };
 
     let temp_folder = PathBuf::from(&request.temp_folder_path);
-    create_master_frames(
+    run_calibration(
         &mut fe_state,
         &temp_folder,
+        &request.targets,
         channel,
         &calibration_cancellation,
     )?;

@@ -81,6 +81,7 @@ fn kind_label(kind: &CalibrationStepKind) -> &'static str {
         CalibrationStepKind::Dark => "Stacking dark frames",
         CalibrationStepKind::Flat => "Stacking flat frames",
         CalibrationStepKind::Bias => "Stacking bias frames",
+        CalibrationStepKind::Light => "Calibrating light frames",
     }
 }
 
@@ -118,9 +119,15 @@ fn check_cancelled(calibration_cancellation: &CalibrationCancellation) -> Result
 }
 
 #[derive(Debug, Clone)]
+enum CalibrationWorkItemTask {
+    Master(MasterType),
+    CalibrateLights,
+}
+
+#[derive(Debug, Clone)]
 struct CalibrationWorkItem {
     session_index: usize,
-    master_type: MasterType,
+    task: CalibrationWorkItemTask,
 }
 
 fn build_calibration_pipeline(
@@ -151,7 +158,7 @@ fn build_calibration_pipeline(
 
             work_items.push(CalibrationWorkItem {
                 session_index,
-                master_type,
+                task: CalibrationWorkItemTask::Master(master_type),
             });
 
             steps.push(CalibrationProgressStep {
@@ -161,6 +168,27 @@ fn build_calibration_pipeline(
                 session_uuid: session.uuid.clone(),
                 session_label: label.clone(),
                 count: frames.len(),
+                status: CalibrationStepStatus::Pending,
+                started_at: None,
+                ended_at: None,
+                error: None,
+            });
+        }
+
+        if !session.lights.is_empty() {
+            let kind = CalibrationStepKind::Light;
+            work_items.push(CalibrationWorkItem {
+                session_index,
+                task: CalibrationWorkItemTask::CalibrateLights,
+            });
+
+            steps.push(CalibrationProgressStep {
+                id: format!("{}:{kind:?}", session.uuid),
+                kind,
+                label: kind_label(&kind).to_string(),
+                session_uuid: session.uuid.clone(),
+                session_label: label.clone(),
+                count: session.lights.len(),
                 status: CalibrationStepStatus::Pending,
                 started_at: None,
                 ended_at: None,
@@ -560,9 +588,69 @@ fn resolve_master_for_slot(
     }
 }
 
-pub fn create_master_frames(
+pub fn calibrate_light(
+    light: &mut [f32],
+    dark: Option<&[f32]>,
+    flat: Option<&[f32]>,
+    bias: Option<&[f32]>,
+) {
+    let pixel_count = light.len();
+
+    // 1. Calculate the mean of the Bias-subtracted Flat
+    let mut flat_mean = 1.0;
+    if let Some(flat_data) = flat {
+        let mut flat_sum = 0.0;
+        for i in 0..pixel_count {
+            let bias_val = bias.map(|b| b[i]).unwrap_or(0.0);
+            let mut flat_val = flat_data[i] - bias_val;
+            if flat_val < 0.0 {
+                flat_val = 0.0; // Clamp random noise negatives
+            }
+            flat_sum += flat_val;
+        }
+        flat_mean = flat_sum / (pixel_count as f32);
+        if flat_mean == 0.0 {
+            flat_mean = 1.0; // avoid division by zero overall
+        }
+    }
+
+    // 2. The Calibration Loop
+    for i in 0..pixel_count {
+        // Subtract Dark or Bias
+        let sub_val = if let Some(dark_data) = dark {
+            dark_data[i]
+        } else if let Some(bias_data) = bias {
+            bias_data[i]
+        } else {
+            0.0
+        };
+
+        let mut calibrated = light[i] - sub_val;
+
+        // Prevent random read noise from dropping the pixel below absolute black
+        if calibrated < 0.0 {
+            calibrated = 0.0;
+        }
+
+        if let Some(flat_data) = flat {
+            let bias_val = bias.map(|b| b[i]).unwrap_or(0.0);
+            let flat_norm = (flat_data[i] - bias_val) / flat_mean;
+
+            if flat_norm > 0.0001 {
+                calibrated /= flat_norm;
+            } else {
+                calibrated = 0.0;
+            }
+        }
+
+        light[i] = calibrated;
+    }
+}
+
+pub fn run_calibration(
     state: &mut FeState,
     temp_folder_path: &Path,
+    targets: &[crate::state::CalibrateFrameTarget],
     channel: tauri::ipc::Channel<CalibrationProgressMessage>,
     calibration_cancellation: &CalibrationCancellation,
 ) -> Result<(), String> {
@@ -594,41 +682,134 @@ pub fn create_master_frames(
 
         let session = state
             .grouped_nights
-            .get(work_item.session_index)
-            .ok_or_else(|| "Calibration session index out of bounds".to_string())?;
-
-        let slot = match work_item.master_type {
-            MasterType::Dark => session.darks.clone(),
-            MasterType::Flat => session.flats.clone(),
-            MasterType::Bias => session.biases.clone(),
-        };
-
-        let step = progress
-            .steps
-            .get_mut(step_index)
-            .ok_or_else(|| "Calibration step index out of bounds".to_string())?;
-        let started_at = now_millis();
-        step.status = CalibrationStepStatus::Running;
-        step.started_at = Some(started_at);
-        step.ended_at = None;
-        step.error = None;
-        progress.current_step_id = Some(step.id.clone());
-        progress.status = CalibrationRunStatus::Running;
-        send_progress(&channel, &progress);
-
-        let session = state
-            .grouped_nights
             .get_mut(work_item.session_index)
             .ok_or_else(|| "Calibration session index out of bounds".to_string())?;
 
-        let result = resolve_master_for_slot(
-            session,
-            work_item.master_type,
-            &slot,
-            temp_folder_path,
-            &cached_master_frames,
-            calibration_cancellation,
-        );
+        let result = match &work_item.task {
+            CalibrationWorkItemTask::Master(master_type) => {
+                let slot = match master_type {
+                    MasterType::Dark => session.darks.clone(),
+                    MasterType::Flat => session.flats.clone(),
+                    MasterType::Bias => session.biases.clone(),
+                };
+
+                resolve_master_for_slot(
+                    session,
+                    *master_type,
+                    &slot,
+                    temp_folder_path,
+                    &cached_master_frames,
+                    calibration_cancellation,
+                )
+            }
+            CalibrationWorkItemTask::CalibrateLights => {
+                let dark_path = session.master_dark.clone();
+                let flat_path = session.master_flat.clone();
+                let bias_path = session.master_bias.clone();
+
+                let read_master = |path: Option<PathBuf>| -> Result<Option<Vec<f32>>, String> {
+                    if let Some(p) = path {
+                        let mut fits = FitsFile::new(p.clone())
+                            .map_err(|_| "Unable to open master FITS file".to_string())?;
+                        let img = ImageDataPixels::from_fits(&mut fits)
+                            .map_err(|_| "Unable to read master pixels".to_string())?;
+                        Ok(Some(img.pixels))
+                    } else {
+                        Ok(None)
+                    }
+                };
+
+                let dark_pixels = read_master(dark_path)?;
+                let flat_pixels = read_master(flat_path)?;
+                let bias_pixels = read_master(bias_path)?;
+
+                let light_files = session.lights.clone();
+                let mut chunk_err = None;
+
+                for chunk in light_files.chunks(4) {
+                    check_cancelled(calibration_cancellation)?;
+
+                    let chunk_result: Result<(), String> = chunk.par_iter().try_for_each(|light_file| {
+                        check_cancelled(calibration_cancellation)?;
+
+                        let target = targets
+                            .iter()
+                            .find(|t| t.source_path == light_file.path().to_string_lossy().to_string())
+                            .ok_or_else(|| format!("Target path not found for {}", light_file.path().display()))?;
+
+                        let target_path = PathBuf::from(&target.calibrated_path);
+
+                        let mut fits = FitsFile::new(light_file.path().clone())
+                            .map_err(|_| format!("Unable to open light frame: {}", light_file.path().display()))?;
+                        let mut img = ImageDataPixels::from_fits(&mut fits)
+                            .map_err(|_| format!("Unable to read light frame: {}", light_file.path().display()))?;
+
+                        calibrate_light(
+                            &mut img.pixels,
+                            dark_pixels.as_deref(),
+                            flat_pixels.as_deref(),
+                            bias_pixels.as_deref()
+                        );
+
+                        // Save image to target path
+                        img.save_to_fits(target_path.clone())
+                            .map_err(|_| "Unable to write calibrated frame".to_string())?;
+
+                        // Copy all FITS headers from original file to calibrated file
+                        // The easiest way is to use our existing FitsFile::edit on target, but wait...
+                        // If we just saved the pixels using save_to_fits, it generated a basic header.
+                        // We should copy all headers. Actually, save_to_fits just writes basic headers.
+                        // We will copy metadata similar to write_master_metadata but keeping it simple,
+                        // or just copy the file first and then overwrite data...
+                        // But save_to_fits already wrote it. We will use edit to update IMAGETYP.
+                        let mut dst = FitsFile::edit(target_path)
+                            .map_err(|_| "Unable to open output light frame for metadata write".to_string())?;
+                        
+                        dst.write_key_string("IMAGETYP", "Light Frame")
+                            .map_err(|_| "Unable to write IMAGETYP into light frame".to_string())?;
+
+                        // Also carry over camera, filter, etc.
+                        if let Some(value) = fits.get_tag_value(crate::fits::Tag::Camera) {
+                            let _ = dst.write_key_string("INSTRUME", value.trim());
+                        }
+                        if let Some(value) = fits.get_tag_value(crate::fits::Tag::Telescope) {
+                            let _ = dst.write_key_string("TELESCOP", value.trim());
+                        }
+                        if let Some(value) = fits.get_tag_value(crate::fits::Tag::Filter) {
+                            let _ = dst.write_key_string("FILTER", value.trim());
+                        }
+                        if let Some(value) = fits.get_tag_custom::<f32>(crate::fits::Tag::ExposureTime) {
+                            let _ = dst.write_key_f32("EXPTIME", value);
+                        }
+                        if let Some(value) = fits.get_tag_custom::<f32>(crate::fits::Tag::Gain) {
+                            let _ = dst.write_key_f32("GAIN", value);
+                        }
+                        if let Some(value) = fits.get_tag_value(crate::fits::Tag::BayerPattern) {
+                            let _ = dst.write_key_string("BAYERPAT", value.trim());
+                        }
+                        if let Some(value) = fits.get_tag_custom::<i32>(crate::fits::Tag::XBayerOffset) {
+                            let _ = dst.write_key_i32("XBAYROFF", value);
+                        }
+                        if let Some(value) = fits.get_tag_custom::<i32>(crate::fits::Tag::YBayerOffset) {
+                            let _ = dst.write_key_i32("YBAYROFF", value);
+                        }
+
+                        Ok(())
+                    });
+
+                    if let Err(e) = chunk_result {
+                        chunk_err = Some(e);
+                        break;
+                    }
+                }
+
+                if let Some(e) = chunk_err {
+                    Err(e)
+                } else {
+                    Ok(())
+                }
+            }
+        };
 
         match result {
             Ok(()) => {

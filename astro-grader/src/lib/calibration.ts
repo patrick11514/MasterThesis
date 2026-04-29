@@ -18,27 +18,32 @@ const getFileNameParts = (filePath: string) => {
   if (extensionIndex < 0) {
     return {
       directory,
+      fileName,
       calibratedName: `${fileName}_cal`
     };
   }
 
   return {
     directory,
+    fileName: fileName.slice(0, extensionIndex),
     calibratedName: `${fileName.slice(0, extensionIndex)}_cal${fileName.slice(extensionIndex)}`
   };
 };
 
 export const resolveCalibratedPath = (
   sourcePath: string,
+  uuid: string,
   storageMode: CalibrationStorageMode,
   tempFolderPath: string
 ) => {
-  const { directory, calibratedName } = getFileNameParts(sourcePath);
+  const { directory, fileName, calibratedName } = getFileNameParts(sourcePath);
 
   if (storageMode === 'TempFolder') {
     const normalizedTempFolder = tempFolderPath.replace(/[\\/]+$/, '');
     const separator = normalizedTempFolder.includes('\\') ? '\\' : '/';
-    return `${normalizedTempFolder}${separator}${calibratedName}`;
+    const hash = uuid.split('-')[0];
+    const extension = sourcePath.includes('.') ? sourcePath.slice(sourcePath.lastIndexOf('.')) : '';
+    return `${normalizedTempFolder}${separator}${fileName}_${hash}${extension}`;
   }
 
   if (!directory) {
@@ -61,7 +66,7 @@ export const buildCalibrateRequest = (
       .filter((file) => file.type === 'Light')
       .map((file) => ({
         source_path: file.path,
-        calibrated_path: resolveCalibratedPath(file.path, storageMode, tempFolderPath)
+        calibrated_path: resolveCalibratedPath(file.path, file.uuid, storageMode, tempFolderPath)
       }))
   };
 };
@@ -74,6 +79,8 @@ const kindLabel = (kind: CalibrationStepKind) => {
       return 'Stacking flat frames';
     case 'Bias':
       return 'Stacking bias frames';
+    case 'Light':
+      return 'Calibrating light frames';
   }
 };
 
@@ -101,15 +108,19 @@ export const buildCalibrationProgressPreview = (
   for (const session of sessions) {
     const label = sessionLabel(session);
 
-    const slots: Array<[CalibrationStepKind, MasterOrFrames]> = [
+    const slots: Array<[CalibrationStepKind, MasterOrFrames | File[]]> = [
       ['Dark', session.darks],
       ['Flat', session.flats],
       ['Bias', session.biases]
     ];
 
+    if (session.lights.length > 0) {
+      slots.push(['Light', session.lights]);
+    }
+
     for (const [kind, slot] of slots) {
-      const frames = collectFrames(slot);
-      if (!frames) {
+      const frames = Array.isArray(slot) ? slot : collectFrames(slot);
+      if (!frames || frames.length === 0) {
         continue;
       }
 

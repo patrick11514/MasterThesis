@@ -32,6 +32,7 @@ pub enum CalibrationStepKind {
     Dark,
     Flat,
     Bias,
+    Light,
 }
 
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, ts_rs::TS)]
