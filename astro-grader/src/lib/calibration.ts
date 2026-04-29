@@ -63,7 +63,7 @@ export const buildCalibrateRequest = (
     storage_mode: storageMode,
     temp_folder_path: tempFolderPath,
     targets: files
-      .filter((file) => file.type === 'Light')
+      .filter((file) => file.type === 'Light' && file.calibrated_frame === null)
       .map((file) => ({
         source_path: file.path,
         calibrated_path: resolveCalibratedPath(file.path, file.uuid, storageMode, tempFolderPath)
@@ -152,7 +152,8 @@ export const buildCalibrationProgressPreview = (
   for (const session of sessions) {
     const label = sessionLabel(session);
 
-    if (session.lights.length > 0) {
+    const uncalibrated = session.lights.filter((f) => f.calibrated_frame === null);
+    if (uncalibrated.length > 0) {
       const kind = 'Light';
       steps.push({
         id: `${session.uuid}:${kind}`,
@@ -160,7 +161,7 @@ export const buildCalibrationProgressPreview = (
         label: kindLabel(kind),
         session_uuid: session.uuid,
         session_label: label,
-        count: session.lights.length,
+        count: uncalibrated.length,
         completed_count: 0,
         status: 'Pending' as CalibrationStepStatus,
         started_at: null,

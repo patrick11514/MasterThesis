@@ -29,13 +29,13 @@ pub struct File {
     file_type: FileType,
     default_headers: DefaultHeaders,
     #[serde(default)]
-    stats: Option<ImageStats>,
+    pub stats: Option<ImageStats>,
     //Only during processing
     #[serde(default)]
     #[ts(as = "Option<String>")]
-    calibrated_frame: Option<PathBuf>,
+    pub calibrated_frame: Option<PathBuf>,
     #[serde(default)]
-    state: FrameState,
+    pub state: FrameState,
 }
 
 #[derive(Debug, Default)]

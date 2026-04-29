@@ -420,7 +420,11 @@ fn produce_master(
         check_cancelled(calibration_cancellation)?;
 
         if count_idx % 10 == 0 || count_idx == nframes - 1 {
-            println!("Stacking (Pass 1 - Mean/Variance): Reading frame {}/{}", count_idx + 1, nframes);
+            println!(
+                "Stacking (Pass 1 - Mean/Variance): Reading frame {}/{}",
+                count_idx + 1,
+                nframes
+            );
         }
 
         let mut fits = FitsFile::new(frame.path().clone())
@@ -429,7 +433,7 @@ fn produce_master(
             .map_err(|_| "Unable to read frame pixels for master generation".to_string())?;
 
         let k = (count_idx + 1) as f64;
-        
+
         mean.par_iter_mut()
             .zip(m2.par_iter_mut())
             .zip(&image.pixels)
@@ -469,7 +473,11 @@ fn produce_master(
         check_cancelled(calibration_cancellation)?;
 
         if count_idx % 10 == 0 || count_idx == nframes - 1 {
-            println!("Stacking (Pass 2 - Sigma Clipping): Reading frame {}/{}", count_idx + 1, nframes);
+            println!(
+                "Stacking (Pass 2 - Sigma Clipping): Reading frame {}/{}",
+                count_idx + 1,
+                nframes
+            );
         }
 
         let mut fits = FitsFile::new(frame.path().clone())
@@ -605,15 +613,24 @@ fn resolve_master_for_slot(
                 output_path.clone()
             } else {
                 match master_type {
-                    MasterType::Dark => {
-                        produce_master_dark(frames, &output_path, calibration_cancellation, on_progress)
-                    }
-                    MasterType::Flat => {
-                        produce_master_flat(frames, &output_path, calibration_cancellation, on_progress)
-                    }
-                    MasterType::Bias => {
-                        produce_master_bias(frames, &output_path, calibration_cancellation, on_progress)
-                    }
+                    MasterType::Dark => produce_master_dark(
+                        frames,
+                        &output_path,
+                        calibration_cancellation,
+                        on_progress,
+                    ),
+                    MasterType::Flat => produce_master_flat(
+                        frames,
+                        &output_path,
+                        calibration_cancellation,
+                        on_progress,
+                    ),
+                    MasterType::Bias => produce_master_bias(
+                        frames,
+                        &output_path,
+                        calibration_cancellation,
+                        on_progress,
+                    ),
                 }?
             };
 
@@ -724,8 +741,13 @@ pub fn run_calibration(
     for (step_index, work_item) in work_items.iter().enumerate() {
         check_cancelled(calibration_cancellation)?;
 
-        println!("Processing calibration step {}/{}: {:?}", step_index + 1, work_items.len(), work_item.task);
-        
+        println!(
+            "Processing calibration step {}/{}: {:?}",
+            step_index + 1,
+            work_items.len(),
+            work_item.task
+        );
+
         let step = progress
             .steps
             .get_mut(step_index)
@@ -819,7 +841,41 @@ pub fn run_calibration(
                 let flat_pixels = read_master(flat_path)?;
                 let bias_pixels = read_master(bias_path)?;
 
-                let light_files = session.lights.clone();
+                // Clear stale calibrated_frame references (file was deleted externally)
+                // so the frontend state doesn't show a ghost path.
+                for f in session.lights.iter_mut() {
+                    if let Some(cal_path) = &f.calibrated_frame {
+                        if !cal_path.exists() {
+                            println!(
+                                "  Stale calibrated_frame cleared for: {}",
+                                f.path().display()
+                            );
+                            // Also clear in raw_nights
+                            let src = f.path().clone();
+                            f.calibrated_frame = None;
+                            for night_files in state.raw_nights.values_mut() {
+                                if let Some(rf) = night_files.iter_mut().find(|rf| rf.path() == &src) {
+                                    rf.calibrated_frame = None;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Skip files that were already successfully calibrated in a previous run,
+                // but only if the calibrated file actually still exists on disk.
+                let light_files: Vec<_> = session
+                    .lights
+                    .iter()
+                    .filter(|f| f.calibrated_frame.is_none())
+                    .cloned()
+                    .collect();
+
+                if light_files.is_empty() {
+                    println!("  All light frames already calibrated, skipping session.");
+                }
+
                 let mut chunk_err = None;
 
                 let num_threads = rayon::current_num_threads();
@@ -835,83 +891,136 @@ pub fn run_calibration(
                         chunk.len()
                     );
 
-                    let chunk_result: Result<(), String> = chunk.par_iter().try_for_each(|light_file| {
-                        check_cancelled(calibration_cancellation)?;
+                    let chunk_result: Result<Vec<(PathBuf, PathBuf)>, String> =
+                        chunk.par_iter().map(|light_file| {
+                            check_cancelled(calibration_cancellation)?;
 
-                        let target = targets
-                            .iter()
-                            .find(|t| t.source_path == light_file.path().to_string_lossy().to_string())
-                            .ok_or_else(|| format!("Target path not found for {}", light_file.path().display()))?;
+                            let target = targets
+                                .iter()
+                                .find(|t| {
+                                    t.source_path == light_file.path().to_string_lossy().to_string()
+                                })
+                                .ok_or_else(|| {
+                                    format!(
+                                        "Target path not found for {}",
+                                        light_file.path().display()
+                                    )
+                                })?;
 
-                        let target_path = PathBuf::from(&target.calibrated_path);
+                            let target_path = PathBuf::from(&target.calibrated_path);
 
-                        let mut fits = FitsFile::new(light_file.path().clone())
-                            .map_err(|_| format!("Unable to open light frame: {}", light_file.path().display()))?;
-                        let mut img = ImageDataPixels::from_fits(&mut fits)
-                            .map_err(|_| format!("Unable to read light frame: {}", light_file.path().display()))?;
+                            let mut fits =
+                                FitsFile::new(light_file.path().clone()).map_err(|_| {
+                                    format!(
+                                        "Unable to open light frame: {}",
+                                        light_file.path().display()
+                                    )
+                                })?;
+                            let mut img = ImageDataPixels::from_fits(&mut fits).map_err(|_| {
+                                format!(
+                                    "Unable to read light frame: {}",
+                                    light_file.path().display()
+                                )
+                            })?;
 
-                        calibrate_light(
-                            &mut img.pixels,
-                            dark_pixels.as_deref(),
-                            flat_pixels.as_deref(),
-                            bias_pixels.as_deref()
-                        );
+                            calibrate_light(
+                                &mut img.pixels,
+                                dark_pixels.as_deref(),
+                                flat_pixels.as_deref(),
+                                bias_pixels.as_deref(),
+                            );
 
-                        println!(
-                            "  -> Calibrating: {} => {}",
-                            light_file.path().display(),
-                            target_path.display()
-                        );
+                            println!(
+                                "  -> Calibrating: {} => {}",
+                                light_file.path().display(),
+                                target_path.display()
+                            );
 
-                        // Save image to target path
-                        img.save_to_fits(target_path.clone())
-                            .map_err(|_| format!("Unable to write calibrated frame: {}", target_path.display()))?;
+                            // Save image to target path
+                            img.save_to_fits(target_path.clone()).map_err(|_| {
+                                format!(
+                                    "Unable to write calibrated frame: {}",
+                                    target_path.display()
+                                )
+                            })?;
 
-                        // Copy all FITS headers from original file to calibrated file
-                        // The easiest way is to use our existing FitsFile::edit on target, but wait...
-                        // If we just saved the pixels using save_to_fits, it generated a basic header.
-                        // We should copy all headers. Actually, save_to_fits just writes basic headers.
-                        // We will copy metadata similar to write_master_metadata but keeping it simple,
-                        // or just copy the file first and then overwrite data...
-                        // But save_to_fits already wrote it. We will use edit to update IMAGETYP.
-                        let mut dst = FitsFile::edit(target_path)
-                            .map_err(|_| "Unable to open output light frame for metadata write".to_string())?;
-                        
-                        dst.write_key_string("IMAGETYP", "Light Frame")
-                            .map_err(|_| "Unable to write IMAGETYP into light frame".to_string())?;
+                            // Copy all FITS headers from original file to calibrated file
+                            let mut dst = FitsFile::edit(target_path.clone()).map_err(|_| {
+                                "Unable to open output light frame for metadata write".to_string()
+                            })?;
 
-                        // Also carry over camera, filter, etc.
-                        if let Some(value) = fits.get_tag_value(crate::fits::Tag::Camera) {
-                            let _ = dst.write_key_string("INSTRUME", value.trim());
+                            dst.write_key_string("IMAGETYP", "Light Frame")
+                                .map_err(|_| {
+                                    "Unable to write IMAGETYP into light frame".to_string()
+                                })?;
+
+                            // Also carry over camera, filter, etc.
+                            if let Some(value) = fits.get_tag_value(crate::fits::Tag::Camera) {
+                                let _ = dst.write_key_string("INSTRUME", value.trim());
+                            }
+                            if let Some(value) = fits.get_tag_value(crate::fits::Tag::Telescope) {
+                                let _ = dst.write_key_string("TELESCOP", value.trim());
+                            }
+                            if let Some(value) = fits.get_tag_value(crate::fits::Tag::Filter) {
+                                let _ = dst.write_key_string("FILTER", value.trim());
+                            }
+                            if let Some(value) =
+                                fits.get_tag_custom::<f32>(crate::fits::Tag::ExposureTime)
+                            {
+                                let _ = dst.write_key_f32("EXPTIME", value);
+                            }
+                            if let Some(value) = fits.get_tag_custom::<f32>(crate::fits::Tag::Gain)
+                            {
+                                let _ = dst.write_key_f32("GAIN", value);
+                            }
+                            if let Some(value) = fits.get_tag_value(crate::fits::Tag::BayerPattern)
+                            {
+                                let _ = dst.write_key_string("BAYERPAT", value.trim());
+                            }
+                            if let Some(value) =
+                                fits.get_tag_custom::<i32>(crate::fits::Tag::XBayerOffset)
+                            {
+                                let _ = dst.write_key_i32("XBAYROFF", value);
+                            }
+                            if let Some(value) =
+                                fits.get_tag_custom::<i32>(crate::fits::Tag::YBayerOffset)
+                            {
+                                let _ = dst.write_key_i32("YBAYROFF", value);
+                            }
+
+                            Ok((light_file.path().clone(), target_path))
+                        }).collect();
+
+                    match chunk_result {
+                        Err(e) => {
+                            chunk_err = Some(e);
+                            break;
                         }
-                        if let Some(value) = fits.get_tag_value(crate::fits::Tag::Telescope) {
-                            let _ = dst.write_key_string("TELESCOP", value.trim());
-                        }
-                        if let Some(value) = fits.get_tag_value(crate::fits::Tag::Filter) {
-                            let _ = dst.write_key_string("FILTER", value.trim());
-                        }
-                        if let Some(value) = fits.get_tag_custom::<f32>(crate::fits::Tag::ExposureTime) {
-                            let _ = dst.write_key_f32("EXPTIME", value);
-                        }
-                        if let Some(value) = fits.get_tag_custom::<f32>(crate::fits::Tag::Gain) {
-                            let _ = dst.write_key_f32("GAIN", value);
-                        }
-                        if let Some(value) = fits.get_tag_value(crate::fits::Tag::BayerPattern) {
-                            let _ = dst.write_key_string("BAYERPAT", value.trim());
-                        }
-                        if let Some(value) = fits.get_tag_custom::<i32>(crate::fits::Tag::XBayerOffset) {
-                            let _ = dst.write_key_i32("XBAYROFF", value);
-                        }
-                        if let Some(value) = fits.get_tag_custom::<i32>(crate::fits::Tag::YBayerOffset) {
-                            let _ = dst.write_key_i32("YBAYROFF", value);
-                        }
+                        Ok(completed_pairs) => {
+                            // Mutate calibrated_frame on the originals — must be done
+                            // single-threaded since session.lights is not Arc/Mutex.
+                            for (source_path, cal_path) in &completed_pairs {
+                                // Update in session.lights (grouped view)
+                                if let Some(f) = session
+                                    .lights
+                                    .iter_mut()
+                                    .find(|f| f.path() == source_path)
+                                {
+                                    f.calibrated_frame = Some(cal_path.clone());
+                                }
 
-                        Ok(())
-                    });
-
-                    if let Err(e) = chunk_result {
-                        chunk_err = Some(e);
-                        break;
+                                // Also update in state.raw_nights (flat file list)
+                                for night_files in state.raw_nights.values_mut() {
+                                    if let Some(f) = night_files
+                                        .iter_mut()
+                                        .find(|f| f.path() == source_path)
+                                    {
+                                        f.calibrated_frame = Some(cal_path.clone());
+                                        break;
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     // Update completed_count and send progress after each chunk
