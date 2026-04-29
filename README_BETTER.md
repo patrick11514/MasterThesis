@@ -58,6 +58,9 @@ The Master's thesis will build upon the statistical baseline by introducing Deep
 
 This project builds upon established astronomical data processing literature, notably:
 
-* *SExtractor: Software for source extraction* (Bertin & Arnouts, 1996) for baseline mesh-based background and moments extraction.
-* *Fast Auto-Focus Method and Software for CCD-based Telescopes* (Weber & Brady, 2001) for the mathematical superiority of HFR over FWHM.
-* *Noise-based Detection and Segmentation of Nebulous Objects* (Akhlaghi & Ichikawa, 2015) for advanced, threshold-free background sky estimation.
+- **Bertin, E., & Arnouts, S. (1996).** _SExtractor: Software for source extraction._ Astronomy and Astrophysics Supplement Series, 117(2), 393-404.
+(Základní literatura definující matematické modely pro extrakci hvězd a modelování pozadí, na kterých je postavena knihovna SEP).
+- **Barbary, K. (2016).** _SEP: Source Extractor as a library._ Journal of Open Source Software, 1(6), 58.
+(Paper knihovny SEP, která využívá SExtractor ne jako tool, ale knihovnu a staví nad ním rozšířené API).
+- **Weber, R., & Brady, M. (2001).** _Fast Auto-Focus Method and Software for CCD-based Telescopes._
+(Paper, který říká, že metrika HDF je lepší používat při automatickém ostření a je rychlejší (oproti FWHD), v aplikaci využíváno pro detekci, zda jsou hvězdy rozostřené jinak FWHD zůstává jako metrika společně s eccentricitou pro detekci rozmazaných hvězd - star trails).
