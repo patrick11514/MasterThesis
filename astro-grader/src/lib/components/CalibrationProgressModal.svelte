@@ -223,7 +223,13 @@
                     <div class="min-w-0">
                       <div class="truncate text-sm font-medium text-foreground">
                         {step.label}
-                        <span class="text-muted-foreground">({step.count})</span>
+                        {#if step.status === 'Running' || step.status === 'Completed'}
+                          <span class="text-muted-foreground">
+                            ({step.completed_count}/{step.count})
+                          </span>
+                        {:else}
+                          <span class="text-muted-foreground">({step.count})</span>
+                        {/if}
                       </div>
                     </div>
 

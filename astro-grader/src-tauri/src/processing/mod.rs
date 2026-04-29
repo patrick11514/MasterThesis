@@ -53,6 +53,7 @@ pub async fn group_frames(
 pub async fn calibrate(
     request: CalibrateRequest,
     channel: tauri::ipc::Channel<CalibrationProgressMessage>,
+    app_handle: tauri::AppHandle,
     state: tauri::State<'_, Mutex<AppState>>,
     calibration_cancellation: tauri::State<'_, CalibrationCancellation>,
 ) -> Result<(), String> {
@@ -61,26 +62,38 @@ pub async fn calibrate(
         .store(false, Ordering::Relaxed);
 
     let mut fe_state = {
-        let state = state
+        let state_guard = state
             .lock()
             .map_err(|_| "Failed to acquire app state lock".to_string())?;
 
-        state.fe_state.clone()
+        state_guard.fe_state.clone()
     };
 
-    let temp_folder = PathBuf::from(&request.temp_folder_path);
-    run_calibration(
-        &mut fe_state,
-        &temp_folder,
-        &request.targets,
-        channel,
-        &calibration_cancellation,
-    )?;
+    // Spawn blocking to prevent Rayon and FITS I/O from starving the Tokio runtime,
+    // which freezes IPC channel messaging to the frontend.
+    let updated_fe_state = tokio::task::spawn_blocking(move || {
+        use tauri::Manager;
+        let cancellation_state = app_handle.state::<CalibrationCancellation>();
 
-    let mut state = state
+        let temp_folder = PathBuf::from(&request.temp_folder_path);
+        run_calibration(
+            &mut fe_state,
+            &temp_folder,
+            &request.targets,
+            channel,
+            &cancellation_state,
+        )?;
+
+        Ok::<_, String>(fe_state)
+    })
+    .await
+    .map_err(|e| format!("Calibration task failed: {}", e))??;
+
+    let mut state_guard = state
         .lock()
         .map_err(|_| "Failed to acquire app state lock".to_string())?;
-    state.fe_state = fe_state;
+    state_guard.fe_state = updated_fe_state;
+
     Ok(())
 }
 

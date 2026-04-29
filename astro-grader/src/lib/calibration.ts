@@ -100,10 +100,16 @@ const collectFrames = (slot: MasterOrFrames) => {
   return slot.Frames.length > 0 ? slot.Frames : null;
 };
 
+const framesSignature = (frames: File[]) => {
+  const ids = frames.map((f) => f.uuid).sort();
+  return ids.join(',');
+};
+
 export const buildCalibrationProgressPreview = (
   sessions: AstroSession[]
 ): CalibrationProgressMessage | null => {
   const steps: CalibrationProgressStep[] = [];
+  const masterSignatures = new Set<string>();
 
   for (const session of sessions) {
     const label = sessionLabel(session);
@@ -114,15 +120,18 @@ export const buildCalibrationProgressPreview = (
       ['Bias', session.biases]
     ];
 
-    if (session.lights.length > 0) {
-      slots.push(['Light', session.lights]);
-    }
-
     for (const [kind, slot] of slots) {
       const frames = Array.isArray(slot) ? slot : collectFrames(slot);
       if (!frames || frames.length === 0) {
         continue;
       }
+
+      const sig = framesSignature(frames);
+      const key = `${kind}:${sig}`;
+      if (masterSignatures.has(key)) {
+        continue;
+      }
+      masterSignatures.add(key);
 
       steps.push({
         id: `${session.uuid}:${kind}`,
@@ -131,6 +140,28 @@ export const buildCalibrationProgressPreview = (
         session_uuid: session.uuid,
         session_label: label,
         count: frames.length,
+        completed_count: 0,
+        status: 'Pending' as CalibrationStepStatus,
+        started_at: null,
+        ended_at: null,
+        error: null
+      });
+    }
+  }
+
+  for (const session of sessions) {
+    const label = sessionLabel(session);
+
+    if (session.lights.length > 0) {
+      const kind = 'Light';
+      steps.push({
+        id: `${session.uuid}:${kind}`,
+        kind,
+        label: kindLabel(kind),
+        session_uuid: session.uuid,
+        session_label: label,
+        count: session.lights.length,
+        completed_count: 0,
         status: 'Pending' as CalibrationStepStatus,
         started_at: null,
         ended_at: null,

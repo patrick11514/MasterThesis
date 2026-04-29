@@ -63,6 +63,7 @@ pub struct CalibrationProgressStep {
     pub session_uuid: String,
     pub session_label: String,
     pub count: usize,
+    pub completed_count: usize,
     pub status: CalibrationStepStatus,
     pub started_at: Option<u64>,
     pub ended_at: Option<u64>,

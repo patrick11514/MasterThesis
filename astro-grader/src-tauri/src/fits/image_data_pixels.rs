@@ -150,6 +150,11 @@ impl ImageDataPixels {
             ImageDataLayout::RGB => return Err(FitsWriteError::WriteImageFailed),
         };
 
+        // cfitsio's create() fails if the file already exists; delete it first.
+        if path.exists() {
+            std::fs::remove_file(&path).map_err(|_| FitsWriteError::CreateFailed)?;
+        }
+
         let mut output = FitsFile::create(path, &shape, fitsio::images::ImageType::Float)?;
         output.write_image_f32(&self.pixels)
     }

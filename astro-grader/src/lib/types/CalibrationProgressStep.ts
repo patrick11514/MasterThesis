@@ -2,4 +2,4 @@
 import type { CalibrationStepKind } from "./CalibrationStepKind";
 import type { CalibrationStepStatus } from "./CalibrationStepStatus";
 
-export type CalibrationProgressStep = { id: string, kind: CalibrationStepKind, label: string, session_uuid: string, session_label: string, count: number, status: CalibrationStepStatus, started_at: bigint | null, ended_at: bigint | null, error: string | null, };
+export type CalibrationProgressStep = { id: string, kind: CalibrationStepKind, label: string, session_uuid: string, session_label: string, count: number, completed_count: number, status: CalibrationStepStatus, started_at: bigint | null, ended_at: bigint | null, error: string | null, };

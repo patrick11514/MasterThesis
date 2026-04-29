@@ -135,6 +135,7 @@ fn build_calibration_pipeline(
 ) -> (Vec<CalibrationWorkItem>, CalibrationProgressMessage) {
     let mut work_items = Vec::new();
     let mut steps = Vec::new();
+    let mut master_signatures = std::collections::HashSet::new();
 
     for (session_index, session) in state.grouped_nights.iter().enumerate() {
         let label = session_label(session);
@@ -154,6 +155,13 @@ fn build_calibration_pipeline(
                 continue;
             }
 
+            let signature = frames_signature(frames);
+            let key = (master_type, signature);
+
+            if !master_signatures.insert(key) {
+                continue;
+            }
+
             let kind = master_type_to_step_kind(master_type);
 
             work_items.push(CalibrationWorkItem {
@@ -168,12 +176,17 @@ fn build_calibration_pipeline(
                 session_uuid: session.uuid.clone(),
                 session_label: label.clone(),
                 count: frames.len(),
+                completed_count: 0,
                 status: CalibrationStepStatus::Pending,
                 started_at: None,
                 ended_at: None,
                 error: None,
             });
         }
+    }
+
+    for (session_index, session) in state.grouped_nights.iter().enumerate() {
+        let label = session_label(session);
 
         if !session.lights.is_empty() {
             let kind = CalibrationStepKind::Light;
@@ -189,6 +202,7 @@ fn build_calibration_pipeline(
                 session_uuid: session.uuid.clone(),
                 session_label: label.clone(),
                 count: session.lights.len(),
+                completed_count: 0,
                 status: CalibrationStepStatus::Pending,
                 started_at: None,
                 ended_at: None,
@@ -289,6 +303,7 @@ fn produce_master(
     frames: &[File],
     target_path: &Path,
     calibration_cancellation: &CalibrationCancellation,
+    on_progress: &dyn Fn(usize),
 ) -> Result<PathBuf, String> {
     check_cancelled(calibration_cancellation)?;
 
@@ -354,6 +369,8 @@ fn produce_master(
 
             let offset = fi * pixel_count;
             samples[offset..offset + pixel_count].copy_from_slice(&image.pixels);
+
+            on_progress(fi + 1);
         }
 
         // compute median per pixel
@@ -402,19 +419,27 @@ fn produce_master(
     for (count_idx, frame) in frames.iter().enumerate() {
         check_cancelled(calibration_cancellation)?;
 
+        if count_idx % 10 == 0 || count_idx == nframes - 1 {
+            println!("Stacking (Pass 1 - Mean/Variance): Reading frame {}/{}", count_idx + 1, nframes);
+        }
+
         let mut fits = FitsFile::new(frame.path().clone())
             .map_err(|_| "Unable to open frame for master generation".to_string())?;
         let image = ImageDataPixels::from_fits(&mut fits)
             .map_err(|_| "Unable to read frame pixels for master generation".to_string())?;
 
         let k = (count_idx + 1) as f64;
-        for i in 0..pixel_count {
-            let x = image.pixels[i] as f64;
-            let delta = x - mean[i];
-            mean[i] += delta / k;
-            let delta2 = x - mean[i];
-            m2[i] += delta * delta2;
-        }
+        
+        mean.par_iter_mut()
+            .zip(m2.par_iter_mut())
+            .zip(&image.pixels)
+            .for_each(|((m, m2_val), &x_f32)| {
+                let x = x_f32 as f64;
+                let delta = x - *m;
+                *m += delta / k;
+                let delta2 = x - *m;
+                *m2_val += delta * delta2;
+            });
     }
 
     let mut std: Vec<f64> = vec![0.0; pixel_count];
@@ -440,21 +465,31 @@ fn produce_master(
     let mut sum: Vec<f64> = vec![0.0; pixel_count];
     let mut cnt: Vec<u32> = vec![0; pixel_count];
 
-    for frame in frames {
+    for (count_idx, frame) in frames.iter().enumerate() {
         check_cancelled(calibration_cancellation)?;
+
+        if count_idx % 10 == 0 || count_idx == nframes - 1 {
+            println!("Stacking (Pass 2 - Sigma Clipping): Reading frame {}/{}", count_idx + 1, nframes);
+        }
 
         let mut fits = FitsFile::new(frame.path().clone())
             .map_err(|_| "Unable to open frame for master generation".to_string())?;
         let image = ImageDataPixels::from_fits(&mut fits)
             .map_err(|_| "Unable to read frame pixels for master generation".to_string())?;
 
-        for i in 0..pixel_count {
-            let x = image.pixels[i] as f64;
-            if x >= lower[i] && x <= upper[i] {
-                sum[i] += x;
-                cnt[i] += 1;
-            }
-        }
+        sum.par_iter_mut()
+            .zip(cnt.par_iter_mut())
+            .zip(&image.pixels)
+            .enumerate()
+            .for_each(|(i, ((s, c), &x_f32))| {
+                let x = x_f32 as f64;
+                if x >= lower[i] && x <= upper[i] {
+                    *s += x;
+                    *c += 1;
+                }
+            });
+
+        on_progress(count_idx + 1);
     }
 
     let out_pixels: Vec<f32> = (0..pixel_count)
@@ -486,12 +521,14 @@ fn produce_master_dark(
     frames: &[File],
     target_path: &Path,
     calibration_cancellation: &CalibrationCancellation,
+    on_progress: &dyn Fn(usize),
 ) -> Result<PathBuf, String> {
     produce_master(
         MasterType::Dark,
         frames,
         target_path,
         calibration_cancellation,
+        on_progress,
     )
 }
 
@@ -499,12 +536,14 @@ fn produce_master_flat(
     frames: &[File],
     target_path: &Path,
     calibration_cancellation: &CalibrationCancellation,
+    on_progress: &dyn Fn(usize),
 ) -> Result<PathBuf, String> {
     produce_master(
         MasterType::Flat,
         frames,
         target_path,
         calibration_cancellation,
+        on_progress,
     )
 }
 
@@ -512,12 +551,14 @@ fn produce_master_bias(
     frames: &[File],
     target_path: &Path,
     calibration_cancellation: &CalibrationCancellation,
+    on_progress: &dyn Fn(usize),
 ) -> Result<PathBuf, String> {
     produce_master(
         MasterType::Bias,
         frames,
         target_path,
         calibration_cancellation,
+        on_progress,
     )
 }
 
@@ -528,6 +569,7 @@ fn resolve_master_for_slot(
     temp_folder_path: &Path,
     cache: &Arc<Mutex<HashMap<(MasterType, u64), PathBuf>>>,
     calibration_cancellation: &CalibrationCancellation,
+    on_progress: &dyn Fn(usize),
 ) -> Result<(), String> {
     match slot {
         MasterOrFrames::Master(file) => {
@@ -564,13 +606,13 @@ fn resolve_master_for_slot(
             } else {
                 match master_type {
                     MasterType::Dark => {
-                        produce_master_dark(frames, &output_path, calibration_cancellation)
+                        produce_master_dark(frames, &output_path, calibration_cancellation, on_progress)
                     }
                     MasterType::Flat => {
-                        produce_master_flat(frames, &output_path, calibration_cancellation)
+                        produce_master_flat(frames, &output_path, calibration_cancellation, on_progress)
                     }
                     MasterType::Bias => {
-                        produce_master_bias(frames, &output_path, calibration_cancellation)
+                        produce_master_bias(frames, &output_path, calibration_cancellation, on_progress)
                     }
                 }?
             };
@@ -599,15 +641,19 @@ pub fn calibrate_light(
     // 1. Calculate the mean of the Bias-subtracted Flat
     let mut flat_mean = 1.0;
     if let Some(flat_data) = flat {
-        let mut flat_sum = 0.0;
-        for i in 0..pixel_count {
-            let bias_val = bias.map(|b| b[i]).unwrap_or(0.0);
-            let mut flat_val = flat_data[i] - bias_val;
-            if flat_val < 0.0 {
-                flat_val = 0.0; // Clamp random noise negatives
-            }
-            flat_sum += flat_val;
-        }
+        let flat_sum: f32 = flat_data
+            .par_iter()
+            .enumerate()
+            .map(|(i, &f_val)| {
+                let bias_val = bias.map(|b| b[i]).unwrap_or(0.0);
+                let mut flat_val = f_val - bias_val;
+                if flat_val < 0.0 {
+                    flat_val = 0.0;
+                }
+                flat_val
+            })
+            .sum();
+
         flat_mean = flat_sum / (pixel_count as f32);
         if flat_mean == 0.0 {
             flat_mean = 1.0; // avoid division by zero overall
@@ -615,8 +661,7 @@ pub fn calibrate_light(
     }
 
     // 2. The Calibration Loop
-    for i in 0..pixel_count {
-        // Subtract Dark or Bias
+    light.par_iter_mut().enumerate().for_each(|(i, pixel)| {
         let sub_val = if let Some(dark_data) = dark {
             dark_data[i]
         } else if let Some(bias_data) = bias {
@@ -625,9 +670,8 @@ pub fn calibrate_light(
             0.0
         };
 
-        let mut calibrated = light[i] - sub_val;
+        let mut calibrated = *pixel - sub_val;
 
-        // Prevent random read noise from dropping the pixel below absolute black
         if calibrated < 0.0 {
             calibrated = 0.0;
         }
@@ -643,8 +687,8 @@ pub fn calibrate_light(
             }
         }
 
-        light[i] = calibrated;
-    }
+        *pixel = calibrated;
+    });
 }
 
 pub fn run_calibration(
@@ -680,6 +724,21 @@ pub fn run_calibration(
     for (step_index, work_item) in work_items.iter().enumerate() {
         check_cancelled(calibration_cancellation)?;
 
+        println!("Processing calibration step {}/{}: {:?}", step_index + 1, work_items.len(), work_item.task);
+        
+        let step = progress
+            .steps
+            .get_mut(step_index)
+            .ok_or_else(|| "Calibration step index out of bounds".to_string())?;
+        let started_at = now_millis();
+        step.status = CalibrationStepStatus::Running;
+        step.started_at = Some(started_at);
+        step.ended_at = None;
+        step.error = None;
+        progress.current_step_id = Some(step.id.clone());
+        progress.status = CalibrationRunStatus::Running;
+        send_progress(&channel, &progress);
+
         let session = state
             .grouped_nights
             .get_mut(work_item.session_index)
@@ -693,16 +752,53 @@ pub fn run_calibration(
                     MasterType::Bias => session.biases.clone(),
                 };
 
-                resolve_master_for_slot(
+                // Use a shared counter so the stacking callback can update progress
+                let completed = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+                let completed_clone = completed.clone();
+
+                let on_progress = move |n: usize| {
+                    completed_clone.store(n, std::sync::atomic::Ordering::Relaxed);
+                };
+
+                let slot_clone = slot.clone();
+                let result = resolve_master_for_slot(
                     session,
                     *master_type,
-                    &slot,
+                    &slot_clone,
                     temp_folder_path,
                     &cached_master_frames,
                     calibration_cancellation,
-                )
+                    &on_progress,
+                );
+
+                // Update completed_count one final time after stacking finishes
+                let final_count = completed.load(std::sync::atomic::Ordering::Relaxed);
+                if let Some(step) = progress.steps.get_mut(step_index) {
+                    step.completed_count = final_count;
+                }
+
+                result
             }
             CalibrationWorkItemTask::CalibrateLights => {
+                for master_type in [MasterType::Dark, MasterType::Flat, MasterType::Bias] {
+                    let slot = match master_type {
+                        MasterType::Dark => session.darks.clone(),
+                        MasterType::Flat => session.flats.clone(),
+                        MasterType::Bias => session.biases.clone(),
+                    };
+
+                    // Masters should already be in cache; no-op progress callback
+                    resolve_master_for_slot(
+                        session,
+                        master_type,
+                        &slot,
+                        temp_folder_path,
+                        &cached_master_frames,
+                        calibration_cancellation,
+                        &|_| {},
+                    )?;
+                }
+
                 let dark_path = session.master_dark.clone();
                 let flat_path = session.master_flat.clone();
                 let bias_path = session.master_bias.clone();
@@ -726,8 +822,18 @@ pub fn run_calibration(
                 let light_files = session.lights.clone();
                 let mut chunk_err = None;
 
-                for chunk in light_files.chunks(4) {
+                let num_threads = rayon::current_num_threads();
+                let total_chunks = (light_files.len() + num_threads - 1) / num_threads;
+
+                for (chunk_idx, chunk) in light_files.chunks(num_threads).enumerate() {
                     check_cancelled(calibration_cancellation)?;
+
+                    println!(
+                        "Calibrating lights (Chunk {}/{}): Processing {} frames...",
+                        chunk_idx + 1,
+                        total_chunks,
+                        chunk.len()
+                    );
 
                     let chunk_result: Result<(), String> = chunk.par_iter().try_for_each(|light_file| {
                         check_cancelled(calibration_cancellation)?;
@@ -751,9 +857,15 @@ pub fn run_calibration(
                             bias_pixels.as_deref()
                         );
 
+                        println!(
+                            "  -> Calibrating: {} => {}",
+                            light_file.path().display(),
+                            target_path.display()
+                        );
+
                         // Save image to target path
                         img.save_to_fits(target_path.clone())
-                            .map_err(|_| "Unable to write calibrated frame".to_string())?;
+                            .map_err(|_| format!("Unable to write calibrated frame: {}", target_path.display()))?;
 
                         // Copy all FITS headers from original file to calibrated file
                         // The easiest way is to use our existing FitsFile::edit on target, but wait...
@@ -801,6 +913,14 @@ pub fn run_calibration(
                         chunk_err = Some(e);
                         break;
                     }
+
+                    // Update completed_count and send progress after each chunk
+                    let frames_done = (chunk_idx + 1) * num_threads;
+                    let clamped = frames_done.min(light_files.len());
+                    if let Some(step) = progress.steps.get_mut(step_index) {
+                        step.completed_count = clamped;
+                    }
+                    send_progress(&channel, &progress);
                 }
 
                 if let Some(e) = chunk_err {
