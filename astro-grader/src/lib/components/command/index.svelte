@@ -1,10 +1,12 @@
 <script lang="ts">
   import { appEvents } from '$/lib/events.svelte';
-  import { BeakerIcon, FileIcon, FolderIcon, LayersIcon, SaveIcon } from '@lucide/svelte';
+  import { BeakerIcon, FileIcon, FolderIcon, LayersIcon, PlayIcon, SaveIcon } from '@lucide/svelte';
   import { platform } from '@tauri-apps/plugin-os';
+  import { getAppState } from '../../state.svelte';
   import * as Command from '../ui/command';
 
   let open = $state(false);
+  const appState = await getAppState();
 
   const openCommandPalette = () => {
     open = true;
@@ -32,6 +34,14 @@
 
   const calibrateFrames = () => {
     appEvents.emit('CalibrateFrames');
+  };
+
+  const runAllProcesses = async () => {
+    await appState.runAllProcesses();
+  };
+
+  const runMetrics = async () => {
+    await appState.runMetrics();
   };
 
   //This wrapper closes the command palette before executing the command
@@ -168,6 +178,10 @@
     <Command.Separator />
 
     <Command.Group heading="Processing">
+      <Command.Item onclick={wrap(runAllProcesses)}>
+        <PlayIcon class="me-2 size-4" />
+        <span>Run all processes</span>
+      </Command.Item>
       <Command.Item onclick={wrap(groupFrames)}>
         <LayersIcon class="me-2 size-4" />
         <span>Group frames</span>
@@ -191,6 +205,10 @@
           {/if}
           C
         </Command.Shortcut>
+      </Command.Item>
+      <Command.Item onclick={wrap(runMetrics)}>
+        <PlayIcon class="me-2 size-4" />
+        <span>Run metrics</span>
       </Command.Item>
     </Command.Group>
   </Command.List>

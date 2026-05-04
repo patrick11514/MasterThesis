@@ -22,6 +22,17 @@
   }}
 />
 
+<CalibrationProgressModal
+  progress={appState.metricsProgress}
+  onCancel={() => {
+    // No dedicated cancel for metrics currently — just close preview
+    appState.closeMetricsProgress();
+  }}
+  onDone={() => {
+    appState.closeMetricsProgress();
+  }}
+/>
+
 <main class="h-screen w-screen overflow-hidden">
   {@render children?.()}
 </main>

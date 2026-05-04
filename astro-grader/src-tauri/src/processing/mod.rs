@@ -1,5 +1,6 @@
 mod calibrate;
 mod group;
+mod metrics;
 
 pub use group::group_preview_nights;
 
@@ -10,7 +11,7 @@ use std::sync::atomic::Ordering;
 
 use crate::{
     config,
-    state::fe_state::AstroSession,
+    state::fe_state::{AstroSession, FeState},
     state::{
         AppState, CalibrateRequest, CalibrationCancellation, CalibrationProgressMessage,
         GroupFramesProgress,
@@ -56,7 +57,7 @@ pub async fn calibrate(
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, Mutex<AppState>>,
     calibration_cancellation: tauri::State<'_, CalibrationCancellation>,
-) -> Result<(), String> {
+) -> Result<FeState, String> {
     calibration_cancellation
         .requested
         .store(false, Ordering::Relaxed);
@@ -94,7 +95,35 @@ pub async fn calibrate(
         .map_err(|_| "Failed to acquire app state lock".to_string())?;
     state_guard.fe_state = updated_fe_state;
 
-    Ok(())
+    Ok(state_guard.fe_state.clone())
+}
+
+#[tauri::command]
+pub async fn run_metrics(
+    channel: tauri::ipc::Channel<crate::state::CalibrationProgressMessage>,
+    state: tauri::State<'_, Mutex<AppState>>,
+) -> Result<FeState, String> {
+    let mut fe_state = {
+        let state_guard = state
+            .lock()
+            .map_err(|_| "Failed to acquire app state lock".to_string())?;
+
+        state_guard.fe_state.clone()
+    };
+
+    let updated_fe_state = tokio::task::spawn_blocking(move || {
+        metrics::run_metrics(&mut fe_state, channel)?;
+        Ok::<_, String>(fe_state)
+    })
+    .await
+    .map_err(|e| format!("Metrics task failed: {}", e))??;
+
+    let mut state_guard = state
+        .lock()
+        .map_err(|_| "Failed to acquire app state lock".to_string())?;
+    state_guard.fe_state = updated_fe_state;
+
+    Ok(state_guard.fe_state.clone())
 }
 
 #[tauri::command]

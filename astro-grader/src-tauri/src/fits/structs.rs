@@ -27,7 +27,10 @@ pub enum FrameState {
 pub struct ImageStats {
     pub star_count: Option<u32>,
     pub fwhm: Option<f32>,
+    pub hfd: Option<f32>,
+    pub eccentricity: Option<f32>,
     pub background_contrast: Option<f32>,
+    pub quality_score: Option<f32>,
 }
 
 #[derive(Debug)]

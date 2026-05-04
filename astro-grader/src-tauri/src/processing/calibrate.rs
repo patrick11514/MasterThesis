@@ -118,6 +118,20 @@ fn check_cancelled(calibration_cancellation: &CalibrationCancellation) -> Result
     Ok(())
 }
 
+fn normalize_pixels_if_needed(pixels: &mut [f32]) {
+    let max_value = pixels
+        .iter()
+        .copied()
+        .filter(|value| value.is_finite())
+        .fold(0.0f32, f32::max);
+
+    if max_value > 1.5 {
+        for value in pixels.iter_mut() {
+            *value /= max_value;
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 enum CalibrationWorkItemTask {
     Master(MasterType),
@@ -402,6 +416,34 @@ fn produce_master(
             pixels: out_pixels,
         };
 
+        // Debug: print master pixel stats before saving
+        let (mut min_v, mut max_v, mut sum) = (
+            std::f32::INFINITY,
+            std::f32::NEG_INFINITY,
+            0f64,
+        );
+        let mut count = 0usize;
+        for &p in &master_image.pixels {
+            if p.is_finite() {
+                if p < min_v {
+                    min_v = p;
+                }
+                if p > max_v {
+                    max_v = p;
+                }
+                sum += p as f64;
+                count += 1;
+            }
+        }
+        let mean = if count == 0 { 0.0 } else { sum / count as f64 };
+        println!(
+            "Produced master ({}) -> min {:.6}, max {:.6}, mean {:.6}",
+            target_path.display(),
+            min_v,
+            max_v,
+            mean
+        );
+
         master_image
             .save_to_fits(target_path.to_path_buf())
             .map_err(|_| "Unable to write produced master frame to FITS".to_string())?;
@@ -515,6 +557,34 @@ fn produce_master(
         data: first_image.data.clone(),
         pixels: out_pixels,
     };
+
+    // Debug: print master pixel stats before saving (sigma-clipped path)
+    let (mut min_v, mut max_v, mut sum) = (
+        std::f32::INFINITY,
+        std::f32::NEG_INFINITY,
+        0f64,
+    );
+    let mut count = 0usize;
+    for &p in &master_image.pixels {
+        if p.is_finite() {
+            if p < min_v {
+                min_v = p;
+            }
+            if p > max_v {
+                max_v = p;
+            }
+            sum += p as f64;
+            count += 1;
+        }
+    }
+    let mean = if count == 0 { 0.0 } else { sum / count as f64 };
+    println!(
+        "Produced master ({}) -> min {:.6}, max {:.6}, mean {:.6}",
+        target_path.display(),
+        min_v,
+        max_v,
+        mean
+    );
 
     master_image
         .save_to_fits(target_path.to_path_buf())
@@ -831,7 +901,9 @@ pub fn run_calibration(
                             .map_err(|_| "Unable to open master FITS file".to_string())?;
                         let img = ImageDataPixels::from_fits(&mut fits)
                             .map_err(|_| "Unable to read master pixels".to_string())?;
-                        Ok(Some(img.pixels))
+                        let mut pixels = img.pixels;
+                        normalize_pixels_if_needed(&mut pixels);
+                        Ok(Some(pixels))
                     } else {
                         Ok(None)
                     }
@@ -923,11 +995,42 @@ pub fn run_calibration(
                                 )
                             })?;
 
+                            normalize_pixels_if_needed(&mut img.pixels);
+
                             calibrate_light(
                                 &mut img.pixels,
                                 dark_pixels.as_deref(),
                                 flat_pixels.as_deref(),
                                 bias_pixels.as_deref(),
+                            );
+
+                            // Debug: print basic pixel statistics after calibration
+                            let (mut min_v, mut max_v, mut sum) = (
+                                std::f32::INFINITY,
+                                std::f32::NEG_INFINITY,
+                                0f64,
+                            );
+                            let mut count = 0usize;
+                            for &p in &img.pixels {
+                                if p.is_finite() {
+                                    if p < min_v {
+                                        min_v = p;
+                                    }
+                                    if p > max_v {
+                                        max_v = p;
+                                    }
+                                    sum += p as f64;
+                                    count += 1;
+                                }
+                            }
+                            let mean = if count == 0 { 0.0 } else { sum / count as f64 };
+
+                            println!(
+                                "Calibrated pixels for {} -> min {:.6}, max {:.6}, mean {:.6}",
+                                light_file.path().display(),
+                                min_v,
+                                max_v,
+                                mean
                             );
 
                             println!(
@@ -1090,4 +1193,29 @@ pub fn run_calibration(
     send_progress(&channel, &progress);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_pixels_if_needed;
+
+    #[test]
+    fn normalize_pixels_scales_raw_sensor_counts() {
+        let mut pixels = vec![0.0, 32767.5, 65535.0];
+
+        normalize_pixels_if_needed(&mut pixels);
+
+        assert!(pixels[0] <= 0.000_001);
+        assert!((pixels[1] - 0.5).abs() < 0.000_01);
+        assert!((pixels[2] - 1.0).abs() < 0.000_01);
+    }
+
+    #[test]
+    fn normalize_pixels_leaves_unit_range_untouched() {
+        let mut pixels = vec![0.0, 0.25, 0.8, 1.0];
+
+        normalize_pixels_if_needed(&mut pixels);
+
+        assert_eq!(pixels, vec![0.0, 0.25, 0.8, 1.0]);
+    }
 }

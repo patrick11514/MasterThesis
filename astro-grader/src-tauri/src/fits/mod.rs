@@ -14,7 +14,7 @@ mod file;
 mod image_data_pixels;
 mod structs;
 mod tag;
-mod utils;
+pub mod utils;
 
 //public re-exports
 pub use file::FitsFile;

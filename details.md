@@ -308,6 +308,56 @@ normalized_pixel = original_pixel / max_val
 
 ### General Median Computation
 
+---
+
+## 4. Metrics and Frame Quality Scoring
+
+### Overview
+
+After calibration, the backend now runs a metrics pass on the calibrated light frames. The metrics pass uses the `sep-sys` bindings to estimate star and background properties for each frame and stores the results in `ImageStats`.
+
+### Implementation Location
+
+- **File**: [astro-grader/src-tauri/src/processing/metrics.rs](astro-grader/src-tauri/src/processing/metrics.rs)
+- **File**: [astro-grader/src-tauri/src/fits/structs.rs](astro-grader/src-tauri/src/fits/structs.rs)
+
+### Stored Metrics
+
+- `star_count`: number of detected sources from SEP extraction
+- `fwhm`: average full width at half maximum across detected stars
+- `hfd`: average half-flux diameter across detected stars
+- `eccentricity`: average star eccentricity across detected stars
+- `background_contrast`: signed background estimate derived from SEP background statistics
+- `quality_score`: per-night normal-distribution score for comparing frames inside the same grouped night
+
+### Quality Scoring
+
+- Frames are compared only inside the same grouped night
+- A normal distribution is built from the detected star counts of the night
+- Frames near the night mean receive a higher `quality_score`
+- Frames beyond `3σ` receive a negative score
+- Cross-night comparison is intentionally deferred for now
+
+### Background Estimate
+
+- SEP background estimation is used to measure the overall background level and background RMS
+- The stored `background_contrast` keeps the sign of the background level so brighter skies and darker obstructions can be distinguished
+
+---
+
+## 5. Workflow Update
+
+### Calibration State Sync
+
+- Calibration now returns the updated `FeState` to the frontend after the backend finishes
+- This ensures `File.calibrated_frame` is visible in the UI immediately after calibration
+
+### Run All Processes
+
+- The command palette now includes **Run all processes** above the existing processing commands
+- It runs the processing pipeline sequentially: group nights, calibrate frames, then calculate metrics
+- The command uses the same backend state flow as the individual steps, so the UI stays in sync after each stage
+
 For both flat and bias masters (and dark masters with <6 frames):
 
 ```rust

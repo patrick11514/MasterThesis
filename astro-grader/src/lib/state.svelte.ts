@@ -26,6 +26,7 @@ class AppState {
   public calibrationStorageMode = $state<CalibrationStorageMode>('NextToOriginal');
   public tempFolderPath = $state('');
   public calibrationProgress = $state<CalibrationProgressMessage | null>(null);
+  public metricsProgress = $state<CalibrationProgressMessage | null>(null);
   public loaded = false;
   public framesShown = $state(Object.fromEntries(FILE_TYPES.map((type) => [type, true])));
 
@@ -91,6 +92,20 @@ class AppState {
     );
     if (!exists) {
       this.activeGroupedSessionUuid = this.groupedNights[0]?.uuid ?? null;
+    }
+  }
+
+  private applyFeState(feState: FeState) {
+    this.rawNights = this.sortRawNights(feState.raw_nights ?? {});
+    this.groupedNights = feState.grouped_nights ?? [];
+    this.activeGroupedSessionUuid = feState.active_grouped_session_uuid ?? null;
+    this.currentPreviewFilePath = feState.current_preview_file ?? null;
+    this.calibrationStorageMode = feState.calibration_storage_mode ?? this.calibrationStorageMode;
+
+    this.normalizeActiveGroupedSession();
+
+    if (!this.currentPreviewStillExists()) {
+      this.currentPreviewFilePath = null;
     }
   }
 
@@ -275,7 +290,9 @@ class AppState {
         }
       };
 
-      await invoke('calibrate', { request, channel });
+      const updatedState = await invoke<FeState>('calibrate', { request, channel });
+      this.applyFeState(updatedState);
+      void this.persistFeState();
 
       // Don't clear calibrationProgress here - keep it open for user to see final status
       toast.success('Calibration completed');
@@ -300,6 +317,10 @@ class AppState {
     this.calibrationProgress = null;
   }
 
+  closeMetricsProgress() {
+    this.metricsProgress = null;
+  }
+
   async cancelCalibration() {
     try {
       await invoke('calibrate_cancel');
@@ -308,6 +329,103 @@ class AppState {
         description: error as string
       });
     }
+  }
+
+  async runMetrics() {
+    if (this.metricsProgress) {
+      toast.error('Metrics calculation is already running');
+      return false;
+    }
+
+    const totalSessions = this.groupedNights.length;
+    if (totalSessions === 0) {
+      toast.error('No grouped sessions to compute metrics for');
+      return false;
+    }
+
+    try {
+      // Build a preview for metrics progress
+      const steps = this.groupedNights.map((session) => ({
+        id: `${session.uuid}:Metrics`,
+        kind: 'Light' as const,
+        label: 'Metrics',
+        session_uuid: session.uuid,
+        session_label: `${session.fingerprint.name} - ${session.fingerprint.filter}`,
+        count: session.lights.length,
+        completed_count: 0,
+        status: 'Pending' as const,
+        started_at: BigInt(Date.now()),
+        ended_at: null as null,
+        error: null as null
+      }));
+
+      const preview: CalibrationProgressMessage = {
+        started_at: BigInt(Date.now()),
+        finished_at: null,
+        status: totalSessions === 0 ? 'Completed' : 'Running',
+        current_step_id: null,
+        steps: steps as any
+      };
+
+      this.metricsProgress = preview;
+
+      const channel = new Channel<CalibrationProgressMessage>();
+      channel.onmessage = (message) => {
+        if (this.metricsProgress) {
+          this.metricsProgress = message;
+        }
+      };
+
+      const updatedState = await invoke<FeState>('run_metrics', { channel });
+      this.applyFeState(updatedState);
+      void this.persistFeState();
+
+      toast.success('Metrics calculated');
+      return true;
+    } catch (error) {
+      this.metricsProgress = null;
+      toast.error('Failed to calculate metrics', {
+        description: error as string
+      });
+      return false;
+    }
+  }
+
+  async runAllProcesses() {
+    const totalFiles = Object.values(this.rawNights).flat().length;
+
+    if (totalFiles === 0) {
+      toast.error('No files to process');
+      return false;
+    }
+
+    // 1) Group frames (skip if already grouped)
+    if (this.groupedNights.length === 0) {
+      const grouped = await this.groupFrames();
+      if (!grouped) {
+        toast.error('Group frames step failed. Aborting run all processes.');
+        return false;
+      }
+    } else {
+      toast.info('Frames already grouped, skipping group step');
+    }
+
+    // 2) Calibrate frames
+    const calibrated = await this.calibrateFrames();
+    if (!calibrated) {
+      toast.error('Calibrate frames step failed. Aborting run all processes.');
+      return false;
+    }
+
+    // 3) Compute metrics
+    const metricsComputed = await this.runMetrics();
+    if (!metricsComputed) {
+      toast.error('Metrics computation step failed. Aborting run all processes.');
+      return false;
+    }
+
+    toast.success('All processes completed successfully!');
+    return true;
   }
 
   updateFileType(night: string, filePath: string, type: File['type']) {
