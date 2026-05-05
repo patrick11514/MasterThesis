@@ -17,11 +17,13 @@
   let {
     progress = null,
     onCancel,
-    onDone
+    onDone,
+    title = undefined
   }: {
     progress: CalibrationProgressMessage | null;
     onCancel: () => void;
     onDone?: () => void;
+    title?: string | undefined;
   } = $props();
 
   let now = $state(Date.now());
@@ -178,7 +180,7 @@
               {:else}
                 <Ban class="size-5 text-muted-foreground" />
               {/if}
-              {progress.status === 'Running' ? 'Calibration in progress' : 'Calibration completed'}
+              {progress.status === 'Running' ? `${title ?? 'Calibration'} in progress` : `${title ?? 'Calibration'} completed`}
             </div>
           </div>
 

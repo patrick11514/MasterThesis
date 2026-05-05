@@ -7,6 +7,7 @@ import { parseFiles } from './files';
 import { FILE_TYPES } from './files/types';
 import type { AstroSession } from './types/AstroSession';
 import type { CalibrationProgressMessage } from './types/CalibrationProgressMessage';
+import type { CalibrationProgressStep } from './types/CalibrationProgressStep';
 import type { CalibrationStorageMode } from './types/CalibrationStorageMode';
 import type { Config } from './types/Config';
 import type { FeState } from './types/FeState';
@@ -26,6 +27,7 @@ class AppState {
   public calibrationStorageMode = $state<CalibrationStorageMode>('NextToOriginal');
   public tempFolderPath = $state('');
   public calibrationProgress = $state<CalibrationProgressMessage | null>(null);
+  public batchProgress = $state<CalibrationProgressMessage | null>(null);
   public metricsProgress = $state<CalibrationProgressMessage | null>(null);
   public loaded = false;
   public framesShown = $state(Object.fromEntries(FILE_TYPES.map((type) => [type, true])));
@@ -321,6 +323,26 @@ class AppState {
     this.metricsProgress = null;
   }
 
+  closeBatchProgress() {
+    this.batchProgress = null;
+  }
+
+  async cancelBatch() {
+    try {
+      await invoke('calibrate_cancel');
+    } catch (error) {
+      // ignore
+    }
+
+    try {
+      // try a metrics cancel if backend supports it
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await invoke('run_metrics_cancel' as any);
+    } catch (error) {
+      // ignore
+    }
+  }
+
   async cancelCalibration() {
     try {
       await invoke('calibrate_cancel');
@@ -399,33 +421,202 @@ class AppState {
       return false;
     }
 
-    // 1) Group frames (skip if already grouped)
-    if (this.groupedNights.length === 0) {
-      const grouped = await this.groupFrames();
-      if (!grouped) {
-        toast.error('Group frames step failed. Aborting run all processes.');
+    // Unified batch flow: grouping (if needed) -> calibrate -> metrics
+    try {
+      const needsGrouping = this.groupedNights.length === 0;
+
+      if (needsGrouping) {
+        // create a simple preview with a Group step
+        const groupStep: CalibrationProgressStep = {
+          id: 'Group:Frames',
+          kind: 'Light' as const,
+          label: 'Grouping frames',
+          session_uuid: '',
+          session_label: 'Grouping frames',
+          count: totalFiles,
+          completed_count: 0,
+          status: 'Pending' as const,
+          started_at: BigInt(Date.now()),
+          ended_at: null,
+          error: null
+        };
+
+        this.batchProgress = {
+          started_at: BigInt(Date.now()),
+          finished_at: null,
+          status: 'Running',
+          current_step_id: groupStep.id,
+          steps: [groupStep]
+        };
+
+        const channel = new Channel<{ processed: number; total: number }>();
+        channel.onmessage = (message) => {
+          const bp = this.batchProgress;
+          if (!bp) return;
+          const step = bp.steps.find((s) => s.id === 'Group:Frames');
+          if (!step) return;
+          step.count = message.total;
+          step.completed_count = message.processed;
+          step.status = message.processed >= message.total ? 'Completed' as const : 'Running' as const;
+          if (step.status === 'Completed') {
+            step.ended_at = BigInt(Date.now());
+          }
+          this.batchProgress = { ...bp } as any;
+        };
+
+        try {
+          const grouped = await invoke<AstroSession[]>('group_frames', { channel });
+          this.groupedNights = grouped;
+          this.normalizeActiveGroupedSession();
+          if (!this.currentPreviewStillExists()) {
+            this.currentPreviewFilePath = null;
+          }
+          void this.persistFeState();
+
+          // mark grouping step as completed so it stays in table
+          const completedGroupStep = this.batchProgress?.steps.find((s) => s.id === 'Group:Frames');
+          if (completedGroupStep) {
+            completedGroupStep.status = 'Completed' as const;
+            completedGroupStep.ended_at = BigInt(Date.now());
+          }
+        } catch (error) {
+          this.batchProgress = null;
+          toast.error('Group frames step failed. Aborting run all processes.', {
+            description: String(error)
+          });
+          return false;
+        }
+      } else {
+        toast.info('Frames already grouped, skipping group step');
+      }
+
+      // Build calibration preview from grouped sessions
+      const calPreview = buildCalibrationProgressPreview(this.groupedNights) ?? {
+        started_at: BigInt(Date.now()),
+        finished_at: null,
+        status: 'Running' as const,
+        current_step_id: null,
+        steps: [] as any
+      };
+
+      const metricsSteps = this.groupedNights.map((session) => ({
+        id: `${session.uuid}:Metrics`,
+        kind: 'Light' as const,
+        label: 'Metrics',
+        session_uuid: session.uuid,
+        session_label: `${session.fingerprint.name} - ${session.fingerprint.filter}`,
+        count: session.lights.length,
+        completed_count: 0,
+        status: 'Pending' as const,
+        started_at: null as null,
+        ended_at: null,
+        error: null as null
+      }));
+
+      // Include grouping step if it was done
+      const groupingStep = needsGrouping ? this.batchProgress?.steps.find((s) => s.id === 'Group:Frames') : null;
+      const mergedSteps = [
+        ...(groupingStep ? [groupingStep] : []),
+        ...calPreview.steps,
+        ...metricsSteps
+      ];
+
+      this.batchProgress = {
+        started_at: BigInt(Date.now()),
+        finished_at: null,
+        status: mergedSteps.length === 0 ? 'Completed' : 'Running',
+        current_step_id: mergedSteps.length > 0 ? mergedSteps[0].id : null,
+        steps: mergedSteps
+      };
+
+      // Calibrate: invoke backend with channel to update steps in-place
+      const request = buildCalibrateRequest(
+        Object.values(this.rawNights).flat(),
+        this.calibrationStorageMode,
+        this.tempFolderPath
+      );
+
+      try {
+        const channel = new Channel<CalibrationProgressMessage>();
+        channel.onmessage = (message) => {
+          const bp = this.batchProgress;
+          if (!bp) return;
+          bp.started_at = message.started_at;
+          bp.finished_at = message.finished_at;
+          bp.status = message.status;
+          bp.current_step_id = message.current_step_id;
+
+          for (const incoming of message.steps) {
+            const target = bp.steps.find((s) => s.id === incoming.id);
+            if (target) {
+              target.status = incoming.status;
+              target.completed_count = incoming.completed_count;
+              target.started_at = incoming.started_at;
+              target.ended_at = incoming.ended_at;
+              target.error = incoming.error;
+            }
+          }
+
+          this.batchProgress = { ...bp } as any;
+        };
+
+        const updatedState = await invoke<FeState>('calibrate', { request, channel });
+        this.applyFeState(updatedState);
+        void this.persistFeState();
+      } catch (error) {
+        const errorMessage = String(error);
+        this.batchProgress = null;
+        if (errorMessage.includes('Calibration canceled')) {
+          toast.info('Calibration canceled');
+          return false;
+        }
+        toast.error('Calibrate frames step failed. Aborting run all processes.', {
+          description: errorMessage
+        });
         return false;
       }
-    } else {
-      toast.info('Frames already grouped, skipping group step');
-    }
 
-    // 2) Calibrate frames
-    const calibrated = await this.calibrateFrames();
-    if (!calibrated) {
-      toast.error('Calibrate frames step failed. Aborting run all processes.');
-      return false;
-    }
+      // Metrics
+      try {
+        const channel = new Channel<CalibrationProgressMessage>();
+        channel.onmessage = (message) => {
+          const bp = this.batchProgress;
+          if (!bp) return;
+          bp.started_at = message.started_at;
+          bp.finished_at = message.finished_at;
+          bp.status = message.status;
+          bp.current_step_id = message.current_step_id;
 
-    // 3) Compute metrics
-    const metricsComputed = await this.runMetrics();
-    if (!metricsComputed) {
-      toast.error('Metrics computation step failed. Aborting run all processes.');
-      return false;
-    }
+          for (const incoming of message.steps) {
+            const target = bp.steps.find((s) => s.id === incoming.id || s.id === `${incoming.session_uuid}:Metrics`);
+            if (target) {
+              target.status = incoming.status;
+              target.completed_count = incoming.completed_count;
+              target.started_at = incoming.started_at;
+              target.ended_at = incoming.ended_at;
+              target.error = incoming.error;
+            }
+          }
 
-    toast.success('All processes completed successfully!');
-    return true;
+          this.batchProgress = { ...bp } as any;
+        };
+
+        const updatedState = await invoke<FeState>('run_metrics', { channel });
+        this.applyFeState(updatedState);
+        void this.persistFeState();
+      } catch (error) {
+        this.batchProgress = null;
+        toast.error('Metrics computation step failed. Aborting run all processes.', {
+          description: String(error)
+        });
+        return false;
+      }
+
+      toast.success('All processes completed successfully!');
+      return true;
+    } finally {
+      // keep batchProgress open for user inspection
+    }
   }
 
   updateFileType(night: string, filePath: string, type: File['type']) {

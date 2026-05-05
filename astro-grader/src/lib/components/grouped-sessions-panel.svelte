@@ -127,17 +127,21 @@
               class="bg-muted/40 text-left text-xs tracking-wide text-muted-foreground uppercase"
             >
               <tr>
-                <th class="px-3 py-2 font-medium">Filename</th>
-                <th class="px-3 py-2 font-medium">Calibrated</th>
-                <th class="px-3 py-2 font-medium">Star count</th>
-                <th class="px-3 py-2 font-medium">FWHM</th>
-                <th class="px-3 py-2 font-medium">Background contrast</th>
+                  <th class="px-3 py-2 font-medium">Filename</th>
+                  <th class="px-3 py-2 font-medium">Calibrated</th>
+                  <th class="px-3 py-2 font-medium">Star count</th>
+                  <th class="px-3 py-2 font-medium">FWHM</th>
+                  <th class="px-3 py-2 font-medium">Background contrast</th>
+                  <th class="px-3 py-2 font-medium">Exposure (s)</th>
+                  <th class="px-3 py-2 font-medium">Gain</th>
+                  <th class="px-3 py-2 font-medium">Temperature (C)</th>
+                  <th class="px-3 py-2 font-medium">Quality</th>
               </tr>
             </thead>
             <tbody>
               {#if selectedSession.lights.length === 0}
                 <tr class="border-t border-border/70">
-                  <td colspan={4} class="px-3 py-3 text-muted-foreground">
+                    <td colspan={9} class="px-3 py-3 text-muted-foreground">
                     No light frames in this grouped session.
                   </td>
                 </tr>
@@ -163,6 +167,18 @@
                     <td class="px-3 py-2 text-muted-foreground">
                       {formatMetric(light.stats?.background_contrast, 3)}
                     </td>
+                      <td class="px-3 py-2 text-muted-foreground">
+                        {formatMetric(light.default_headers?.exposure_time, 2)}
+                      </td>
+                      <td class="px-3 py-2 text-muted-foreground">
+                        {formatMetric(light.default_headers?.gain, 2)}
+                      </td>
+                      <td class="px-3 py-2 text-muted-foreground">
+                        {formatMetric(light.default_headers?.temperature, 1)}
+                      </td>
+                      <td class="px-3 py-2 text-muted-foreground">
+                        {formatMetric(light.stats?.quality_score)}
+                      </td>
                   </tr>
                 {/each}
               {/if}
