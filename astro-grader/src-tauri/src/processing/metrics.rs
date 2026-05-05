@@ -8,9 +8,13 @@ use std::{
 use sep_sys::*;
 
 use crate::{
-    fits::{FitsFile, ImageDataPixels, ImageStats},
-    state::fe_state::{AstroSession, FeState},
-    state::{CalibrationProgressMessage, CalibrationProgressStep, CalibrationStepStatus, CalibrationRunStatus, CalibrationStepKind},
+    file_picker::File,
+    fits::{FitsFile, FrameState, ImageDataPixels, ImageStats},
+    state::fe_state::FeState,
+    state::{
+        CalibrationProgressMessage, CalibrationProgressStep, CalibrationRunStatus,
+        CalibrationStepKind, CalibrationStepStatus,
+    },
 };
 
 const BACKGROUND_TILE_SIZE: i64 = 64;
@@ -89,11 +93,21 @@ fn build_sep_image(pixels: &[f32], width: usize, height: usize) -> sep_image {
     }
 }
 
-fn image_path_for_metrics(file: &crate::file_picker::File) -> PathBuf {
+fn image_path_for_metrics(file: &File) -> PathBuf {
     file.calibrated_frame
         .as_ref()
         .cloned()
         .unwrap_or_else(|| file.path().clone())
+}
+
+fn classify_frame(score: f32, stats: &ImageStats, max_fwhm: f32) -> FrameState {
+    let fwhm = stats.fwhm.unwrap_or(f32::INFINITY);
+
+    if score < 0.0 && fwhm > max_fwhm {
+        FrameState::Rejected
+    } else {
+        FrameState::Accepted
+    }
 }
 
 fn extract_metrics_from_pixels(
@@ -319,43 +333,9 @@ fn score_distribution(values: &[f32]) -> Vec<f32> {
         .collect()
 }
 
-fn update_session_metrics(session: &mut AstroSession) -> Result<(), String> {
-    let mut score_source = Vec::with_capacity(session.lights.len());
-
-    for light in &mut session.lights {
-        let image_path = image_path_for_metrics(light);
-        let mut fits = FitsFile::new(image_path.clone()).map_err(|_| {
-            format!(
-                "Unable to open calibrated frame for metrics: {}",
-                image_path.display()
-            )
-        })?;
-        let image = ImageDataPixels::from_fits(&mut fits).map_err(|_| {
-            format!(
-                "Unable to read calibrated frame for metrics: {}",
-                image_path.display()
-            )
-        })?;
-
-        let stats =
-            extract_metrics_from_pixels(&image.pixels, image.data.width, image.data.height)?;
-        score_source.push(stats.star_count.unwrap_or(0) as f32);
-        light.stats = Some(stats);
-    }
-
-    let scores = score_distribution(&score_source);
-    for (light, score) in session.lights.iter_mut().zip(scores.into_iter()) {
-        if let Some(stats) = &mut light.stats {
-            stats.quality_score = Some(score);
-        }
-    }
-
-    Ok(())
-}
-
 fn copy_metrics_back_to_raw_nights(
     state: &mut FeState,
-    metrics_by_path: &HashMap<String, ImageStats>,
+    metrics_by_path: &HashMap<String, (ImageStats, FrameState)>,
 ) {
     for night_files in state.raw_nights.values_mut() {
         for raw_file in night_files {
@@ -365,8 +345,9 @@ fn copy_metrics_back_to_raw_nights(
                 .unwrap_or_else(|| raw_file.path().clone());
             let path = path_buf.to_string_lossy().to_string();
 
-            if let Some(stats) = metrics_by_path.get(&path) {
+            if let Some((stats, state_value)) = metrics_by_path.get(&path) {
                 raw_file.stats = Some(stats.clone());
+                raw_file.state = *state_value;
             }
         }
     }
@@ -375,6 +356,8 @@ fn copy_metrics_back_to_raw_nights(
 pub fn run_metrics(
     state: &mut FeState,
     channel: tauri::ipc::Channel<CalibrationProgressMessage>,
+    cross_night_reference: bool,
+    max_fwhm: f32,
 ) -> Result<(), String> {
     // Helper to get current time
     fn now_millis() -> u64 {
@@ -388,7 +371,10 @@ pub fn run_metrics(
     // Build progress steps (one step per session)
     let mut steps: Vec<CalibrationProgressStep> = Vec::new();
     for session in &state.grouped_nights {
-        let session_label = format!("{} - {}", session.fingerprint.name, session.fingerprint.filter);
+        let session_label = format!(
+            "{} - {}",
+            session.fingerprint.name, session.fingerprint.filter
+        );
         steps.push(CalibrationProgressStep {
             id: format!("{}:Metrics", session.uuid),
             kind: CalibrationStepKind::Light,
@@ -420,70 +406,125 @@ pub fn run_metrics(
     // send initial progress
     let _ = channel.send(progress.clone());
 
-    let mut metrics_by_path = HashMap::<String, ImageStats>::new();
+    let mut metrics_by_path = HashMap::<String, (ImageStats, FrameState)>::new();
+    let mut score_sources_by_session = Vec::with_capacity(state.grouped_nights.len());
 
-    for (i, session) in state.grouped_nights.iter_mut().enumerate() {
-        // start this step
-        progress.steps[i].status = CalibrationStepStatus::Running;
-        progress.steps[i].started_at = Some(now_millis());
-        progress.current_step_id = Some(progress.steps[i].id.clone());
+    for (session_index, session) in state.grouped_nights.iter_mut().enumerate() {
+        progress.steps[session_index].status = CalibrationStepStatus::Running;
+        progress.steps[session_index].started_at = Some(now_millis());
+        progress.current_step_id = Some(progress.steps[session_index].id.clone());
         let _ = channel.send(progress.clone());
 
-        // process each light
+        let mut score_source = Vec::with_capacity(session.lights.len());
+
         for light in &mut session.lights {
             let image_path = image_path_for_metrics(light);
             let mut fits = FitsFile::new(image_path.clone()).map_err(|_| {
-                format!("Unable to open calibrated frame for metrics: {}", image_path.display())
+                format!(
+                    "Unable to open calibrated frame for metrics: {}",
+                    image_path.display()
+                )
             })?;
             let image = ImageDataPixels::from_fits(&mut fits).map_err(|_| {
-                format!("Unable to read calibrated frame for metrics: {}", image_path.display())
+                format!(
+                    "Unable to read calibrated frame for metrics: {}",
+                    image_path.display()
+                )
             })?;
 
-            let stats = extract_metrics_from_pixels(&image.pixels, image.data.width, image.data.height)?;
+            let stats =
+                extract_metrics_from_pixels(&image.pixels, image.data.width, image.data.height)?;
+            score_source.push(stats.star_count.unwrap_or(0) as f32);
 
-            // Print basic stats to stdout for user/debugging (path, star count, FWHM, HFD, eccentricity)
-            let star_count_str = stats.star_count.map(|c| c.to_string()).unwrap_or_else(|| "0".to_string());
-            let fwhm_str = stats.fwhm.map(|v| format!("{:.2}", v)).unwrap_or_else(|| "N/A".to_string());
-            let hfd_str = stats.hfd.map(|v| format!("{:.2}", v)).unwrap_or_else(|| "N/A".to_string());
-            let ecc_str = stats.eccentricity.map(|v| format!("{:.2}", v)).unwrap_or_else(|| "N/A".to_string());
+            let star_count_str = stats
+                .star_count
+                .map(|count| count.to_string())
+                .unwrap_or_else(|| "0".to_string());
+            let fwhm_str = stats
+                .fwhm
+                .map(|value| format!("{:.2}", value))
+                .unwrap_or_else(|| "N/A".to_string());
+            let hfd_str = stats
+                .hfd
+                .map(|value| format!("{:.2}", value))
+                .unwrap_or_else(|| "N/A".to_string());
+            let ecc_str = stats
+                .eccentricity
+                .map(|value| format!("{:.2}", value))
+                .unwrap_or_else(|| "N/A".to_string());
             let bg_str = stats
                 .background_contrast
-                .map(|v| format!("{:.2}", v))
+                .map(|value| format!("{:.2}", value))
                 .unwrap_or_else(|| "N/A".to_string());
 
             println!(
                 "{} - {} stars, FWHM: {}, HFD: {}, ecc: {}, bg_contrast: {}",
-                image_path.display(), star_count_str, fwhm_str, hfd_str, ecc_str, bg_str
+                image_path.display(),
+                star_count_str,
+                fwhm_str,
+                hfd_str,
+                ecc_str,
+                bg_str
             );
 
-            metrics_by_path.insert(image_path.to_string_lossy().to_string(), stats.clone());
             light.stats = Some(stats);
 
-            // update progress
-            progress.steps[i].completed_count += 1;
+            progress.steps[session_index].completed_count += 1;
             let _ = channel.send(progress.clone());
         }
 
-        // score distribution for this session
-        let mut score_source = Vec::with_capacity(session.lights.len());
-        for light in &session.lights {
-            score_source.push(light.stats.as_ref().and_then(|s| s.star_count).unwrap_or(0) as f32);
-        }
-        let scores = score_distribution(&score_source);
-        for (light, score) in session.lights.iter_mut().zip(scores.into_iter()) {
-            let image_path = image_path_for_metrics(light);
-            if let Some(stats) = &mut light.stats {
-                stats.quality_score = Some(score);
-                // update metrics_by_path entry as well
-                metrics_by_path.insert(image_path.to_string_lossy().to_string(), stats.clone());
-            }
-        }
-
-        // finish this step
-        progress.steps[i].ended_at = Some(now_millis());
-        progress.steps[i].status = CalibrationStepStatus::Completed;
+        score_sources_by_session.push(score_source);
+        progress.steps[session_index].ended_at = Some(now_millis());
+        progress.steps[session_index].status = CalibrationStepStatus::Completed;
         progress.current_step_id = None;
         let _ = channel.send(progress.clone());
+    }
+
+    if cross_night_reference {
+        let all_scores: Vec<f32> = score_sources_by_session
+            .iter()
+            .flat_map(|scores: &Vec<f32>| scores.iter().copied())
+            .collect();
+        let scores = score_distribution(&all_scores);
+        let mut score_index = 0usize;
+
+        for session in &mut state.grouped_nights {
+            for light in &mut session.lights {
+                let score = scores.get(score_index).copied().unwrap_or(1.0);
+                score_index += 1;
+                let image_path = image_path_for_metrics(light);
+
+                if let Some(stats) = &mut light.stats {
+                    stats.quality_score = Some(score);
+                    light.state = classify_frame(score, stats, max_fwhm);
+                    metrics_by_path.insert(
+                        image_path.to_string_lossy().to_string(),
+                        (stats.clone(), light.state),
+                    );
+                }
+            }
+        }
+    } else {
+        for (session, score_source) in state
+            .grouped_nights
+            .iter_mut()
+            .zip(score_sources_by_session.into_iter())
+        {
+            let scores = score_distribution(&score_source);
+
+            for (light, score) in session.lights.iter_mut().zip(scores.into_iter()) {
+                let image_path = image_path_for_metrics(light);
+
+                if let Some(stats) = &mut light.stats {
+                    stats.quality_score = Some(score);
+                    light.state = classify_frame(score, stats, max_fwhm);
+                    metrics_by_path.insert(
+                        image_path.to_string_lossy().to_string(),
+                        (stats.clone(), light.state),
+                    );
+                }
+            }
+        }
     }
 
     copy_metrics_back_to_raw_nights(state, &metrics_by_path);
@@ -493,4 +534,51 @@ pub fn run_metrics(
     let _ = channel.send(progress.clone());
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepts_inlier_frames() {
+        let stats = ImageStats {
+            star_count: Some(10),
+            fwhm: Some(2.0),
+            hfd: None,
+            eccentricity: None,
+            background_contrast: None,
+            quality_score: None,
+        };
+
+        assert_eq!(classify_frame(0.2, &stats, 3.0), FrameState::Accepted);
+    }
+
+    #[test]
+    fn rejects_outliers_above_fwhm_threshold() {
+        let stats = ImageStats {
+            star_count: Some(10),
+            fwhm: Some(4.0),
+            hfd: None,
+            eccentricity: None,
+            background_contrast: None,
+            quality_score: None,
+        };
+
+        assert_eq!(classify_frame(-0.5, &stats, 3.0), FrameState::Rejected);
+    }
+
+    #[test]
+    fn keeps_outliers_below_fwhm_threshold_accepted() {
+        let stats = ImageStats {
+            star_count: Some(10),
+            fwhm: Some(2.0),
+            hfd: None,
+            eccentricity: None,
+            background_contrast: None,
+            quality_score: None,
+        };
+
+        assert_eq!(classify_frame(-0.5, &stats, 3.0), FrameState::Accepted);
+    }
 }

@@ -19,7 +19,11 @@
   const appState = getAppStateSync();
   let isDialogOpen = $state(false);
   let activePage = $state<
-    'general' | 'processing.grouping' | 'processing.calibration' | 'file-list.night-parsing'
+    | 'general'
+    | 'processing.grouping'
+    | 'processing.calibration'
+    | 'processing.metrics'
+    | 'file-list.night-parsing'
   >('general');
   let isSaving = $state(false);
   let configPath = $state('Loading...');
@@ -29,6 +33,8 @@
   let draftTemperatureStep = $state(1);
   let draftExposureStep = $state(0);
   let draftGainStep = $state(0);
+  let draftCrossNightReference = $state(false);
+  let draftMaxFwhm = $state(0);
   let draftNightPrefixes = $state<NightPrefix[]>([]);
 
   let tempFolderInput = $state<HTMLInputElement | null>(null);
@@ -48,6 +54,13 @@
         'Files whose temperature, exposure, or gain values stay within these offsets are grouped together.',
       example:
         'Example: 0.1 for temperature, 0.1 for exposure, and 10 for gain keeps near-matching captures in one night.'
+    },
+    metricsReference: {
+      title: 'Metrics reference scope',
+      description:
+        'When cross-night reference is enabled, quality scores are built from all files together instead of once per night.',
+      example:
+        'Example: three grouped nights produce three separate distributions when disabled, or one shared distribution when enabled.'
     },
     nightNameParsing: {
       title: 'Night name parsing',
@@ -73,6 +86,8 @@
     draftTemperatureStep = appState.temperatureStep;
     draftExposureStep = appState.exposureStep;
     draftGainStep = appState.gainStep;
+    draftCrossNightReference = appState.crossNightReference;
+    draftMaxFwhm = appState.maxFwhm;
     draftNightPrefixes = cloneNightPrefixes(appState.nightPrefixes);
   };
 
@@ -105,6 +120,8 @@
     appState.temperatureStep = draftTemperatureStep;
     appState.exposureStep = draftExposureStep;
     appState.gainStep = draftGainStep;
+    appState.crossNightReference = draftCrossNightReference;
+    appState.maxFwhm = draftMaxFwhm;
     appState.nightPrefixes = cloneNightPrefixes(draftNightPrefixes);
 
     await appState.saveConfig();
@@ -255,6 +272,16 @@
                   }}
                 >
                   Calibration
+                </Sidebar.SidebarMenuButton>
+              </Sidebar.SidebarMenuItem>
+              <Sidebar.SidebarMenuItem>
+                <Sidebar.SidebarMenuButton
+                  isActive={activePage === 'processing.metrics'}
+                  onclick={() => {
+                    activePage = 'processing.metrics';
+                  }}
+                >
+                  Metrics
                 </Sidebar.SidebarMenuButton>
               </Sidebar.SidebarMenuItem>
             </Sidebar.SidebarMenu>
@@ -421,6 +448,55 @@
               <div class="mb-auto grid gap-1">
                 <Label for="gain-step">Gain step</Label>
                 <Input id="gain-step" type="number" min="0" step="0.1" bind:value={draftGainStep} />
+              </div>
+            </div>
+          </div>
+        {:else if activePage === 'processing.metrics'}
+          <div class="grid gap-6">
+            <h2 class="flex items-center gap-2 text-base font-medium">
+              <span>Metrics reference</span>
+              <Tooltip.Root>
+                <Tooltip.Trigger>
+                  {#snippet child({ props })}
+                    <Button
+                      {...props}
+                      variant="ghost"
+                      size="icon-sm"
+                      class="shrink-0 text-muted-foreground hover:text-foreground"
+                      aria-label="Show metrics reference help"
+                    >
+                      <InfoIcon class="h-4 w-4" />
+                    </Button>
+                  {/snippet}
+                </Tooltip.Trigger>
+                <Tooltip.Content class="max-w-sm">
+                  <div class="grid gap-1.5">
+                    <strong>{helpCopy.metricsReference.title}</strong>
+                    <p>{helpCopy.metricsReference.description}</p>
+                    <p>{helpCopy.metricsReference.example}</p>
+                  </div>
+                </Tooltip.Content>
+              </Tooltip.Root>
+            </h2>
+
+            <div class="grid gap-4">
+              <div class="flex items-center justify-between gap-4 rounded-md border p-3">
+                <div class="grid gap-1">
+                  <Label for="cross-night-reference">Cross-night reference</Label>
+                  <span class="text-xs text-muted-foreground">
+                    Build one shared distribution across all grouped nights.
+                  </span>
+                </div>
+                <Switch id="cross-night-reference" bind:checked={draftCrossNightReference} />
+              </div>
+
+              <div class="grid gap-1">
+                <Label for="max-fwhm">Max FWHM for rejection</Label>
+                <Input id="max-fwhm" type="number" min="0" step="0.1" bind:value={draftMaxFwhm} />
+                <p class="text-xs text-muted-foreground">
+                  Frames below 3σ stay accepted. Frames below 3σ and above this FWHM threshold are
+                  rejected.
+                </p>
               </div>
             </div>
           </div>

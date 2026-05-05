@@ -2,4 +2,4 @@
 import type { CalibrationStorageMode } from "./CalibrationStorageMode";
 import type { NightPrefix } from "./NightPrefix";
 
-export type Config = { night_prefixes: Array<NightPrefix>, calibration_storage_mode: CalibrationStorageMode, temp_folder_path: string, temperature_step: number, exposure_step: number, gain_step: number, };
+export type Config = { night_prefixes: Array<NightPrefix>, calibration_storage_mode: CalibrationStorageMode, temp_folder_path: string, temperature_step: number, exposure_step: number, gain_step: number, cross_night_reference: boolean, max_fwhm: number, };

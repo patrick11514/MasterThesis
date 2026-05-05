@@ -42,6 +42,19 @@
   function countMasterOrFrames(frames: MasterOrFrames): number {
     return 'Frames' in frames ? frames.Frames.length : 1;
   }
+
+  function statusBadgeClass(state: string) {
+    switch (state) {
+      case 'Accepted':
+        return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
+      case 'Rejected':
+        return 'border-destructive/30 bg-destructive/10 text-destructive';
+      case 'Calibrated':
+        return 'border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300';
+      default:
+        return 'border-border bg-background text-muted-foreground';
+    }
+  }
 </script>
 
 <div class="flex h-full w-full flex-col gap-2 border-t border-border bg-muted/20 p-3">
@@ -127,21 +140,22 @@
               class="bg-muted/40 text-left text-xs tracking-wide text-muted-foreground uppercase"
             >
               <tr>
-                  <th class="px-3 py-2 font-medium">Filename</th>
-                  <th class="px-3 py-2 font-medium">Calibrated</th>
-                  <th class="px-3 py-2 font-medium">Star count</th>
-                  <th class="px-3 py-2 font-medium">FWHM</th>
-                  <th class="px-3 py-2 font-medium">Background contrast</th>
-                  <th class="px-3 py-2 font-medium">Exposure (s)</th>
-                  <th class="px-3 py-2 font-medium">Gain</th>
-                  <th class="px-3 py-2 font-medium">Temperature (C)</th>
-                  <th class="px-3 py-2 font-medium">Quality</th>
+                <th class="px-3 py-2 font-medium">Filename</th>
+                <th class="px-3 py-2 font-medium">Calibrated</th>
+                <th class="px-3 py-2 font-medium">Status</th>
+                <th class="px-3 py-2 font-medium">Star count</th>
+                <th class="px-3 py-2 font-medium">FWHM</th>
+                <th class="px-3 py-2 font-medium">Background contrast</th>
+                <th class="px-3 py-2 font-medium">Exposure (s)</th>
+                <th class="px-3 py-2 font-medium">Gain</th>
+                <th class="px-3 py-2 font-medium">Temperature (C)</th>
+                <th class="px-3 py-2 font-medium">Quality</th>
               </tr>
             </thead>
             <tbody>
               {#if selectedSession.lights.length === 0}
                 <tr class="border-t border-border/70">
-                    <td colspan={9} class="px-3 py-3 text-muted-foreground">
+                  <td colspan={10} class="px-3 py-3 text-muted-foreground">
                     No light frames in this grouped session.
                   </td>
                 </tr>
@@ -158,6 +172,11 @@
                         <XIcon class="size-5 text-red-500" />
                       {/if}
                     </td>
+                    <td class="px-3 py-2">
+                      <Badge variant="outline" class={statusBadgeClass(light.state)}>
+                        {light.state}
+                      </Badge>
+                    </td>
                     <td class="px-3 py-2 text-muted-foreground">
                       {light.stats?.star_count ?? '-'}
                     </td>
@@ -167,18 +186,18 @@
                     <td class="px-3 py-2 text-muted-foreground">
                       {formatMetric(light.stats?.background_contrast, 3)}
                     </td>
-                      <td class="px-3 py-2 text-muted-foreground">
-                        {formatMetric(light.default_headers?.exposure_time, 2)}
-                      </td>
-                      <td class="px-3 py-2 text-muted-foreground">
-                        {formatMetric(light.default_headers?.gain, 2)}
-                      </td>
-                      <td class="px-3 py-2 text-muted-foreground">
-                        {formatMetric(light.default_headers?.temperature, 1)}
-                      </td>
-                      <td class="px-3 py-2 text-muted-foreground">
-                        {formatMetric(light.stats?.quality_score)}
-                      </td>
+                    <td class="px-3 py-2 text-muted-foreground">
+                      {formatMetric(light.default_headers?.exposure_time, 2)}
+                    </td>
+                    <td class="px-3 py-2 text-muted-foreground">
+                      {formatMetric(light.default_headers?.gain, 2)}
+                    </td>
+                    <td class="px-3 py-2 text-muted-foreground">
+                      {formatMetric(light.default_headers?.temperature, 1)}
+                    </td>
+                    <td class="px-3 py-2 text-muted-foreground">
+                      {formatMetric(light.stats?.quality_score)}
+                    </td>
                   </tr>
                 {/each}
               {/if}

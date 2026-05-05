@@ -101,8 +101,11 @@ pub async fn calibrate(
 #[tauri::command]
 pub async fn run_metrics(
     channel: tauri::ipc::Channel<crate::state::CalibrationProgressMessage>,
+    app_handle: tauri::AppHandle,
     state: tauri::State<'_, Mutex<AppState>>,
 ) -> Result<FeState, String> {
+    let config = config::read_config(&app_handle).await.unwrap_or_default();
+
     let mut fe_state = {
         let state_guard = state
             .lock()
@@ -112,7 +115,12 @@ pub async fn run_metrics(
     };
 
     let updated_fe_state = tokio::task::spawn_blocking(move || {
-        metrics::run_metrics(&mut fe_state, channel)?;
+        metrics::run_metrics(
+            &mut fe_state,
+            channel,
+            config.cross_night_reference,
+            config.max_fwhm,
+        )?;
         Ok::<_, String>(fe_state)
     })
     .await

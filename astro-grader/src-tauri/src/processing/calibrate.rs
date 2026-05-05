@@ -12,7 +12,7 @@ use twox_hash::XxHash3_64;
 
 use crate::{
     file_picker::File,
-    fits::{FitsFile, ImageDataLayout, ImageDataPixels, Tag},
+    fits::{FitsFile, FrameState, ImageDataLayout, ImageDataPixels, Tag},
     state::fe_state::{AstroSession, FeState, MasterOrFrames},
     state::{
         CalibrationCancellation, CalibrationProgressMessage, CalibrationProgressStep,
@@ -521,11 +521,7 @@ fn produce_master(
         };
 
         // Debug: print master pixel stats before saving
-        let (mut min_v, mut max_v, mut sum) = (
-            std::f32::INFINITY,
-            std::f32::NEG_INFINITY,
-            0f64,
-        );
+        let (mut min_v, mut max_v, mut sum) = (std::f32::INFINITY, std::f32::NEG_INFINITY, 0f64);
         let mut count = 0usize;
         for &p in &master_image.pixels {
             if p.is_finite() {
@@ -663,11 +659,7 @@ fn produce_master(
     };
 
     // Debug: print master pixel stats before saving (sigma-clipped path)
-    let (mut min_v, mut max_v, mut sum) = (
-        std::f32::INFINITY,
-        std::f32::NEG_INFINITY,
-        0f64,
-    );
+    let (mut min_v, mut max_v, mut sum) = (std::f32::INFINITY, std::f32::NEG_INFINITY, 0f64);
     let mut count = 0usize;
     for &p in &master_image.pixels {
         if p.is_finite() {
@@ -1029,9 +1021,13 @@ pub fn run_calibration(
                             // Also clear in raw_nights
                             let src = f.path().clone();
                             f.calibrated_frame = None;
+                            f.state = FrameState::Default;
                             for night_files in state.raw_nights.values_mut() {
-                                if let Some(rf) = night_files.iter_mut().find(|rf| rf.path() == &src) {
+                                if let Some(rf) =
+                                    night_files.iter_mut().find(|rf| rf.path() == &src)
+                                {
                                     rf.calibrated_frame = None;
+                                    rf.state = FrameState::Default;
                                     break;
                                 }
                             }
@@ -1211,21 +1207,20 @@ pub fn run_calibration(
                             // single-threaded since session.lights is not Arc/Mutex.
                             for (source_path, cal_path) in &completed_pairs {
                                 // Update in session.lights (grouped view)
-                                if let Some(f) = session
-                                    .lights
-                                    .iter_mut()
-                                    .find(|f| f.path() == source_path)
+                                if let Some(f) =
+                                    session.lights.iter_mut().find(|f| f.path() == source_path)
                                 {
                                     f.calibrated_frame = Some(cal_path.clone());
+                                    f.state = FrameState::Calibrated;
                                 }
 
                                 // Also update in state.raw_nights (flat file list)
                                 for night_files in state.raw_nights.values_mut() {
-                                    if let Some(f) = night_files
-                                        .iter_mut()
-                                        .find(|f| f.path() == source_path)
+                                    if let Some(f) =
+                                        night_files.iter_mut().find(|f| f.path() == source_path)
                                     {
                                         f.calibrated_frame = Some(cal_path.clone());
+                                        f.state = FrameState::Calibrated;
                                         break;
                                     }
                                 }

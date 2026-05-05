@@ -12,7 +12,7 @@ pub enum FileType {
     MasterBias,
 }
 
-#[derive(Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize, TS)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]
 pub enum FrameState {
     #[default]

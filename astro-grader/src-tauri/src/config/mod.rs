@@ -40,6 +40,10 @@ fn default_zero_step() -> f32 {
     0.0
 }
 
+fn default_false() -> bool {
+    false
+}
+
 #[derive(serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]
 pub struct Config {
@@ -54,6 +58,10 @@ pub struct Config {
     pub exposure_step: f32,
     #[serde(default = "default_zero_step")]
     pub gain_step: f32,
+    #[serde(default = "default_false")]
+    pub cross_night_reference: bool,
+    #[serde(default = "default_zero_step")]
+    pub max_fwhm: f32,
 }
 
 impl Default for Config {
@@ -65,6 +73,8 @@ impl Default for Config {
             temperature_step: default_temperature_step(),
             exposure_step: default_zero_step(),
             gain_step: default_zero_step(),
+            cross_night_reference: default_false(),
+            max_fwhm: default_zero_step(),
         }
     }
 }

@@ -23,6 +23,8 @@ class AppState {
   public temperatureStep = $state(1);
   public exposureStep = $state(0);
   public gainStep = $state(0);
+  public crossNightReference = $state(false);
+  public maxFwhm = $state(0);
   public currentPreviewFilePath = $state<string | null>(null);
   public calibrationStorageMode = $state<CalibrationStorageMode>('NextToOriginal');
   public tempFolderPath = $state('');
@@ -133,6 +135,8 @@ class AppState {
       this.temperatureStep = config.temperature_step ?? 1;
       this.exposureStep = config.exposure_step ?? 0;
       this.gainStep = config.gain_step ?? 0;
+      this.crossNightReference = config.cross_night_reference ?? false;
+      this.maxFwhm = config.max_fwhm ?? 0;
       this.rawNights = this.sortRawNights(feState.raw_nights ?? {});
       this.groupedNights = feState.grouped_nights ?? [];
       this.activeGroupedSessionUuid = feState.active_grouped_session_uuid ?? null;
@@ -161,7 +165,9 @@ class AppState {
         temp_folder_path: this.tempFolderPath,
         temperature_step: this.temperatureStep,
         exposure_step: this.exposureStep,
-        gain_step: this.gainStep
+        gain_step: this.gainStep,
+        cross_night_reference: this.crossNightReference,
+        max_fwhm: this.maxFwhm
       } satisfies Config;
 
       await invoke('config_set', { config });
@@ -457,7 +463,8 @@ class AppState {
           if (!step) return;
           step.count = message.total;
           step.completed_count = message.processed;
-          step.status = message.processed >= message.total ? 'Completed' as const : 'Running' as const;
+          step.status =
+            message.processed >= message.total ? ('Completed' as const) : ('Running' as const);
           if (step.status === 'Completed') {
             step.ended_at = BigInt(Date.now());
           }
@@ -514,7 +521,9 @@ class AppState {
       }));
 
       // Include grouping step if it was done
-      const groupingStep = needsGrouping ? this.batchProgress?.steps.find((s) => s.id === 'Group:Frames') : null;
+      const groupingStep = needsGrouping
+        ? this.batchProgress?.steps.find((s) => s.id === 'Group:Frames')
+        : null;
       const mergedSteps = [
         ...(groupingStep ? [groupingStep] : []),
         ...calPreview.steps,
@@ -588,7 +597,9 @@ class AppState {
           bp.current_step_id = message.current_step_id;
 
           for (const incoming of message.steps) {
-            const target = bp.steps.find((s) => s.id === incoming.id || s.id === `${incoming.session_uuid}:Metrics`);
+            const target = bp.steps.find(
+              (s) => s.id === incoming.id || s.id === `${incoming.session_uuid}:Metrics`
+            );
             if (target) {
               target.status = incoming.status;
               target.completed_count = incoming.completed_count;
