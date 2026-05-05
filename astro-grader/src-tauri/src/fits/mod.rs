@@ -18,7 +18,7 @@ pub mod utils;
 
 //public re-exports
 pub use file::FitsFile;
-pub use image_data_pixels::ImageDataPixels;
+pub use image_data_pixels::{ImageDataLayout, ImageDataPixels};
 pub use structs::{FileType, FrameState, ImageStats};
 pub use tag::Tag;
 

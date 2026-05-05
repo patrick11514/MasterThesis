@@ -12,7 +12,7 @@ use twox_hash::XxHash3_64;
 
 use crate::{
     file_picker::File,
-    fits::{FitsFile, ImageDataPixels, Tag},
+    fits::{FitsFile, ImageDataLayout, ImageDataPixels, Tag},
     state::fe_state::{AstroSession, FeState, MasterOrFrames},
     state::{
         CalibrationCancellation, CalibrationProgressMessage, CalibrationProgressStep,
@@ -129,6 +129,110 @@ fn normalize_pixels_if_needed(pixels: &mut [f32]) {
         for value in pixels.iter_mut() {
             *value /= max_value;
         }
+    }
+}
+
+const HOT_PIXEL_SIGMA_FACTOR: f32 = 6.0;
+const HOT_PIXEL_ABS_FLOOR: f32 = 0.0005;
+
+fn neighborhood_hot_pixel_threshold(neighbors: &[f32]) -> f32 {
+    if neighbors.is_empty() {
+        return f32::INFINITY;
+    }
+
+    let mut sorted = neighbors.to_vec();
+    sorted.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let median = sorted[sorted.len() / 2];
+
+    let mad = neighbors
+        .iter()
+        .map(|value| (*value - median).abs())
+        .sum::<f32>()
+        / neighbors.len() as f32;
+
+    median + HOT_PIXEL_SIGMA_FACTOR * mad.max(1e-12) + HOT_PIXEL_ABS_FLOOR
+}
+
+fn replace_hot_pixels_in_plane(
+    source_plane: &[f32],
+    target_plane: &mut [f32],
+    width: usize,
+    height: usize,
+) -> usize {
+    if width < 3 || height < 3 {
+        return 0;
+    }
+
+    let original = source_plane.to_vec();
+
+    target_plane
+        .par_chunks_mut(width)
+        .enumerate()
+        .map(|(y, row)| {
+            if y == 0 || y + 1 == height {
+                return 0usize;
+            }
+
+            let mut replaced = 0usize;
+            for x in 1..(width - 1) {
+                let idx = y * width + x;
+                let center = original[idx];
+
+                let mut neighbors = [0.0f32; 8];
+                let mut k = 0usize;
+                for yy in (y - 1)..=(y + 1) {
+                    for xx in (x - 1)..=(x + 1) {
+                        if yy == y && xx == x {
+                            continue;
+                        }
+                        neighbors[k] = original[yy * width + xx];
+                        k += 1;
+                    }
+                }
+
+                let threshold = neighborhood_hot_pixel_threshold(&neighbors);
+                if center > threshold {
+                    let mut sorted = neighbors;
+                    sorted.sort_unstable_by(|a, b| {
+                        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+                    });
+                    row[x] = sorted[sorted.len() / 2];
+                    replaced += 1;
+                }
+            }
+
+            replaced
+        })
+        .sum()
+}
+
+fn remove_hot_pixels(img: &mut ImageDataPixels) -> usize {
+    let width = img.data.width;
+    let height = img.data.height;
+    let source = img.pixels.clone();
+
+    match img.data.layout {
+        ImageDataLayout::Grayscale => {
+            replace_hot_pixels_in_plane(&source, &mut img.pixels, width, height)
+        }
+        ImageDataLayout::RGBPlanar => {
+            let plane_size = width * height;
+            let mut replaced = 0usize;
+
+            for channel in 0..img.data.depth {
+                let start = channel * plane_size;
+                let end = start + plane_size;
+                replaced += replace_hot_pixels_in_plane(
+                    &source[start..end],
+                    &mut img.pixels[start..end],
+                    width,
+                    height,
+                );
+            }
+
+            replaced
+        }
+        ImageDataLayout::RGB => 0,
     }
 }
 
@@ -1004,6 +1108,8 @@ pub fn run_calibration(
                                 bias_pixels.as_deref(),
                             );
 
+                            let hot_pixels_replaced = remove_hot_pixels(&mut img);
+
                             // Debug: print basic pixel statistics after calibration
                             let (mut min_v, mut max_v, mut sum) = (
                                 std::f32::INFINITY,
@@ -1026,11 +1132,12 @@ pub fn run_calibration(
                             let mean = if count == 0 { 0.0 } else { sum / count as f64 };
 
                             println!(
-                                "Calibrated pixels for {} -> min {:.6}, max {:.6}, mean {:.6}",
+                                "Calibrated pixels for {} -> min {:.6}, max {:.6}, mean {:.6}, hotfix:{}",
                                 light_file.path().display(),
                                 min_v,
                                 max_v,
-                                mean
+                                mean,
+                                hot_pixels_replaced
                             );
 
                             println!(
