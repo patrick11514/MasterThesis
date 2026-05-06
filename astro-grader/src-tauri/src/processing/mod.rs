@@ -1,6 +1,7 @@
 mod calibrate;
 mod group;
-mod metrics;
+pub mod metrics;
+pub mod scoring;
 
 pub use group::group_preview_nights;
 

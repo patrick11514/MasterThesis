@@ -141,6 +141,8 @@ export const buildCalibrationProgressPreview = (
         session_label: label,
         count: frames.length,
         completed_count: 0,
+        skipped_count: 0,
+        rejected_count: 0,
         status: 'Pending' as CalibrationStepStatus,
         started_at: null,
         ended_at: null,
@@ -152,8 +154,8 @@ export const buildCalibrationProgressPreview = (
   for (const session of sessions) {
     const label = sessionLabel(session);
 
-    const uncalibrated = session.lights.filter((f) => f.calibrated_frame === null);
-    if (uncalibrated.length > 0) {
+    if (session.lights.length > 0) {
+      const skipped = session.lights.filter((f) => f.calibrated_frame !== null).length;
       const kind = 'Light';
       steps.push({
         id: `${session.uuid}:${kind}`,
@@ -161,8 +163,10 @@ export const buildCalibrationProgressPreview = (
         label: kindLabel(kind),
         session_uuid: session.uuid,
         session_label: label,
-        count: uncalibrated.length,
+        count: session.lights.length,
         completed_count: 0,
+        skipped_count: skipped,
+        rejected_count: 0,
         status: 'Pending' as CalibrationStepStatus,
         started_at: null,
         ended_at: null,

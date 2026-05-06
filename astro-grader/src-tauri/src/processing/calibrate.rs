@@ -27,6 +27,18 @@ enum MasterType {
     Bias,
 }
 
+#[derive(Debug)]
+enum LightCalibrationOutcome {
+    Processed {
+        source_path: PathBuf,
+        calibrated_path: PathBuf,
+    },
+    Skipped {
+        source_path: PathBuf,
+        calibrated_path: PathBuf,
+    },
+}
+
 impl MasterType {
     fn as_file_name_part(self) -> &'static str {
         match self {
@@ -295,6 +307,8 @@ fn build_calibration_pipeline(
                 session_label: label.clone(),
                 count: frames.len(),
                 completed_count: 0,
+                skipped_count: 0,
+                    rejected_count: 0,
                 status: CalibrationStepStatus::Pending,
                 started_at: None,
                 ended_at: None,
@@ -313,7 +327,7 @@ fn build_calibration_pipeline(
                 task: CalibrationWorkItemTask::CalibrateLights,
             });
 
-            steps.push(CalibrationProgressStep {
+                steps.push(CalibrationProgressStep {
                 id: format!("{}:{kind:?}", session.uuid),
                 kind,
                 label: kind_label(&kind).to_string(),
@@ -321,6 +335,12 @@ fn build_calibration_pipeline(
                 session_label: label.clone(),
                 count: session.lights.len(),
                 completed_count: 0,
+                skipped_count: session
+                    .lights
+                    .iter()
+                    .filter(|f| f.calibrated_frame.is_some())
+                    .count(),
+                    rejected_count: 0,
                 status: CalibrationStepStatus::Pending,
                 started_at: None,
                 ended_at: None,
@@ -1043,6 +1063,14 @@ pub fn run_calibration(
                     .filter(|f| f.calibrated_frame.is_none())
                     .cloned()
                     .collect();
+                let mut processed_count = 0usize;
+                let mut skipped_count = session.lights.len().saturating_sub(light_files.len());
+
+                if let Some(step) = progress.steps.get_mut(step_index) {
+                    step.completed_count = processed_count;
+                    step.skipped_count = skipped_count;
+                }
+                send_progress(&channel, &progress);
 
                 if light_files.is_empty() {
                     println!("  All light frames already calibrated, skipping session.");
@@ -1063,7 +1091,7 @@ pub fn run_calibration(
                         chunk.len()
                     );
 
-                    let chunk_result: Result<Vec<(PathBuf, PathBuf)>, String> =
+                    let chunk_result: Result<Vec<LightCalibrationOutcome>, String> =
                         chunk.par_iter().map(|light_file| {
                             check_cancelled(calibration_cancellation)?;
 
@@ -1080,6 +1108,18 @@ pub fn run_calibration(
                                 })?;
 
                             let target_path = PathBuf::from(&target.calibrated_path);
+
+                            if target_path.exists() {
+                                println!(
+                                    "  -> Skipping already calibrated frame: {}",
+                                    target_path.display()
+                                );
+
+                                return Ok(LightCalibrationOutcome::Skipped {
+                                    source_path: light_file.path().clone(),
+                                    calibrated_path: target_path,
+                                });
+                            }
 
                             let mut fits =
                                 FitsFile::new(light_file.path().clone()).map_err(|_| {
@@ -1194,7 +1234,10 @@ pub fn run_calibration(
                                 let _ = dst.write_key_i32("YBAYROFF", value);
                             }
 
-                            Ok((light_file.path().clone(), target_path))
+                            Ok(LightCalibrationOutcome::Processed {
+                                source_path: light_file.path().clone(),
+                                calibrated_path: target_path,
+                            })
                         }).collect();
 
                     match chunk_result {
@@ -1202,13 +1245,30 @@ pub fn run_calibration(
                             chunk_err = Some(e);
                             break;
                         }
-                        Ok(completed_pairs) => {
+                        Ok(outcomes) => {
                             // Mutate calibrated_frame on the originals — must be done
                             // single-threaded since session.lights is not Arc/Mutex.
-                            for (source_path, cal_path) in &completed_pairs {
+                            for outcome in outcomes {
+                                let (source_path, cal_path, was_skipped) = match outcome {
+                                    LightCalibrationOutcome::Processed {
+                                        source_path,
+                                        calibrated_path,
+                                    } => (source_path, calibrated_path, false),
+                                    LightCalibrationOutcome::Skipped {
+                                        source_path,
+                                        calibrated_path,
+                                    } => (source_path, calibrated_path, true),
+                                };
+
+                                if was_skipped {
+                                    skipped_count += 1;
+                                } else {
+                                    processed_count += 1;
+                                }
+
                                 // Update in session.lights (grouped view)
                                 if let Some(f) =
-                                    session.lights.iter_mut().find(|f| f.path() == source_path)
+                                    session.lights.iter_mut().find(|f| f.path() == &source_path)
                                 {
                                     f.calibrated_frame = Some(cal_path.clone());
                                     f.state = FrameState::Calibrated;
@@ -1217,7 +1277,7 @@ pub fn run_calibration(
                                 // Also update in state.raw_nights (flat file list)
                                 for night_files in state.raw_nights.values_mut() {
                                     if let Some(f) =
-                                        night_files.iter_mut().find(|f| f.path() == source_path)
+                                        night_files.iter_mut().find(|f| f.path() == &source_path)
                                     {
                                         f.calibrated_frame = Some(cal_path.clone());
                                         f.state = FrameState::Calibrated;
@@ -1229,10 +1289,9 @@ pub fn run_calibration(
                     }
 
                     // Update completed_count and send progress after each chunk
-                    let frames_done = (chunk_idx + 1) * num_threads;
-                    let clamped = frames_done.min(light_files.len());
                     if let Some(step) = progress.steps.get_mut(step_index) {
-                        step.completed_count = clamped;
+                        step.completed_count = processed_count;
+                        step.skipped_count = skipped_count;
                     }
                     send_progress(&channel, &progress);
                 }
@@ -1252,7 +1311,11 @@ pub fn run_calibration(
                     .steps
                     .get_mut(step_index)
                     .ok_or_else(|| "Calibration step index out of bounds".to_string())?;
-                step.status = CalibrationStepStatus::Completed;
+                step.status = if step.completed_count == 0 && step.skipped_count > 0 {
+                    CalibrationStepStatus::Skipped
+                } else {
+                    CalibrationStepStatus::Completed
+                };
                 step.ended_at = Some(ended_at);
                 progress.current_step_id = None;
                 send_progress(&channel, &progress);

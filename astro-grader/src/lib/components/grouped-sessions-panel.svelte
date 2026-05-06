@@ -1,8 +1,10 @@
 <script lang="ts">
+  import { previewState } from '$/lib/components/preview/state.svelte';
   import { FILE_BADGES } from '$/lib/files/types';
   import { getAppState } from '$/lib/state.svelte';
   import type { MasterOrFrames } from '$lib/types/MasterOrFrames';
   import { CheckIcon, XIcon } from '@lucide/svelte';
+  import { toast } from 'svelte-sonner';
   import { Badge } from './ui/badge';
   import { Button } from './ui/button';
   import ScrollArea from './ui/scroll-area/scroll-area.svelte';
@@ -37,6 +39,75 @@
     }
 
     return value.toFixed(decimals);
+  }
+
+  // Selection map keyed by file path
+  let selectionMap: Record<string, boolean> = {};
+
+  function getSelectedCount() {
+    return Object.values(selectionMap).filter(Boolean).length;
+  }
+
+  function isSelected(path: string) {
+    return !!selectionMap[path];
+  }
+
+  function toggleSelect(path: string) {
+    selectionMap[path] = !selectionMap[path];
+    selectionMap = { ...selectionMap };
+  }
+
+  function clearSelection() {
+    selectionMap = {};
+  }
+
+  function selectAllVisible(visiblePaths: string[]) {
+    const allSelected = visiblePaths.every((p) => !!selectionMap[p]);
+    if (allSelected) {
+      for (const p of visiblePaths) {
+        delete selectionMap[p];
+      }
+    } else {
+      for (const p of visiblePaths) {
+        selectionMap[p] = true;
+      }
+    }
+    selectionMap = { ...selectionMap };
+  }
+
+  function selectAllRejected() {
+    if (!selectedSession) return;
+    for (const l of selectedSession.lights) {
+      if (l.state === 'Rejected') selectionMap[l.path] = true;
+    }
+    selectionMap = { ...selectionMap };
+  }
+
+  async function moveSelected() {
+    const paths = Object.keys(selectionMap).filter((p) => selectionMap[p]);
+    if (paths.length === 0) return;
+    // placeholder
+    toast.info(`Move selected files: ${paths.length} (TODO)`);
+  }
+
+  async function removeSelected() {
+    const paths = Object.keys(selectionMap).filter((p) => selectionMap[p]);
+    if (paths.length === 0) return;
+    const ok = confirm(`Remove ${paths.length} selected files from the project?`);
+    if (!ok) return;
+
+    for (const path of paths) {
+      const entry = Object.entries(appState.rawNights).find(([, files]) =>
+        files.some((f) => f.path === path)
+      );
+      const night = entry?.[0] ?? null;
+      if (night) {
+        appState.removeFiles(night, path);
+      }
+    }
+
+    clearSelection();
+    toast.success('Removed selected files');
   }
 
   function countMasterOrFrames(frames: MasterOrFrames): number {
@@ -132,6 +203,52 @@
           {/if}
         </div>
 
+        <div class="mt-3 flex items-center justify-between gap-2">
+          <div class="flex gap-2">
+            <Button size="sm" variant="outline" onclick={selectAllRejected}>
+              Select all rejected
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onclick={moveSelected}
+              disabled={getSelectedCount() === 0}
+            >
+              Move selected files
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              onclick={removeSelected}
+              disabled={getSelectedCount() === 0}
+            >
+              Remove selected files
+            </Button>
+            <Button
+              onclick={() => {
+                for (const night in appState.rawNights) {
+                  for (const file of appState.rawNights[night]) {
+                    file.state = 'Default';
+                    file.stats = null;
+                  }
+                }
+
+                for (const session of appState.groupedNights) {
+                  for (const light of session.lights) {
+                    light.state = 'Default';
+                    light.stats = null;
+                  }
+                }
+
+                appState.persistFeState();
+              }}
+            >
+              Reset metrics
+            </Button>
+          </div>
+          <div class="text-sm text-muted-foreground">Selected: {getSelectedCount()}</div>
+        </div>
+
         <h1 class="mt-2 text-xl font-bold">Light frames</h1>
 
         <div class="mt-3 overflow-x-auto rounded-md border border-border bg-background/60">
@@ -140,10 +257,22 @@
               class="bg-muted/40 text-left text-xs tracking-wide text-muted-foreground uppercase"
             >
               <tr>
+                <th class="px-3 py-2 font-medium">
+                  <input
+                    type="checkbox"
+                    checked={getSelectedCount() === (selectedSession?.lights.length ?? 0) &&
+                      (selectedSession?.lights.length ?? 0) > 0}
+                    onclick={(e: any) => {
+                      e.stopPropagation();
+                      selectAllVisible(selectedSession?.lights.map((l) => l.path) ?? []);
+                    }}
+                  />
+                </th>
                 <th class="px-3 py-2 font-medium">Filename</th>
                 <th class="px-3 py-2 font-medium">Calibrated</th>
                 <th class="px-3 py-2 font-medium">Status</th>
                 <th class="px-3 py-2 font-medium">Star count</th>
+                <th class="px-3 py-2 font-medium">Eccentricity</th>
                 <th class="px-3 py-2 font-medium">FWHM</th>
                 <th class="px-3 py-2 font-medium">Background contrast</th>
                 <th class="px-3 py-2 font-medium">Exposure (s)</th>
@@ -162,7 +291,28 @@
               {:else}
                 {#each selectedSession.lights as light (light.path)}
                   <tr class="border-t border-border/70">
-                    <td class="max-w-[320px] truncate px-3 py-2 text-foreground" title={light.path}>
+                    <td class="px-3 py-2">
+                      <input
+                        type="checkbox"
+                        checked={isSelected(light.path)}
+                        onclick={(e: any) => {
+                          e.stopPropagation();
+                          toggleSelect(light.path);
+                        }}
+                      />
+                    </td>
+                    <td
+                      class="max-w-[320px] truncate px-3 py-2 text-foreground"
+                      title={light.path}
+                      onclick={(ev) => {
+                        // prevent from clicking through when using buttons/checkbox
+                        // @ts-expect-error
+                        if (ev.target?.closest('button') || ev.target?.closest('input')) return;
+                        previewState.previewImage = light;
+                        previewState.imageOptions = undefined;
+                        appState.setCurrentPreviewFile(light.path);
+                      }}
+                    >
                       {light.name}
                     </td>
                     <td>
@@ -179,6 +329,9 @@
                     </td>
                     <td class="px-3 py-2 text-muted-foreground">
                       {light.stats?.star_count ?? '-'}
+                    </td>
+                    <td class="px-3 py-2 text-muted-foreground">
+                      {formatMetric(light.stats?.eccentricity, 3)}
                     </td>
                     <td class="px-3 py-2 text-muted-foreground">
                       {formatMetric(light.stats?.fwhm)}

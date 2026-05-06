@@ -4,8 +4,8 @@ use tauri::{Manager, State, http};
 
 mod config;
 mod file_picker;
-mod fits;
-mod processing;
+pub mod fits;
+pub mod processing;
 mod state;
 
 static URL_PREFIXES: [&str; 4] = [

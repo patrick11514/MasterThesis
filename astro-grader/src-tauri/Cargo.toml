@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Astro grader desktop application built with Tauri"
 authors = ["Patrik Mintěl"]
 edition = "2024"
+default-run = "astro-grader"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

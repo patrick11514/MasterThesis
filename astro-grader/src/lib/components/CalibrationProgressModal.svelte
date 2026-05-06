@@ -99,6 +99,8 @@
         return LoaderIcon;
       case 'Completed':
         return CircleCheckBig;
+      case 'Skipped':
+        return Ban;
       case 'Failed':
       case 'Cancelled':
         return CircleX;
@@ -113,6 +115,8 @@
         return 'secondary';
       case 'Completed':
         return 'default';
+      case 'Skipped':
+        return 'outline';
       case 'Failed':
         return 'destructive';
       case 'Cancelled':
@@ -128,6 +132,8 @@
         return 'Running';
       case 'Completed':
         return 'Done';
+      case 'Skipped':
+        return 'Skipped';
       case 'Failed':
         return 'Failed';
       case 'Cancelled':
@@ -180,7 +186,9 @@
               {:else}
                 <Ban class="size-5 text-muted-foreground" />
               {/if}
-              {progress.status === 'Running' ? `${title ?? 'Calibration'} in progress` : `${title ?? 'Calibration'} completed`}
+              {progress.status === 'Running'
+                ? `${title ?? 'Calibration'} in progress`
+                : `${title ?? 'Calibration'} completed`}
             </div>
           </div>
 
@@ -225,9 +233,15 @@
                     <div class="min-w-0">
                       <div class="truncate text-sm font-medium text-foreground">
                         {step.label}
-                        {#if step.status === 'Running' || step.status === 'Completed'}
+                        {#if step.status === 'Running' || step.status === 'Completed' || step.status === 'Skipped'}
                           <span class="text-muted-foreground">
                             ({step.completed_count}/{step.count})
+                            {#if step.skipped_count > 0}
+                              ({step.skipped_count} Skipped)
+                            {/if}
+                            {#if step.rejected_count > 0}
+                              ({step.rejected_count} Rejected)
+                            {/if}
                           </span>
                         {:else}
                           <span class="text-muted-foreground">({step.count})</span>

@@ -381,6 +381,8 @@ class AppState {
         session_label: `${session.fingerprint.name} - ${session.fingerprint.filter}`,
         count: session.lights.length,
         completed_count: 0,
+        skipped_count: 0,
+        rejected_count: 0,
         status: 'Pending' as const,
         started_at: BigInt(Date.now()),
         ended_at: null as null,
@@ -441,6 +443,8 @@ class AppState {
           session_label: 'Grouping frames',
           count: totalFiles,
           completed_count: 0,
+          skipped_count: 0,
+          rejected_count: 0,
           status: 'Pending' as const,
           started_at: BigInt(Date.now()),
           ended_at: null,
@@ -514,6 +518,8 @@ class AppState {
         session_label: `${session.fingerprint.name} - ${session.fingerprint.filter}`,
         count: session.lights.length,
         completed_count: 0,
+        skipped_count: 0,
+        rejected_count: 0,
         status: 'Pending' as const,
         started_at: null as null,
         ended_at: null,
@@ -558,8 +564,11 @@ class AppState {
           for (const incoming of message.steps) {
             const target = bp.steps.find((s) => s.id === incoming.id);
             if (target) {
+              target.count = incoming.count;
               target.status = incoming.status;
               target.completed_count = incoming.completed_count;
+              target.skipped_count = incoming.skipped_count;
+              target.rejected_count = incoming.rejected_count;
               target.started_at = incoming.started_at;
               target.ended_at = incoming.ended_at;
               target.error = incoming.error;
@@ -601,8 +610,11 @@ class AppState {
               (s) => s.id === incoming.id || s.id === `${incoming.session_uuid}:Metrics`
             );
             if (target) {
+              target.count = incoming.count;
               target.status = incoming.status;
               target.completed_count = incoming.completed_count;
+              target.skipped_count = incoming.skipped_count;
+              target.rejected_count = incoming.rejected_count;
               target.started_at = incoming.started_at;
               target.ended_at = incoming.ended_at;
               target.error = incoming.error;

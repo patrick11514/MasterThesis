@@ -6,6 +6,7 @@ use std::{
 };
 
 use sep_sys::*;
+use rayon::prelude::*;
 
 use crate::{
     file_picker::File,
@@ -16,6 +17,7 @@ use crate::{
         CalibrationStepKind, CalibrationStepStatus,
     },
 };
+use crate::processing::scoring;
 
 const BACKGROUND_TILE_SIZE: i64 = 64;
 const BACKGROUND_FILTER_SIZE: i64 = 3;
@@ -100,17 +102,31 @@ fn image_path_for_metrics(file: &File) -> PathBuf {
         .unwrap_or_else(|| file.path().clone())
 }
 
-fn classify_frame(score: f32, stats: &ImageStats, max_fwhm: f32) -> FrameState {
+pub fn classify_frame(score: f32, stats: &ImageStats, max_fwhm: f32) -> FrameState {
     let fwhm = stats.fwhm.unwrap_or(f32::INFINITY);
 
-    if score < 0.0 && fwhm > max_fwhm {
+    // Reject if trail or if score indicates poor quality AND FWHM too large.
+    // Additionally, fast-reject frames with high background contrast (clouds).
+    const BG_REJECT_NORM_THRESHOLD: f32 = 0.25; // normalized threshold (0..1)
+
+    // Normalized background using same logic as scoring.norm_bg
+    let bg_norm = scoring::norm_bg(stats.background_contrast);
+
+    // Reject when background is high AND the score already indicates poor quality.
+    // Also require a low star count to avoid rejecting normally dense frames.
+    const STAR_COUNT_LOW_THRESHOLD: u32 = 400;
+    let star_count = stats.star_count.unwrap_or(0);
+
+    if bg_norm > BG_REJECT_NORM_THRESHOLD && score < 0.0 && star_count < STAR_COUNT_LOW_THRESHOLD {
+        FrameState::Rejected
+    } else if score < 0.0 && fwhm > max_fwhm {
         FrameState::Rejected
     } else {
         FrameState::Accepted
     }
 }
 
-fn extract_metrics_from_pixels(
+pub fn extract_metrics_from_pixels(
     pixels: &[f32],
     width: usize,
     height: usize,
@@ -343,13 +359,24 @@ fn copy_metrics_back_to_raw_nights(
                 .calibrated_frame
                 .clone()
                 .unwrap_or_else(|| raw_file.path().clone());
-            let path = path_buf.to_string_lossy().to_string();
+            let path = normalize_path(&path_buf);
 
             if let Some((stats, state_value)) = metrics_by_path.get(&path) {
                 raw_file.stats = Some(stats.clone());
                 raw_file.state = *state_value;
             }
         }
+    }
+}
+
+fn normalize_path(p: &PathBuf) -> String {
+    // Use a consistent representation for keys: forward slashes, no trailing slash
+    let s = p.to_string_lossy().to_string();
+    let s = s.replace('\\', "/");
+    if s.ends_with('/') && s.len() > 1 {
+        s.trim_end_matches('/').to_string()
+    } else {
+        s
     }
 }
 
@@ -383,6 +410,8 @@ pub fn run_metrics(
             session_label,
             count: session.lights.len(),
             completed_count: 0,
+            skipped_count: 0,
+            rejected_count: 0,
             status: CalibrationStepStatus::Pending,
             started_at: None,
             ended_at: None,
@@ -407,6 +436,7 @@ pub fn run_metrics(
     let _ = channel.send(progress.clone());
 
     let mut metrics_by_path = HashMap::<String, (ImageStats, FrameState)>::new();
+    let mut raw_score_by_path = HashMap::<String, f32>::new();
     let mut score_sources_by_session = Vec::with_capacity(state.grouped_nights.len());
 
     for (session_index, session) in state.grouped_nights.iter_mut().enumerate() {
@@ -417,61 +447,92 @@ pub fn run_metrics(
 
         let mut score_source = Vec::with_capacity(session.lights.len());
 
-        for light in &mut session.lights {
-            let image_path = image_path_for_metrics(light);
-            let mut fits = FitsFile::new(image_path.clone()).map_err(|_| {
-                format!(
-                    "Unable to open calibrated frame for metrics: {}",
-                    image_path.display()
-                )
-            })?;
-            let image = ImageDataPixels::from_fits(&mut fits).map_err(|_| {
-                format!(
-                    "Unable to read calibrated frame for metrics: {}",
-                    image_path.display()
-                )
-            })?;
+        // Parallel metrics extraction per-session. We collect per-light results and
+        // then merge them back into the session in a single-threaded step to
+        // avoid mutable aliasing issues.
+        let outcomes: Vec<Result<(usize, ImageStats, FrameState), String>> = session
+            .lights
+            .par_iter()
+            .enumerate()
+            .map(|(i, light)| {
+                let image_path = image_path_for_metrics(light);
+                println!("[METRICS] Processing file {}: {}", i, image_path.display());
 
-            let stats =
-                extract_metrics_from_pixels(&image.pixels, image.data.width, image.data.height)?;
-            score_source.push(stats.star_count.unwrap_or(0) as f32);
+                let mut fits = FitsFile::new(image_path.clone()).map_err(|_| {
+                    format!(
+                        "Unable to open calibrated frame for metrics: {}",
+                        image_path.display()
+                    )
+                })?;
 
-            let star_count_str = stats
-                .star_count
-                .map(|count| count.to_string())
-                .unwrap_or_else(|| "0".to_string());
-            let fwhm_str = stats
-                .fwhm
-                .map(|value| format!("{:.2}", value))
-                .unwrap_or_else(|| "N/A".to_string());
-            let hfd_str = stats
-                .hfd
-                .map(|value| format!("{:.2}", value))
-                .unwrap_or_else(|| "N/A".to_string());
-            let ecc_str = stats
-                .eccentricity
-                .map(|value| format!("{:.2}", value))
-                .unwrap_or_else(|| "N/A".to_string());
-            let bg_str = stats
-                .background_contrast
-                .map(|value| format!("{:.2}", value))
-                .unwrap_or_else(|| "N/A".to_string());
+                let image = ImageDataPixels::from_fits(&mut fits).map_err(|_| {
+                    format!(
+                        "Unable to read calibrated frame for metrics: {}",
+                        image_path.display()
+                    )
+                })?;
 
-            println!(
-                "{} - {} stars, FWHM: {}, HFD: {}, ecc: {}, bg_contrast: {}",
-                image_path.display(),
-                star_count_str,
-                fwhm_str,
-                hfd_str,
-                ecc_str,
-                bg_str
-            );
+                let mut stats = extract_metrics_from_pixels(&image.pixels, image.data.width, image.data.height)?;
 
-            light.stats = Some(stats);
+                // Compute score and detect trails (raw_score preserved for final decisions)
+                let (raw_score, is_trail) = scoring::compute_score(&stats);
+                stats.quality_score = Some(raw_score);
+                println!("  [RAW_SCORE] raw_score={:.3}, is_trail={}, stars={:?}, fwhm={:?}", raw_score, is_trail, stats.star_count, stats.fwhm);
 
-            progress.steps[session_index].completed_count += 1;
-            let _ = channel.send(progress.clone());
+                let mut state_after = classify_frame(raw_score, &stats, max_fwhm);
+                if is_trail {
+                    state_after = FrameState::Rejected;
+                    println!("  [STATE] Trail detected -> {:?}", state_after);
+                } else {
+                    println!("  [STATE] Initial classification -> {:?}", state_after);
+                }
+
+                Ok((i, stats, state_after))
+            })
+            .collect();
+
+        // Check for errors
+        for r in &outcomes {
+            if let Err(e) = r {
+                return Err(e.clone());
+            }
         }
+
+        // Merge results back into session and update progress counters
+        let mut processed = 0usize;
+        let mut rejected = 0usize;
+        for r in outcomes.into_iter().map(|r| r.unwrap()) {
+            let (idx, stats, new_state) = r;
+            if let Some(light) = session.lights.get_mut(idx) {
+                light.stats = Some(stats.clone());
+                light.state = new_state;
+                println!("[MERGE] File {} merged with state: {:?}", idx, new_state);
+            }
+
+            processed += 1;
+            if new_state == FrameState::Rejected {
+                rejected += 1;
+            }
+
+            // record star counts for cross-night scoring distribution
+            if let Some(s) = stats.star_count {
+                score_source.push(s as f32);
+            }
+
+            // record raw score for the image so cross-night normalization doesn't
+            // mask obviously-bad raw frames when we decide final state
+            if let Some(light) = session.lights.get(idx) {
+                let image_path = image_path_for_metrics(light);
+                let image_path_key = normalize_path(&image_path);
+                raw_score_by_path.insert(image_path_key.clone(), stats.quality_score.unwrap_or(0.0));
+                metrics_by_path.insert(image_path_key, (stats.clone(), new_state));
+            }
+        }
+
+        progress.steps[session_index].completed_count = processed;
+        progress.steps[session_index].rejected_count = rejected;
+        println!("[SESSION] Session {} complete: {} processed, {} rejected", session_index, processed, rejected);
+        let _ = channel.send(progress.clone());
 
         score_sources_by_session.push(score_source);
         progress.steps[session_index].ended_at = Some(now_millis());
@@ -481,6 +542,7 @@ pub fn run_metrics(
     }
 
     if cross_night_reference {
+        println!("[CROSS_NIGHT] Applying cross-night normalization...");
         let all_scores: Vec<f32> = score_sources_by_session
             .iter()
             .flat_map(|scores: &Vec<f32>| scores.iter().copied())
@@ -493,18 +555,48 @@ pub fn run_metrics(
                 let score = scores.get(score_index).copied().unwrap_or(1.0);
                 score_index += 1;
                 let image_path = image_path_for_metrics(light);
+                let key = normalize_path(&image_path);
 
                 if let Some(stats) = &mut light.stats {
+                    // store normalized score for UI, but decide final state using
+                    // the raw score when it indicates clear failure
+                    let raw_score = raw_score_by_path.get(&key).copied().unwrap_or(stats.quality_score.unwrap_or(0.0));
                     stats.quality_score = Some(score);
-                    light.state = classify_frame(score, stats, max_fwhm);
-                    metrics_by_path.insert(
-                        image_path.to_string_lossy().to_string(),
-                        (stats.clone(), light.state),
-                    );
+                    println!("[CROSS_NIGHT_APPLY] {} raw={:.3}, normalized={:.3}, prev_state={:?}", key, raw_score, score, light.state);
+
+                    // If previously rejected (e.g., trail) keep rejected. Otherwise,
+                    // if raw score was bad and matches rejection heuristics, reject.
+                    if light.state == FrameState::Rejected {
+                        // keep
+                        println!("  -> Keeping previous Rejected state");
+                    } else if raw_score < 0.0 {
+                        // apply original raw-based rejection rules (trail already handled)
+                        let fwhm = stats.fwhm.unwrap_or(f32::INFINITY);
+                        let bg_norm = scoring::norm_bg(stats.background_contrast);
+                        let star_count = stats.star_count.unwrap_or(0);
+                        const BG_REJECT_NORM_THRESHOLD: f32 = 0.25;
+                        const STAR_COUNT_LOW_THRESHOLD: u32 = 400;
+
+                        if (raw_score < 0.0 && fwhm > max_fwhm)
+                            || (bg_norm > BG_REJECT_NORM_THRESHOLD && raw_score < 0.0 && star_count < STAR_COUNT_LOW_THRESHOLD)
+                        {
+                            light.state = FrameState::Rejected;
+                            println!("  -> Applied raw-score rejection: fwhm={:.2}, bg_norm={:.2}, stars={}", fwhm, bg_norm, star_count);
+                        } else {
+                            light.state = classify_frame(score, stats, max_fwhm);
+                            println!("  -> Reclassified with normalized score -> {:?}", light.state);
+                        }
+                    } else {
+                        light.state = classify_frame(score, stats, max_fwhm);
+                        println!("  -> Reclassified with normalized score -> {:?}", light.state);
+                    }
+
+                    metrics_by_path.insert(key, (stats.clone(), light.state));
                 }
             }
         }
     } else {
+        println!("[PER_SESSION] Applying per-session normalization (no cross-night)...");
         for (session, score_source) in state
             .grouped_nights
             .iter_mut()
@@ -514,21 +606,92 @@ pub fn run_metrics(
 
             for (light, score) in session.lights.iter_mut().zip(scores.into_iter()) {
                 let image_path = image_path_for_metrics(light);
+                let key = normalize_path(&image_path);
 
                 if let Some(stats) = &mut light.stats {
+                    // Get raw score for decision-making
+                    let raw_score = raw_score_by_path.get(&key).copied().unwrap_or(stats.quality_score.unwrap_or(0.0));
                     stats.quality_score = Some(score);
-                    light.state = classify_frame(score, stats, max_fwhm);
-                    metrics_by_path.insert(
-                        image_path.to_string_lossy().to_string(),
-                        (stats.clone(), light.state),
-                    );
+                    println!("[PER_SESSION_APPLY] {} raw={:.3}, normalized={:.3}, prev_state={:?}", key, raw_score, score, light.state);
+
+                    // Preserve rejections based on raw scores
+                    if light.state == FrameState::Rejected {
+                        println!("  -> Keeping previous Rejected state");
+                    } else if raw_score < 0.0 {
+                        // Raw score indicates poor quality; apply rejection rules
+                        let fwhm = stats.fwhm.unwrap_or(f32::INFINITY);
+                        let bg_norm = scoring::norm_bg(stats.background_contrast);
+                        let star_count = stats.star_count.unwrap_or(0);
+                        const BG_REJECT_NORM_THRESHOLD: f32 = 0.25;
+                        const STAR_COUNT_LOW_THRESHOLD: u32 = 400;
+
+                        if (raw_score < 0.0 && fwhm > max_fwhm)
+                            || (bg_norm > BG_REJECT_NORM_THRESHOLD && raw_score < 0.0 && star_count < STAR_COUNT_LOW_THRESHOLD)
+                        {
+                            light.state = FrameState::Rejected;
+                            println!("  -> Applied raw-score rejection: fwhm={:.2}, bg_norm={:.2}, stars={}", fwhm, bg_norm, star_count);
+                        } else {
+                            light.state = classify_frame(score, stats, max_fwhm);
+                            println!("  -> Reclassified with normalized score -> {:?}", light.state);
+                        }
+                    } else {
+                        light.state = classify_frame(score, stats, max_fwhm);
+                        println!("  -> Reclassified with normalized score -> {:?}", light.state);
+                    }
+
+                    metrics_by_path.insert(key, (stats.clone(), light.state));
                 }
             }
         }
     }
 
+    // After the final per-frame classification (which may have changed states
+    // during the cross-night or per-session distribution step), recompute the
+    // rejected counts for each session so the progress reflects final values.
+    for (session_index, session) in state.grouped_nights.iter().enumerate() {
+        let mut rejected_final = 0usize;
+        for light in &session.lights {
+            if light.state == FrameState::Rejected {
+                rejected_final += 1;
+            }
+        }
+
+        if let Some(step) = progress.steps.get_mut(session_index) {
+            step.rejected_count = rejected_final;
+            step.completed_count = session.lights.len();
+        }
+    }
+
+    // Send updated progress so the UI sees final rejected counts.
+    let _ = channel.send(progress.clone());
+
+    // Copy metrics back to raw_nights so FE can persist the final per-file states.
+    println!("[COPY_METRICS] Writing {} metrics back to raw_nights", metrics_by_path.len());
     copy_metrics_back_to_raw_nights(state, &metrics_by_path);
 
+    // Recompute final rejected counts from the authoritative `state` (raw/grouped
+    // nights may have been updated by copy_metrics_back_to_raw_nights) and send
+    // an updated progress message so the UI matches the returned FeState.
+    let mut total_rejected_final = 0usize;
+    let mut total_processed = 0usize;
+    for (session_index, session) in state.grouped_nights.iter().enumerate() {
+        let mut rejected_final = 0usize;
+        for light in &session.lights {
+            if light.state == FrameState::Rejected {
+                rejected_final += 1;
+            }
+            total_processed += 1;
+        }
+        total_rejected_final += rejected_final;
+
+        if let Some(step) = progress.steps.get_mut(session_index) {
+            step.rejected_count = rejected_final;
+            step.completed_count = session.lights.len();
+            println!("[FINAL_SESSION] Session {}: {} total, {} rejected", session_index, session.lights.len(), rejected_final);
+        }
+    }
+
+    println!("[FINAL_SUMMARY] Total: {} processed, {} rejected", total_processed, total_rejected_final);
     progress.finished_at = Some(now_millis());
     progress.status = CalibrationRunStatus::Completed;
     let _ = channel.send(progress.clone());
@@ -580,5 +743,20 @@ mod tests {
         };
 
         assert_eq!(classify_frame(-0.5, &stats, 3.0), FrameState::Accepted);
+    }
+
+    #[test]
+    fn rejects_high_background_even_if_fwhm_low() {
+        let stats = ImageStats {
+            star_count: Some(10),
+            fwhm: Some(2.0),
+            hfd: None,
+            eccentricity: None,
+            background_contrast: Some(10.0), // normalized -> 10/20 = 0.5 > 0.25
+            quality_score: None,
+        };
+
+        // With a negative score this should be rejected due to high background.
+        assert_eq!(classify_frame(-0.2, &stats, 3.0), FrameState::Rejected);
     }
 }
