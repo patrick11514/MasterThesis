@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    fs,
     hash::Hasher,
     path::{Path, PathBuf},
     sync::atomic::Ordering,
@@ -11,12 +12,13 @@ use rayon::prelude::*;
 use twox_hash::XxHash3_64;
 
 use crate::{
+    config::CalibrationStorageMode,
     file_picker::File,
     fits::{FitsFile, FrameState, ImageDataLayout, ImageDataPixels, Tag},
-    state::fe_state::{AstroSession, FeState, MasterOrFrames},
     state::{
         CalibrationCancellation, CalibrationProgressMessage, CalibrationProgressStep,
         CalibrationRunStatus, CalibrationStepKind, CalibrationStepStatus,
+        fe_state::{AstroSession, FeState, MasterOrFrames},
     },
 };
 
@@ -139,9 +141,43 @@ fn normalize_pixels_if_needed(pixels: &mut [f32]) {
 
     if max_value > 1.5 {
         for value in pixels.iter_mut() {
-            *value /= max_value;
+            *value /= 65535.0;
         }
     }
+}
+
+fn calibrated_output_is_valid(source_path: &Path, calibrated_path: &Path) -> bool {
+    let Ok(metadata) = fs::metadata(calibrated_path) else {
+        return false;
+    };
+    if metadata.len() < 2880 {
+        return false;
+    } // Must at least have a header
+
+    let mut source_fits = match FitsFile::new(source_path.to_path_buf()) {
+        Ok(fits) => fits,
+        Err(_) => return false,
+    };
+
+    let mut calibrated_fits = match FitsFile::new(calibrated_path.to_path_buf()) {
+        Ok(fits) => fits,
+        Err(_) => return false,
+    };
+
+    let src_width = source_fits
+        .get_tag_custom::<i32>(crate::fits::Tag::NAXIS1)
+        .unwrap_or(0);
+    let cal_width = calibrated_fits
+        .get_tag_custom::<i32>(crate::fits::Tag::NAXIS1)
+        .unwrap_or(0);
+    let src_height = source_fits
+        .get_tag_custom::<i32>(crate::fits::Tag::NAXIS2)
+        .unwrap_or(0);
+    let cal_height = calibrated_fits
+        .get_tag_custom::<i32>(crate::fits::Tag::NAXIS2)
+        .unwrap_or(0);
+
+    src_width == cal_width && src_height == cal_height
 }
 
 const HOT_PIXEL_SIGMA_FACTOR: f32 = 6.0;
@@ -308,7 +344,7 @@ fn build_calibration_pipeline(
                 count: frames.len(),
                 completed_count: 0,
                 skipped_count: 0,
-                    rejected_count: 0,
+                rejected_count: 0,
                 status: CalibrationStepStatus::Pending,
                 started_at: None,
                 ended_at: None,
@@ -327,7 +363,7 @@ fn build_calibration_pipeline(
                 task: CalibrationWorkItemTask::CalibrateLights,
             });
 
-                steps.push(CalibrationProgressStep {
+            steps.push(CalibrationProgressStep {
                 id: format!("{}:{kind:?}", session.uuid),
                 kind,
                 label: kind_label(&kind).to_string(),
@@ -340,7 +376,7 @@ fn build_calibration_pipeline(
                     .iter()
                     .filter(|f| f.calibrated_frame.is_some())
                     .count(),
-                    rejected_count: 0,
+                rejected_count: 0,
                 status: CalibrationStepStatus::Pending,
                 started_at: None,
                 ended_at: None,
@@ -523,17 +559,6 @@ fn produce_master(
                 vals[mid]
             })
             .collect();
-
-        let mut out_pixels = out_pixels;
-        if matches!(master_type, MasterType::Flat) {
-            // Normalize flat master by its maximum value to achieve unity gain
-            let max_val = out_pixels.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-            if max_val.is_normal() && max_val > 0.0 {
-                for value in &mut out_pixels {
-                    *value /= max_val;
-                }
-            }
-        }
 
         let master_image = ImageDataPixels {
             data: first_image.data.clone(),
@@ -897,7 +922,7 @@ pub fn calibrate_light(
 pub fn run_calibration(
     state: &mut FeState,
     temp_folder_path: &Path,
-    targets: &[crate::state::CalibrateFrameTarget],
+    storage_mode: &CalibrationStorageMode,
     channel: tauri::ipc::Channel<CalibrationProgressMessage>,
     calibration_cancellation: &CalibrationCancellation,
 ) -> Result<(), String> {
@@ -1092,24 +1117,29 @@ pub fn run_calibration(
                     );
 
                     let chunk_result: Result<Vec<LightCalibrationOutcome>, String> =
-                        chunk.par_iter().map(|light_file| {
-                            check_cancelled(calibration_cancellation)?;
+                                            chunk.par_iter().map(|light_file| {
+                                                check_cancelled(calibration_cancellation)?;
 
-                            let target = targets
-                                .iter()
-                                .find(|t| {
-                                    t.source_path == light_file.path().to_string_lossy().to_string()
-                                })
-                                .ok_or_else(|| {
-                                    format!(
-                                        "Target path not found for {}",
-                                        light_file.path().display()
-                                    )
-                                })?;
+                    let stem = light_file.path().file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "light".to_string());
 
-                            let target_path = PathBuf::from(&target.calibrated_path);
+                    let target_path = match storage_mode {
+                        CalibrationStorageMode::NextToOriginal => {
+                            // Appends _cal.fits to the original name in the same folder
+                            light_file.path().with_file_name(format!("{}_cal.fits", stem))
+                        }
+                        CalibrationStorageMode::TempFolder => {
+                            // Convert the UUID to a String, then slice the first 8 characters
+                            let uuid_str = light_file.uuid().to_string();
+                            let short_id = &uuid_str[0..8];
+                            temp_folder_path.join(format!("{}_{}_cal.fits", stem, short_id))
+                        }
+                    };
 
-                            if target_path.exists() {
+                    if target_path.exists()
+                        && calibrated_output_is_valid(light_file.path(), &target_path)
+                            {
                                 println!(
                                     "  -> Skipping already calibrated frame: {}",
                                     target_path.display()
@@ -1119,6 +1149,14 @@ pub fn run_calibration(
                                     source_path: light_file.path().clone(),
                                     calibrated_path: target_path,
                                 });
+                            }
+
+                            if target_path.exists() {
+                                println!(
+                                    "  -> Existing calibrated frame is invalid, recalibrating: {}",
+                                    target_path.display()
+                                );
+                                let _ = fs::remove_file(&target_path);
                             }
 
                             let mut fits =

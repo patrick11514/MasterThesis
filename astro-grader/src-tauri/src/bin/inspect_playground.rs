@@ -13,7 +13,9 @@ fn classify_final(score: f32, fwhm: Option<f32>, max_fwhm: f32, is_trail: bool) 
 }
 
 fn main() {
-    let dir = std::env::args().nth(1).unwrap_or_else(|| "../test_fits/playground".to_string());
+    let dir = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| "../test_fits/playground".to_string());
     let max_fwhm: f32 = std::env::args()
         .nth(2)
         .and_then(|s| s.parse().ok())
@@ -25,7 +27,9 @@ fn main() {
         std::process::exit(1);
     }
 
-    println!("path,star_count,fwhm,hfd,eccentricity,background_contrast,quality_score,is_trail,final_state");
+    println!(
+        "path,star_count,fwhm,hfd,eccentricity,background_contrast,quality_score,is_trail,final_state"
+    );
 
     let mut entries: Vec<_> = std::fs::read_dir(&path)
         .unwrap()
@@ -45,7 +49,11 @@ fn main() {
         let display = p.to_string_lossy().to_string();
         match FitsFile::new(p.clone()) {
             Ok(mut fits) => match ImageDataPixels::from_fits(&mut fits) {
-                    Ok(image) => match metrics::extract_metrics_from_pixels(&image.pixels, image.data.width, image.data.height) {
+                Ok(image) => match metrics::extract_metrics_from_pixels(
+                    &image.pixels,
+                    image.data.width,
+                    image.data.height,
+                ) {
                     Ok(mut stats) => {
                         let (score, is_trail) = scoring::compute_score(&stats);
                         stats.quality_score = Some(score);
@@ -73,7 +81,7 @@ fn main() {
                             final_state_str
                         );
                     }
-                            Err(e) => eprintln!("Failed extract metrics {}: {:?}", display, e),
+                    Err(e) => eprintln!("Failed extract metrics {}: {:?}", display, e),
                 },
                 Err(e) => eprintln!("Failed read image {}: {:?}", display, e),
             },

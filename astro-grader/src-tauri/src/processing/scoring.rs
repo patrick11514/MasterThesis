@@ -1,20 +1,15 @@
 use crate::fits::ImageStats;
 
-// Default weights and normalization ranges. These are conservative starting
-// values — we will expose them via config later so users can tune.
-// Weights scaled so that typical good frames (1000 stars, FWHM~2.5, normal bg/ecc)
-// receive a score near 0 or slightly positive. Poor frames get negative.
 const W_STAR: f32 = 1.0;
-const W_FWHM: f32 = 0.6; // reduced from 2.0
-const W_BG: f32 = 0.6; // reduced from 2.5
-const W_ECC: f32 = 0.6; // reduced from 3.0
-const W_TRAIL: f32 = 2.0; // reduced from 5.0
+const W_FWHM: f32 = 1.0; // (Increased) Punish blurry stars harder
+const W_BG: f32 = 1.5; // (Massively Increased) Clouds tank the score!
+const W_ECC: f32 = 0.6;
+const W_TRAIL: f32 = 2.0;
 
-// Normalization reference values (simple fixed ranges for now).
-const STAR_MAX: f32 = 2000.0; // stars above this saturate
-const FWHM_MIN: f32 = 0.5; // arcsec-ish lower bound
-const FWHM_MAX: f32 = 8.0; // arcsec-ish upper bound
-const BG_MAX: f32 = 20.0; // background contrast typical scale
+const STAR_MAX: f32 = 5000.0; // Give credit for insanely clear nights
+const FWHM_MIN: f32 = 1.5;
+const FWHM_MAX: f32 = 6.0; // (Tightened)
+const BG_MAX: f32 = 10.0; // (Tightened) A background of 10 is now maximum penalty!
 
 fn clamp01(v: f32) -> f32 {
     if v.is_finite() {

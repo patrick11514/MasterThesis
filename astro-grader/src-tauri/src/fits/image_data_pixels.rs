@@ -150,13 +150,37 @@ impl ImageDataPixels {
             ImageDataLayout::RGB => return Err(FitsWriteError::WriteImageFailed),
         };
 
-        // cfitsio's create() fails if the file already exists; delete it first.
+        // Write to a temporary sibling first, then atomically replace the destination.
+        // This avoids leaving partially written files at the final path.
+        let tmp_name = format!(
+            ".{}.tmp",
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("calibration")
+        );
+        let tmp_path = path.with_file_name(tmp_name);
+
+        if tmp_path.exists() {
+            std::fs::remove_file(&tmp_path).map_err(|_| FitsWriteError::CreateFailed)?;
+        }
+
+        let mut output =
+            FitsFile::create(tmp_path.clone(), &shape, fitsio::images::ImageType::Float)?;
+        if output.write_image_f32(&self.pixels).is_err() {
+            let _ = std::fs::remove_file(&tmp_path);
+            return Err(FitsWriteError::WriteImageFailed);
+        }
+
         if path.exists() {
             std::fs::remove_file(&path).map_err(|_| FitsWriteError::CreateFailed)?;
         }
 
-        let mut output = FitsFile::create(path, &shape, fitsio::images::ImageType::Float)?;
-        output.write_image_f32(&self.pixels)
+        std::fs::rename(&tmp_path, &path).map_err(|_| {
+            let _ = std::fs::remove_file(&tmp_path);
+            FitsWriteError::CreateFailed
+        })?;
+
+        Ok(())
     }
 
     // This function normalizes data into two formats:

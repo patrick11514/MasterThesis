@@ -13,6 +13,8 @@ pub enum Tag {
     YBinding,
     XBayerOffset,
     YBayerOffset,
+    NAXIS1,
+    NAXIS2,
 }
 
 pub fn get_tag(tag: Tag) -> &'static [&'static str] {
@@ -30,5 +32,7 @@ pub fn get_tag(tag: Tag) -> &'static [&'static str] {
         Tag::YBinding => &["YBINNING"],
         Tag::XBayerOffset => &["XBAYROFF"],
         Tag::YBayerOffset => &["YBAYROFF"],
+        Tag::NAXIS1 => &["NAXIS1"],
+        Tag::NAXIS2 => &["NAXIS2"],
     }
 }

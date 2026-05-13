@@ -71,17 +71,17 @@ pub async fn calibrate(
         state_guard.fe_state.clone()
     };
 
-    // Spawn blocking to prevent Rayon and FITS I/O from starving the Tokio runtime,
-    // which freezes IPC channel messaging to the frontend.
     let updated_fe_state = tokio::task::spawn_blocking(move || {
         use tauri::Manager;
         let cancellation_state = app_handle.state::<CalibrationCancellation>();
 
         let temp_folder = PathBuf::from(&request.temp_folder_path);
+
+        // Pass storage_mode instead of targets!
         run_calibration(
             &mut fe_state,
             &temp_folder,
-            &request.targets,
+            &request.storage_mode,
             channel,
             &cancellation_state,
         )?;

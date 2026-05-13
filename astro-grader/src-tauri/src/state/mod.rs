@@ -100,7 +100,6 @@ pub struct CalibrateFrameTarget {
 pub struct CalibrateRequest {
     pub storage_mode: config::CalibrationStorageMode,
     pub temp_folder_path: String,
-    pub targets: Vec<CalibrateFrameTarget>,
 }
 
 #[tauri::command]
