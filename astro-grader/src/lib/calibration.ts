@@ -61,13 +61,7 @@ export const buildCalibrateRequest = (
 ): CalibrateRequest => {
   return {
     storage_mode: storageMode,
-    temp_folder_path: tempFolderPath,
-    targets: files
-      .filter((file) => file.type === 'Light' && file.calibrated_frame === null)
-      .map((file) => ({
-        source_path: file.path,
-        calibrated_path: resolveCalibratedPath(file.path, file.uuid, storageMode, tempFolderPath)
-      }))
+    temp_folder_path: tempFolderPath
   };
 };
 

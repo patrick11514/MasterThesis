@@ -121,6 +121,7 @@ pub async fn run_metrics(
             channel,
             config.cross_night_reference,
             config.max_fwhm,
+            config.rejection_threshold,
         )?;
         Ok::<_, String>(fe_state)
     })

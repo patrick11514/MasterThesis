@@ -38,6 +38,21 @@
   >
     <FileImageIcon class={FILE_COLORS[file.type]} />
     <span class="flex-1 truncate">{file.name}</span>
+    {#if file.state === 'Accepted'}
+      <span
+        class="ml-2 inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800"
+      >
+        Accepted
+      </span>
+    {:else if file.state === 'Rejected'}
+      <span
+        class="ml-2 inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800"
+        title={file.reject_reason ?? 'Rejected'}
+        aria-label={file.reject_reason ?? 'Rejected'}
+      >
+        Rejected
+      </span>
+    {/if}
 
     <DropdownMenu.Root>
       <DropdownMenu.Trigger>

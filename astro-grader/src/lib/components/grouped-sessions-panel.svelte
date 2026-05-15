@@ -262,7 +262,7 @@
                     type="checkbox"
                     checked={getSelectedCount() === (selectedSession?.lights.length ?? 0) &&
                       (selectedSession?.lights.length ?? 0) > 0}
-                    onclick={(e: any) => {
+                    onclick={(e) => {
                       e.stopPropagation();
                       selectAllVisible(selectedSession?.lights.map((l) => l.path) ?? []);
                     }}
@@ -295,7 +295,7 @@
                       <input
                         type="checkbox"
                         checked={isSelected(light.path)}
-                        onclick={(e: any) => {
+                        onclick={(e) => {
                           e.stopPropagation();
                           toggleSelect(light.path);
                         }}
@@ -306,7 +306,7 @@
                       title={light.path}
                       onclick={(ev) => {
                         // prevent from clicking through when using buttons/checkbox
-                        // @ts-expect-error
+                        // @ts-expect-error Target is type of Node, which ts doesn't like
                         if (ev.target?.closest('button') || ev.target?.closest('input')) return;
                         previewState.previewImage = light;
                         previewState.imageOptions = undefined;
@@ -323,7 +323,11 @@
                       {/if}
                     </td>
                     <td class="px-3 py-2">
-                      <Badge variant="outline" class={statusBadgeClass(light.state)}>
+                      <Badge
+                        title={light.reject_reason}
+                        variant="outline"
+                        class={statusBadgeClass(light.state)}
+                      >
                         {light.state}
                       </Badge>
                     </td>

@@ -36,6 +36,7 @@
   let draftCrossNightReference = $state(false);
   let draftMaxFwhm = $state(0);
   let draftNightPrefixes = $state<NightPrefix[]>([]);
+  let draftRejectionThreshold = $state(0.5);
 
   let tempFolderInput = $state<HTMLInputElement | null>(null);
   let temperatureStepInput = $state<HTMLInputElement | null>(null);
@@ -89,6 +90,7 @@
     draftCrossNightReference = appState.crossNightReference;
     draftMaxFwhm = appState.maxFwhm;
     draftNightPrefixes = cloneNightPrefixes(appState.nightPrefixes);
+    draftRejectionThreshold = appState.rejectionThreshold;
   };
 
   const loadConfigPath = async () => {
@@ -115,6 +117,10 @@
   const onSaveAndApply = async () => {
     isSaving = true;
 
+    const prevPrefixesJson = JSON.stringify(appState.nightPrefixes || []);
+    const prevRejection = appState.rejectionThreshold;
+    const prevMaxFwhm = appState.maxFwhm;
+
     appState.calibrationStorageMode = draftCalibrationStorageMode;
     appState.tempFolderPath = draftTempFolderPath;
     appState.temperatureStep = draftTemperatureStep;
@@ -122,10 +128,26 @@
     appState.gainStep = draftGainStep;
     appState.crossNightReference = draftCrossNightReference;
     appState.maxFwhm = draftMaxFwhm;
+    appState.rejectionThreshold = draftRejectionThreshold;
     appState.nightPrefixes = cloneNightPrefixes(draftNightPrefixes);
 
     await appState.saveConfig();
-    appState.reApplyFilters();
+
+    // Only re-apply filters (which resets grouped nights) when night prefixes changed.
+    const newPrefixesJson = JSON.stringify(appState.nightPrefixes || []);
+    if (prevPrefixesJson !== newPrefixesJson) {
+      appState.reApplyFilters();
+      toast.success('Config saved', { description: 'Night filters changed — frames regrouped' });
+    } else if (prevRejection !== appState.rejectionThreshold || prevMaxFwhm !== appState.maxFwhm) {
+      toast.success('Config saved', {
+        description: 'Re-running metrics with updated rejection criteria...'
+      });
+
+      appState.runMetrics();
+    } else {
+      toast.success('Config saved');
+    }
+
     isSaving = false;
     isDialogOpen = false;
   };
@@ -496,6 +518,31 @@
                 <p class="text-xs text-muted-foreground">
                   Frames below 3σ stay accepted. Frames below 3σ and above this FWHM threshold are
                   rejected.
+                </p>
+              </div>
+              <div class="grid gap-1">
+                <Label for="rejection-threshold">Rejection threshold</Label>
+                <div class="flex items-center gap-3">
+                  <input
+                    id="rejection-threshold"
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    bind:value={draftRejectionThreshold}
+                    class="flex-1"
+                  />
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="1"
+                    bind:value={draftRejectionThreshold}
+                    class="w-20"
+                  />
+                </div>
+                <p class="text-xs text-muted-foreground">
+                  Frames with normalized quality score below this value will be rejected.
                 </p>
               </div>
             </div>

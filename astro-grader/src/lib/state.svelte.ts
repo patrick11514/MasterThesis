@@ -25,6 +25,7 @@ class AppState {
   public gainStep = $state(0);
   public crossNightReference = $state(false);
   public maxFwhm = $state(0);
+  public rejectionThreshold = $state(0.5);
   public currentPreviewFilePath = $state<string | null>(null);
   public calibrationStorageMode = $state<CalibrationStorageMode>('NextToOriginal');
   public tempFolderPath = $state('');
@@ -137,6 +138,7 @@ class AppState {
       this.gainStep = config.gain_step ?? 0;
       this.crossNightReference = config.cross_night_reference ?? false;
       this.maxFwhm = config.max_fwhm ?? 0;
+      this.rejectionThreshold = config.rejection_threshold ?? 0.5;
       this.rawNights = this.sortRawNights(feState.raw_nights ?? {});
       this.groupedNights = feState.grouped_nights ?? [];
       this.activeGroupedSessionUuid = feState.active_grouped_session_uuid ?? null;
@@ -167,12 +169,12 @@ class AppState {
         exposure_step: this.exposureStep,
         gain_step: this.gainStep,
         cross_night_reference: this.crossNightReference,
-        max_fwhm: this.maxFwhm
+        max_fwhm: this.maxFwhm,
+        rejection_threshold: this.rejectionThreshold
       } satisfies Config;
 
       await invoke('config_set', { config });
       void this.persistFeState();
-      toast.success('Config saved');
     } catch (error) {
       toast.error('Failed to save config', {
         description: error as string

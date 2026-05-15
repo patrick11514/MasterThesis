@@ -44,6 +44,10 @@ fn default_false() -> bool {
     false
 }
 
+fn default_rejection_threshold() -> f32 {
+    0.5
+}
+
 #[derive(serde::Serialize, serde::Deserialize, TS)]
 #[ts(export)]
 pub struct Config {
@@ -62,6 +66,8 @@ pub struct Config {
     pub cross_night_reference: bool,
     #[serde(default = "default_zero_step")]
     pub max_fwhm: f32,
+    #[serde(default = "default_rejection_threshold")]
+    pub rejection_threshold: f32,
 }
 
 impl Default for Config {
@@ -75,6 +81,7 @@ impl Default for Config {
             gain_step: default_zero_step(),
             cross_night_reference: default_false(),
             max_fwhm: default_zero_step(),
+            rejection_threshold: default_rejection_threshold(),
         }
     }
 }

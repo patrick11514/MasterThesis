@@ -57,9 +57,13 @@ fn main() {
                     Ok(mut stats) => {
                         let (score, is_trail) = scoring::compute_score(&stats);
                         stats.quality_score = Some(score);
-                        let mut final_state = metrics::classify_frame(score, &stats, max_fwhm);
-                        if is_trail {
-                            final_state = astro_grader_lib::fits::FrameState::Rejected;
+                        let (mut final_state, final_reject_reason) =
+                            metrics::classify_frame(None, &stats, max_fwhm, 0.5, is_trail);
+
+                        if let Some(ref r) = final_reject_reason {
+                            if r != &format!("Score below limit ({:.2})", 0.5) {
+                                final_state = astro_grader_lib::fits::FrameState::Rejected;
+                            }
                         }
 
                         let final_state_str = match final_state {

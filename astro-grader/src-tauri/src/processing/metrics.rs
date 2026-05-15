@@ -103,45 +103,57 @@ fn image_path_for_metrics(file: &File) -> PathBuf {
 }
 
 pub fn classify_frame(
-    raw_score: f32,
     normalized_score: Option<f32>,
     stats: &ImageStats,
     max_fwhm: f32,
-) -> FrameState {
+    min_score: f32, // The user's slider setting
+    is_trail: bool, // whether pass 1 detected a trail
+) -> (FrameState, Option<String>) {
     let fwhm = stats.fwhm.unwrap_or(f32::INFINITY);
     let star_count = stats.star_count.unwrap_or(0);
+    let bg_contrast = stats.background_contrast.unwrap_or(0.0);
 
     // ---------------------------------------------------------
-    // 1. ABSOLUTE HARD LIMITS (Pass 1 & Pass 2)
+    // 1. ABSOLUTE HARD LIMITS
     // ---------------------------------------------------------
+    if is_trail {
+        return (FrameState::Rejected, Some("Star Trail".to_string()));
+    }
+
     if star_count < 50 {
-        return FrameState::Rejected;
+        return (
+            FrameState::Rejected,
+            Some("Low Star Count (Cloud)".to_string()),
+        );
     }
 
     if fwhm > max_fwhm {
-        return FrameState::Rejected;
+        return (
+            FrameState::Rejected,
+            Some("Out of Focus / High FWHM".to_string()),
+        );
+    }
+
+    if bg_contrast > 15.0 {
+        return (
+            FrameState::Rejected,
+            Some("Severe Background Glow".to_string()),
+        );
     }
 
     // ---------------------------------------------------------
     // 2. STATISTICAL LIMITS (Pass 2 Only)
     // ---------------------------------------------------------
-    // Only apply the sigma threshold if we actually calculated the normal distribution!
     if let Some(norm_score) = normalized_score {
-        let bg_norm = scoring::norm_bg(stats.background_contrast);
-        const BG_REJECT_NORM_THRESHOLD: f32 = 0.25;
-
-        // Reject if the score is mediocre (< 1.5 sigma) AND the background is washed out
-        if norm_score < 0.50 && bg_norm > BG_REJECT_NORM_THRESHOLD {
-            return FrameState::Rejected;
-        }
-
-        // Reject if the frame is generally very poor (> 2 sigma deviation)
-        if norm_score < 0.33 {
-            return FrameState::Rejected;
+        if norm_score < min_score {
+            return (
+                FrameState::Rejected,
+                Some(format!("Score below limit ({:.2})", min_score)),
+            );
         }
     }
 
-    FrameState::Accepted
+    (FrameState::Accepted, None)
 }
 
 pub fn extract_metrics_from_pixels(
@@ -372,7 +384,7 @@ fn score_distribution(values: &[f32]) -> Vec<f32> {
 
 fn copy_metrics_back_to_raw_nights(
     state: &mut FeState,
-    metrics_by_path: &HashMap<String, (ImageStats, FrameState)>,
+    metrics_by_path: &HashMap<String, (ImageStats, FrameState, Option<String>)>,
 ) {
     for night_files in state.raw_nights.values_mut() {
         for raw_file in night_files {
@@ -382,9 +394,10 @@ fn copy_metrics_back_to_raw_nights(
                 .unwrap_or_else(|| raw_file.path().clone());
             let path = normalize_path(&path_buf);
 
-            if let Some((stats, state_value)) = metrics_by_path.get(&path) {
+            if let Some((stats, state_value, reject_reason)) = metrics_by_path.get(&path) {
                 raw_file.stats = Some(stats.clone());
                 raw_file.state = *state_value;
+                raw_file.reject_reason = reject_reason.clone();
             }
         }
     }
@@ -406,6 +419,7 @@ pub fn run_metrics(
     channel: tauri::ipc::Channel<CalibrationProgressMessage>,
     cross_night_reference: bool,
     max_fwhm: f32,
+    rejection_threshold: f32,
 ) -> Result<(), String> {
     // Helper to get current time
     fn now_millis() -> u64 {
@@ -456,7 +470,7 @@ pub fn run_metrics(
     // send initial progress
     let _ = channel.send(progress.clone());
 
-    let mut metrics_by_path = HashMap::<String, (ImageStats, FrameState)>::new();
+    let mut metrics_by_path = HashMap::<String, (ImageStats, FrameState, Option<String>)>::new();
     let mut raw_score_by_path = HashMap::<String, f32>::new();
     let mut score_sources_by_session = Vec::with_capacity(state.grouped_nights.len());
 
@@ -471,53 +485,65 @@ pub fn run_metrics(
         // Parallel metrics extraction per-session. We collect per-light results and
         // then merge them back into the session in a single-threaded step to
         // avoid mutable aliasing issues.
-        let outcomes: Vec<Result<(usize, ImageStats, FrameState), String>> = session
-            .lights
-            .par_iter()
-            .enumerate()
-            .map(|(i, light)| {
-                let image_path = image_path_for_metrics(light);
-                println!("[METRICS] Processing file {}: {}", i, image_path.display());
+        let outcomes: Vec<Result<(usize, ImageStats, FrameState, Option<String>), String>> =
+            session
+                .lights
+                .par_iter()
+                .enumerate()
+                .map(|(i, light)| {
+                    let image_path = image_path_for_metrics(light);
+                    println!("[METRICS] Processing file {}: {}", i, image_path.display());
 
-                let mut fits = FitsFile::new(image_path.clone()).map_err(|_| {
-                    format!(
-                        "Unable to open calibrated frame for metrics: {}",
-                        image_path.display()
-                    )
-                })?;
+                    let mut fits = FitsFile::new(image_path.clone()).map_err(|_| {
+                        format!(
+                            "Unable to open calibrated frame for metrics: {}",
+                            image_path.display()
+                        )
+                    })?;
 
-                let image = ImageDataPixels::from_fits(&mut fits).map_err(|_| {
-                    format!(
-                        "Unable to read calibrated frame for metrics: {}",
-                        image_path.display()
-                    )
-                })?;
+                    let image = ImageDataPixels::from_fits(&mut fits).map_err(|_| {
+                        format!(
+                            "Unable to read calibrated frame for metrics: {}",
+                            image_path.display()
+                        )
+                    })?;
 
-                let mut stats = extract_metrics_from_pixels(
-                    &image.pixels,
-                    image.data.width,
-                    image.data.height,
-                )?;
+                    let mut stats = extract_metrics_from_pixels(
+                        &image.pixels,
+                        image.data.width,
+                        image.data.height,
+                    )?;
 
-                // Compute score and detect trails (raw_score preserved for final decisions)
-                let (raw_score, is_trail) = scoring::compute_score(&stats);
-                stats.quality_score = Some(raw_score);
-                println!(
-                    "  [RAW_SCORE] raw_score={:.3}, is_trail={}, stars={:?}, fwhm={:?}",
-                    raw_score, is_trail, stats.star_count, stats.fwhm
-                );
+                    // Compute score and detect trails (raw_score preserved for final decisions)
+                    let (raw_score, is_trail) = scoring::compute_score(&stats);
+                    stats.quality_score = Some(raw_score);
+                    println!(
+                        "  [RAW_SCORE] raw_score={:.3}, is_trail={}, stars={:?}, fwhm={:?}",
+                        raw_score, is_trail, stats.star_count, stats.fwhm
+                    );
 
-                let mut state_after = classify_frame(raw_score, None, &stats, max_fwhm);
-                if is_trail {
-                    state_after = FrameState::Rejected;
-                    println!("  [STATE] Trail detected -> {:?}", state_after);
-                } else {
-                    println!("  [STATE] Initial classification -> {:?}", state_after);
-                }
+                    let (mut state_after, reject_reason) =
+                        classify_frame(None, &stats, max_fwhm, rejection_threshold, is_trail);
 
-                Ok((i, stats, state_after))
-            })
-            .collect();
+                    // If the reason is an absolute rejection (not a "Score below limit"),
+                    // enforce the score guillotine here by setting quality_score to 0.0
+                    if let Some(ref r) = reject_reason {
+                        if r != &format!("Score below limit ({:.2})", rejection_threshold) {
+                            state_after = FrameState::Rejected;
+                            println!("  [STATE] Absolute rejection ({}) -> {:?}", r, state_after);
+                        } else {
+                            println!(
+                                "  [STATE] Statistical rejection ({}) -> {:?}",
+                                r, state_after
+                            );
+                        }
+                    } else {
+                        println!("  [STATE] Initial classification -> {:?}", state_after);
+                    }
+
+                    Ok((i, stats, state_after, reject_reason))
+                })
+                .collect();
 
         // Check for errors
         for r in &outcomes {
@@ -530,10 +556,11 @@ pub fn run_metrics(
         let mut processed = 0usize;
         let mut rejected = 0usize;
         for r in outcomes.into_iter().map(|r| r.unwrap()) {
-            let (idx, stats, new_state) = r;
+            let (idx, stats, new_state, reject_reason) = r;
             if let Some(light) = session.lights.get_mut(idx) {
                 light.stats = Some(stats.clone());
                 light.state = new_state;
+                light.reject_reason = reject_reason.clone();
                 println!("[MERGE] File {} merged with state: {:?}", idx, new_state);
             }
 
@@ -554,7 +581,10 @@ pub fn run_metrics(
                 let image_path_key = normalize_path(&image_path);
                 raw_score_by_path
                     .insert(image_path_key.clone(), stats.quality_score.unwrap_or(0.0));
-                metrics_by_path.insert(image_path_key, (stats.clone(), new_state));
+                metrics_by_path.insert(
+                    image_path_key,
+                    (stats.clone(), new_state, reject_reason.clone()),
+                );
             }
         }
 
@@ -607,11 +637,34 @@ pub fn run_metrics(
                         println!("  -> Keeping previous Rejected state (e.g., Trail)");
                     } else {
                         // Let classify_frame decide using the new, tighter normalized score!
-                        light.state = classify_frame(raw_score, Some(score), stats, max_fwhm);
+                        let (new_state, reject_reason) = classify_frame(
+                            Some(score),
+                            stats,
+                            max_fwhm,
+                            rejection_threshold,
+                            false,
+                        );
+
+                        // If an absolute rejection reason occurred, enforce the guillotine
+                        if let Some(ref r) = reject_reason {
+                            if r != &format!("Score below limit ({:.2})", rejection_threshold) {
+                                light.state = FrameState::Rejected;
+                            } else {
+                                light.state = new_state;
+                            }
+                        } else {
+                            light.state = new_state;
+                        }
+                        light.reject_reason = reject_reason.clone();
                         println!("  -> Classified -> {:?}", light.state);
+                        metrics_by_path.insert(
+                            key.clone(),
+                            (stats.clone(), light.state, reject_reason.clone()),
+                        );
+                        continue;
                     }
 
-                    metrics_by_path.insert(key, (stats.clone(), light.state));
+                    metrics_by_path.insert(key, (stats.clone(), light.state, None));
                 }
             }
         }
@@ -645,11 +698,32 @@ pub fn run_metrics(
                         println!("  -> Keeping previous Rejected state");
                     } else {
                         // Let your centralized function handle ALL the logic!
-                        light.state = classify_frame(raw_score, Some(score), stats, max_fwhm);
+                        let (new_state, reject_reason) = classify_frame(
+                            Some(score),
+                            stats,
+                            max_fwhm,
+                            rejection_threshold,
+                            false,
+                        );
+
+                        if let Some(ref r) = reject_reason {
+                            if r != &format!("Score below limit ({:.2})", rejection_threshold) {
+                                stats.quality_score = Some(0.0);
+                                light.state = FrameState::Rejected;
+                            } else {
+                                light.state = new_state;
+                            }
+                        } else {
+                            light.state = new_state;
+                        }
+                        light.reject_reason = reject_reason.clone();
                         println!("  -> Classified with normalized score -> {:?}", light.state);
                     }
 
-                    metrics_by_path.insert(key, (stats.clone(), light.state));
+                    metrics_by_path.insert(
+                        key,
+                        (stats.clone(), light.state, light.reject_reason.clone()),
+                    );
                 }
             }
         }
@@ -727,7 +801,7 @@ mod tests {
     #[test]
     fn accepts_inlier_frames() {
         let stats = ImageStats {
-            star_count: Some(10),
+            star_count: Some(100),
             fwhm: Some(2.0),
             hfd: None,
             eccentricity: None,
@@ -735,13 +809,16 @@ mod tests {
             quality_score: None,
         };
 
-        assert_eq!(classify_frame(0.2, &stats, 3.0), FrameState::Accepted);
+        assert_eq!(
+            classify_frame(0.2, None, &stats, 3.0, 0.5, false),
+            (FrameState::Accepted, None)
+        );
     }
 
     #[test]
     fn rejects_outliers_above_fwhm_threshold() {
         let stats = ImageStats {
-            star_count: Some(10),
+            star_count: Some(100),
             fwhm: Some(4.0),
             hfd: None,
             eccentricity: None,
@@ -749,13 +826,19 @@ mod tests {
             quality_score: None,
         };
 
-        assert_eq!(classify_frame(-0.5, &stats, 3.0), FrameState::Rejected);
+        assert_eq!(
+            classify_frame(-0.5, None, &stats, 3.0, 0.5, false),
+            (
+                FrameState::Rejected,
+                Some("Out of Focus / High FWHM".to_string())
+            )
+        );
     }
 
     #[test]
     fn keeps_outliers_below_fwhm_threshold_accepted() {
         let stats = ImageStats {
-            star_count: Some(10),
+            star_count: Some(100),
             fwhm: Some(2.0),
             hfd: None,
             eccentricity: None,
@@ -763,21 +846,29 @@ mod tests {
             quality_score: None,
         };
 
-        assert_eq!(classify_frame(-0.5, &stats, 3.0), FrameState::Accepted);
+        assert_eq!(
+            classify_frame(-0.5, None, &stats, 3.0, 0.5, false),
+            (FrameState::Accepted, None)
+        );
     }
 
     #[test]
     fn rejects_high_background_even_if_fwhm_low() {
         let stats = ImageStats {
-            star_count: Some(10),
+            star_count: Some(100),
             fwhm: Some(2.0),
             hfd: None,
             eccentricity: None,
-            background_contrast: Some(10.0), // normalized -> 10/20 = 0.5 > 0.25
+            background_contrast: Some(40.0),
             quality_score: None,
         };
 
-        // With a negative score this should be rejected due to high background.
-        assert_eq!(classify_frame(-0.2, &stats, 3.0), FrameState::Rejected);
+        assert_eq!(
+            classify_frame(-0.2, None, &stats, 3.0, 0.5, false),
+            (
+                FrameState::Rejected,
+                Some("Severe Background Glow".to_string())
+            )
+        );
     }
 }

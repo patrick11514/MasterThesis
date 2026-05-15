@@ -35,6 +35,9 @@ pub struct File {
     #[ts(as = "Option<String>")]
     pub calibrated_frame: Option<PathBuf>,
     #[serde(default)]
+    #[ts(as = "Option<String>")]
+    pub reject_reason: Option<String>,
+    #[serde(default)]
     pub state: FrameState,
 }
 
@@ -90,6 +93,7 @@ fn path_to_file(file_path: PathBuf) -> Option<File> {
             .into_owned(),
         stats: None,
         calibrated_frame: None,
+        reject_reason: None,
         state: FrameState::Default,
         default_headers: headers,
     });

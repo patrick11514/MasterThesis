@@ -239,9 +239,6 @@
                             {#if step.skipped_count > 0}
                               ({step.skipped_count} Skipped)
                             {/if}
-                            {#if step.rejected_count > 0}
-                              ({step.rejected_count} Rejected)
-                            {/if}
                           </span>
                         {:else}
                           <span class="text-muted-foreground">({step.count})</span>
