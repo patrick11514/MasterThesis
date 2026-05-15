@@ -810,7 +810,7 @@ mod tests {
         };
 
         assert_eq!(
-            classify_frame(0.2, None, &stats, 3.0, 0.5, false),
+            classify_frame(None, &stats, 3.0, 0.5, false),
             (FrameState::Accepted, None)
         );
     }
@@ -827,7 +827,7 @@ mod tests {
         };
 
         assert_eq!(
-            classify_frame(-0.5, None, &stats, 3.0, 0.5, false),
+            classify_frame(None, &stats, 3.0, 0.5, false),
             (
                 FrameState::Rejected,
                 Some("Out of Focus / High FWHM".to_string())
@@ -847,7 +847,7 @@ mod tests {
         };
 
         assert_eq!(
-            classify_frame(-0.5, None, &stats, 3.0, 0.5, false),
+            classify_frame(None, &stats, 3.0, 0.5, false),
             (FrameState::Accepted, None)
         );
     }
@@ -864,7 +864,7 @@ mod tests {
         };
 
         assert_eq!(
-            classify_frame(-0.2, None, &stats, 3.0, 0.5, false),
+            classify_frame(None, &stats, 3.0, 0.5, false),
             (
                 FrameState::Rejected,
                 Some("Severe Background Glow".to_string())

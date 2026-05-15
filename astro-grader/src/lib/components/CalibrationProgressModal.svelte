@@ -143,11 +143,6 @@
 
   const stepIsActive = (step: CalibrationProgressStep) => step.status === 'Running';
   const canCancel = $derived(progress?.status === 'Running');
-  const isCompleted = $derived(
-    progress?.status === 'Completed' ||
-      progress?.status === 'Failed' ||
-      progress?.status === 'Cancelled'
-  );
 
   const toggleStepExpanded = (stepId: string) => {
     expandedSteps[stepId] = !expandedSteps[stepId];

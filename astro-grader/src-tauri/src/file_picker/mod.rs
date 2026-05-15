@@ -1,4 +1,3 @@
-use fitsio::HeaderValue;
 use rayon::prelude::*;
 use std::ffi::OsString;
 use std::path::PathBuf;

@@ -338,7 +338,7 @@ class AppState {
   async cancelBatch() {
     try {
       await invoke('calibrate_cancel');
-    } catch (error) {
+    } catch {
       // ignore
     }
 
@@ -346,7 +346,7 @@ class AppState {
       // try a metrics cancel if backend supports it
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await invoke('run_metrics_cancel' as any);
-    } catch (error) {
+    } catch {
       // ignore
     }
   }
@@ -396,7 +396,7 @@ class AppState {
         finished_at: null,
         status: totalSessions === 0 ? 'Completed' : 'Running',
         current_step_id: null,
-        steps: steps as any
+        steps
       };
 
       this.metricsProgress = preview;
@@ -474,7 +474,7 @@ class AppState {
           if (step.status === 'Completed') {
             step.ended_at = BigInt(Date.now());
           }
-          this.batchProgress = { ...bp } as any;
+          this.batchProgress = { ...bp };
         };
 
         try {
@@ -509,7 +509,7 @@ class AppState {
         finished_at: null,
         status: 'Running' as const,
         current_step_id: null,
-        steps: [] as any
+        steps: [] as CalibrationProgressStep[]
       };
 
       const metricsSteps = this.groupedNights.map((session) => ({
@@ -577,7 +577,7 @@ class AppState {
             }
           }
 
-          this.batchProgress = { ...bp } as any;
+          this.batchProgress = { ...bp };
         };
 
         const updatedState = await invoke<FeState>('calibrate', { request, channel });
@@ -623,7 +623,7 @@ class AppState {
             }
           }
 
-          this.batchProgress = { ...bp } as any;
+          this.batchProgress = { ...bp };
         };
 
         const updatedState = await invoke<FeState>('run_metrics', { channel });

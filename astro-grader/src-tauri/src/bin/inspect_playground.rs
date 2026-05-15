@@ -3,15 +3,6 @@ use std::path::PathBuf;
 use astro_grader_lib::fits::{FitsFile, ImageDataPixels};
 use astro_grader_lib::processing::{metrics, scoring};
 
-fn classify_final(score: f32, fwhm: Option<f32>, max_fwhm: f32, is_trail: bool) -> &'static str {
-    let f = fwhm.unwrap_or(f32::INFINITY);
-    if is_trail || (score < 0.0 && f > max_fwhm) {
-        "Rejected"
-    } else {
-        "Accepted"
-    }
-}
-
 fn main() {
     let dir = std::env::args()
         .nth(1)

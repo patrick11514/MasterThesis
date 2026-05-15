@@ -42,7 +42,7 @@
   onDone={() => {
     appState.closeBatchProgress();
   }}
-/> 
+/>
 
 <main class="h-screen w-screen overflow-hidden">
   {@render children?.()}

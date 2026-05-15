@@ -90,13 +90,6 @@ pub struct CalibrationCancellation {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, ts_rs::TS)]
 #[ts(export)]
-pub struct CalibrateFrameTarget {
-    pub source_path: String,
-    pub calibrated_path: String,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, ts_rs::TS)]
-#[ts(export)]
 pub struct CalibrateRequest {
     pub storage_mode: config::CalibrationStorageMode,
     pub temp_folder_path: String,
