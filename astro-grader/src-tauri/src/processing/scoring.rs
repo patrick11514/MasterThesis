@@ -47,14 +47,14 @@ fn norm_ecc(ecc: Option<f32>) -> f32 {
 // Heuristic: large eccentricity or large HFD/FWHM ratio indicates trails.
 // Tuned thresholds: lower eccentricity and HFD/FWHM ratio to catch more subtle
 // trails (conservative change per user's request).
-const ECC_TRail_THRESHOLD: f32 = 0.6; // was 0.7
+const ECC_TRAIL_THRESHOLD: f32 = 0.6; // was 0.7
 const HFD_FWHM_RATIO_THRESHOLD: f32 = 1.6; // was 2.0
 const IS_TRAIL_FLAG_THRESHOLD: f32 = 0.55; // slightly lower than before
 
 fn detect_trail(stats: &ImageStats) -> (f32, bool) {
     let ecc = norm_ecc(stats.eccentricity);
     let mut trail = 0.0f32;
-    if ecc > ECC_TRail_THRESHOLD {
+    if ecc > ECC_TRAIL_THRESHOLD {
         trail = ecc;
     }
 

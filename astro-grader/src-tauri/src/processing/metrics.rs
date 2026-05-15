@@ -122,12 +122,6 @@ pub fn classify_frame(
         return FrameState::Rejected;
     }
 
-    // Safety net: If the linear weights in scoring.rs yield a deeply negative score,
-    // it's unequivocally bad data (e.g. massive trails + clouds).
-    if raw_score < -0.5 {
-        return FrameState::Rejected;
-    }
-
     // ---------------------------------------------------------
     // 2. STATISTICAL LIMITS (Pass 2 Only)
     // ---------------------------------------------------------
