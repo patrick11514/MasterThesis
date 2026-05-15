@@ -1,5 +1,6 @@
 <script lang="ts">
   import { previewState } from '$/lib/components/preview/state.svelte';
+  import { promptTargetDirectory } from '$/lib/files';
   import { FILE_BADGES } from '$/lib/files/types';
   import { getAppState } from '$/lib/state.svelte';
   import type { MasterOrFrames } from '$lib/types/MasterOrFrames';
@@ -61,6 +62,24 @@
     selectionMap = {};
   }
 
+  function getVisiblePaths() {
+    return selectedSession?.lights.map((light) => light.path) ?? [];
+  }
+
+  function getRejectedPaths() {
+    const rejectedPaths: string[] = [];
+
+    for (const session of appState.groupedNights) {
+      for (const light of session.lights) {
+        if (light.state === 'Rejected') {
+          rejectedPaths.push(light.path);
+        }
+      }
+    }
+
+    return rejectedPaths;
+  }
+
   function selectAllVisible(visiblePaths: string[]) {
     const allSelected = visiblePaths.every((p) => !!selectionMap[p]);
     if (allSelected) {
@@ -76,38 +95,61 @@
   }
 
   function selectAllRejected() {
-    if (!selectedSession) return;
-    for (const l of selectedSession.lights) {
-      if (l.state === 'Rejected') selectionMap[l.path] = true;
+    const rejectedPaths = getRejectedPaths();
+
+    if (rejectedPaths.length === 0) {
+      toast.info('No rejected frames found');
+      return;
     }
+
+    for (const path of rejectedPaths) {
+      selectionMap[path] = true;
+    }
+
     selectionMap = { ...selectionMap };
+    toast.success(
+      `Selected ${rejectedPaths.length} rejected frame${rejectedPaths.length === 1 ? '' : 's'}`
+    );
+  }
+
+  function getSelectedPaths() {
+    return Object.keys(selectionMap).filter((path) => selectionMap[path]);
   }
 
   async function moveSelected() {
-    const paths = Object.keys(selectionMap).filter((p) => selectionMap[p]);
+    const paths = getSelectedPaths();
     if (paths.length === 0) return;
-    // placeholder
-    toast.info(`Move selected files: ${paths.length} (TODO)`);
+
+    const targetDirectory = await promptTargetDirectory();
+    if (!targetDirectory) {
+      return;
+    }
+
+    const moved = await appState.moveSelectedFiles(paths, targetDirectory);
+    if (moved) {
+      clearSelection();
+    }
   }
 
   async function removeSelected() {
-    const paths = Object.keys(selectionMap).filter((p) => selectionMap[p]);
+    const paths = getSelectedPaths();
     if (paths.length === 0) return;
-    const ok = confirm(`Remove ${paths.length} selected files from the project?`);
-    if (!ok) return;
 
-    for (const path of paths) {
-      const entry = Object.entries(appState.rawNights).find(([, files]) =>
-        files.some((f) => f.path === path)
-      );
-      const night = entry?.[0] ?? null;
-      if (night) {
-        appState.removeFiles(night, path);
-      }
+    const firstOk = confirm(`Remove ${paths.length} selected files from the project?`);
+    if (!firstOk) return;
+
+    const secondOk = confirm(
+      'This will permanently delete the selected files from disk. Continue only if you are sure.'
+    );
+    if (!secondOk) return;
+
+    const thirdOk = confirm('Final warning: these files will be wiped from the drive. Proceed?');
+    if (!thirdOk) return;
+
+    const deleted = await appState.deleteSelectedFiles(paths);
+    if (deleted) {
+      clearSelection();
     }
-
-    clearSelection();
-    toast.success('Removed selected files');
   }
 
   function countMasterOrFrames(frames: MasterOrFrames): number {
@@ -224,27 +266,6 @@
             >
               Remove selected files
             </Button>
-            <Button
-              onclick={() => {
-                for (const night in appState.rawNights) {
-                  for (const file of appState.rawNights[night]) {
-                    file.state = 'Default';
-                    file.stats = null;
-                  }
-                }
-
-                for (const session of appState.groupedNights) {
-                  for (const light of session.lights) {
-                    light.state = 'Default';
-                    light.stats = null;
-                  }
-                }
-
-                appState.persistFeState();
-              }}
-            >
-              Reset metrics
-            </Button>
           </div>
           <div class="text-sm text-muted-foreground">Selected: {getSelectedCount()}</div>
         </div>
@@ -260,11 +281,11 @@
                 <th class="px-3 py-2 font-medium">
                   <input
                     type="checkbox"
-                    checked={getSelectedCount() === (selectedSession?.lights.length ?? 0) &&
-                      (selectedSession?.lights.length ?? 0) > 0}
+                    checked={getVisiblePaths().length > 0 &&
+                      getVisiblePaths().every((path) => !!selectionMap[path])}
                     onclick={(e) => {
                       e.stopPropagation();
-                      selectAllVisible(selectedSession?.lights.map((l) => l.path) ?? []);
+                      selectAllVisible(getVisiblePaths());
                     }}
                   />
                 </th>

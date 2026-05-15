@@ -1,5 +1,6 @@
 <script lang="ts">
   import CalibrationProgressModal from '$/lib/components/CalibrationProgressModal.svelte';
+  import FileOperationProgressModal from '$/lib/components/FileOperationProgressModal.svelte';
   import { Toaster } from '$/lib/components/ui/sonner';
   import { getAppStateSync } from '$/lib/state.svelte';
   import { ModeWatcher } from 'mode-watcher';
@@ -41,6 +42,13 @@
   }}
   onDone={() => {
     appState.closeBatchProgress();
+  }}
+/>
+
+<FileOperationProgressModal
+  progress={appState.fileOperationProgress}
+  onDone={() => {
+    appState.closeFileOperationProgress();
   }}
 />
 

@@ -12,6 +12,8 @@ import type { CalibrationStorageMode } from './types/CalibrationStorageMode';
 import type { Config } from './types/Config';
 import type { FeState } from './types/FeState';
 import type { File } from './types/File';
+import type { FileBatchOperationKind } from './types/FileBatchOperationKind';
+import type { FileBatchOperationProgressMessage } from './types/FileBatchOperationProgressMessage';
 import type { NightPrefix } from './types/NightPrefix';
 import { sortFunction } from './utils';
 
@@ -32,6 +34,7 @@ class AppState {
   public calibrationProgress = $state<CalibrationProgressMessage | null>(null);
   public batchProgress = $state<CalibrationProgressMessage | null>(null);
   public metricsProgress = $state<CalibrationProgressMessage | null>(null);
+  public fileOperationProgress = $state<FileBatchOperationProgressMessage | null>(null);
   public loaded = false;
   public framesShown = $state(Object.fromEntries(FILE_TYPES.map((type) => [type, true])));
 
@@ -333,6 +336,91 @@ class AppState {
 
   closeBatchProgress() {
     this.batchProgress = null;
+  }
+
+  closeFileOperationProgress() {
+    this.fileOperationProgress = null;
+  }
+
+  private buildFileOperationPreview(operation: FileBatchOperationKind, totalCount: number) {
+    return {
+      started_at: BigInt(Date.now()),
+      finished_at: null,
+      status: 'Running' as const,
+      operation,
+      processed_count: 0,
+      total_count: totalCount,
+      current_path: null,
+      error: null
+    } satisfies FileBatchOperationProgressMessage;
+  }
+
+  private async runFileOperation(
+    operation: FileBatchOperationKind,
+    paths: string[],
+    targetDirectory?: string
+  ) {
+    if (this.fileOperationProgress) {
+      toast.error('A file operation is already running');
+      return false;
+    }
+
+    if (paths.length === 0) {
+      toast.error('No files selected');
+      return false;
+    }
+
+    this.fileOperationProgress = this.buildFileOperationPreview(operation, paths.length);
+
+    try {
+      const channel = new Channel<FileBatchOperationProgressMessage>();
+      channel.onmessage = (message) => {
+        this.fileOperationProgress = message;
+      };
+
+      const updatedState = await invoke<FeState>('batch_file_operation', {
+        request: {
+          operation,
+          paths,
+          target_directory: targetDirectory ?? null
+        },
+        channel
+      });
+
+      this.applyFeState(updatedState);
+      void this.persistFeState();
+
+      toast.success(operation === 'Move' ? 'Moved selected files' : 'Deleted selected files');
+
+      return true;
+    } catch (error) {
+      const errorMessage = String(error);
+      toast.error(
+        operation === 'Move' ? 'Failed to move selected files' : 'Failed to delete selected files',
+        {
+          description: errorMessage
+        }
+      );
+
+      if (this.fileOperationProgress) {
+        this.fileOperationProgress = {
+          ...this.fileOperationProgress,
+          status: 'Failed',
+          finished_at: BigInt(Date.now()),
+          error: errorMessage
+        };
+      }
+
+      return false;
+    }
+  }
+
+  async moveSelectedFiles(paths: string[], targetDirectory: string) {
+    return await this.runFileOperation('Move', paths, targetDirectory);
+  }
+
+  async deleteSelectedFiles(paths: string[]) {
+    return await this.runFileOperation('Delete', paths);
   }
 
   async cancelBatch() {

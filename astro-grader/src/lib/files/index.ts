@@ -51,6 +51,18 @@ export const promptDirectory = async (channel: Channel<number>) => {
   });
 };
 
+export const promptTargetDirectory = async () => {
+  const directory = await open({
+    directory: true
+  });
+
+  if (!directory) {
+    return;
+  }
+
+  return directory;
+};
+
 export const cancelDirectoryScan = async () => {
   await invoke('file_picker_cancel_recursive');
 };

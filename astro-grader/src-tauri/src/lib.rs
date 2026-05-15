@@ -71,6 +71,7 @@ pub fn run() {
             state::get_fe_state,
             state::set_fe_state,
             state::set_fe_current_preview_file,
+            state::batch_file_operation,
             processing::group_frames,
             processing::calibrate,
             processing::run_metrics,
