@@ -133,17 +133,27 @@
 
     await appState.saveConfig();
 
+    const hasCalibratedLights = appState.groupedNights.some((session) =>
+      session.lights.some((light) => light.calibrated_frame !== null || light.state !== 'Default')
+    );
+
     // Only re-apply filters (which resets grouped nights) when night prefixes changed.
     const newPrefixesJson = JSON.stringify(appState.nightPrefixes || []);
     if (prevPrefixesJson !== newPrefixesJson) {
       appState.reApplyFilters();
       toast.success('Config saved', { description: 'Night filters changed — frames regrouped' });
     } else if (prevRejection !== appState.rejectionThreshold || prevMaxFwhm !== appState.maxFwhm) {
-      toast.success('Config saved', {
-        description: 'Re-running metrics with updated rejection criteria...'
-      });
+      if (hasCalibratedLights) {
+        toast.success('Config saved', {
+          description: 'Re-running metrics with updated rejection criteria...'
+        });
 
-      appState.runMetrics();
+        appState.runMetrics();
+      } else {
+        toast.success('Config saved', {
+          description: 'Metrics settings saved. Run calibration first to auto-run metrics.'
+        });
+      }
     } else {
       toast.success('Config saved');
     }

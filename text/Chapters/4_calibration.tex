@@ -1,0 +1,32 @@
+\chapter{Výpočetní zpracování signálu a kalibrace obrazu}
+\label{ch:calibration}
+
+Surová obrazová data získaná z astronomických senzorů obsahují kromě užitečného signálu z vesmírných objektů také řadu systematických i náhodných chyb, jako jsou tepelný šum, čtecí šum elektroniky, prachové částice v optické cestě a vinětace. Pro vědecké a fotometrické využití je nezbytné tyto artefakty matematicky odstranit pomocí procesu kalibrace.
+
+\section{Statistické kalibrace referenčních snímků}
+Kalibrace surových snímků vyžaduje precizní vytvoření čistých kalibračních předloh (tzv. \textit{Master} snímků), které vznikají integrací (stackingem) většího počtu dílčích expozic. Tento proces zásadně zvyšuje poměr signálu a šumu (\textbf{\ac{SNR}}) a odstraňuje náhodné jevy, jako jsou zásahy částicemi kosmického záření. V rámci aplikační logiky jsou pro různé typy kalibračních dat aplikovány odlišné statistické přístupy:
+
+\textbf{Master Dark (Temný snímek):}
+Cílem temného snímku je mapovat tepelný šum a čtecí šum senzoru v naprosté tmě. Pro výpočet \textit{Master Dark} algoritmus využívá metodu \textbf{Sigma-Clipped Mean} (průměr s ořezem extrémních hodnot), pokud je k dispozici 6 a více dílčích snímků. Výpočet je implementován pomocí dvouprůchodového Welfordova algoritmu (Two-pass Welford algorithm)\cite{welford1962}. V prvním průchodu se z proudu dat (streaming reads) vypočítá průměr a čitatel rozptylu ($M_2$), ve druhém průchodu se aplikuje ořez hodnot přesahujících stanovený limit (typicky 3$\sigma$) a vypočítá se finální průměr. Tento přístup nevyžaduje načtení všech souborů do operační paměti současně a efektivně eliminuje náhodné extrémy, jako jsou stopy kosmického záření. V případě 5 a méně snímků se algoritmus automaticky přepíná na výpočet mediánu.
+
+\textbf{Master Flat a Master Bias:}
+Ofsetové snímky (\textit{Bias}) mapují fixní čtecí vzor senzoru při nulové expozici, zatímco snímky plochého pole (\textit{Flat}) korigují nerovnoměrné osvětlení čipu (vinětaci) a stíny prachových částic. Pro oba tyto typy je plošně využíván \textbf{paralelní výpočet mediánu} nezávisle na počtu snímků. Medián je z podstaty vysoce robustní vůči lokálním anomáliím (např. ojedinělé defekty nebo kosmické záření) a snímky plochého pole jsou přirozeně natolik uniformní, že výpočet průměru nepřináší žádný benefit. Aby byl výpočet co nejrychlejší a paměťově úsporný, neprovádí se úplné třídění polí se složitostí $O(n \log n)$, ale využívá se nestabilní selekční algoritmus (\texttt{select\_nth\_unstable}), který dokáže najít medián v lineárním čase $O(n)$. 
+
+Veškeré tyto výpočty jsou masivně paralelizovány knihovnou \textit{Rayon}\footnote{https://crates.io/crates/rayon}. \textit{Master Flat} je po svém složení navíc normalizován – je vydělen svou vlastní maximální hodnotou pro dosažení jednotkového zisku (unity gain).
+
+\section{Pixelová aritmetika a redukce systematických chyb}
+Následný proces kalibrace dat probíhá striktně na úrovni jednotlivých pixelů. Pojem „matematická redukce“ je často nahrazován přesnějším termínem \textit{pixelová aritmetika}, jelikož se na každou buňku obrazové matice aplikují základní matematické operátory (sčítání, odčítání, násobení, dělení). 
+
+Základní rovnicí pro plnou kalibraci astronomického snímku je redukce temného proudu, následovaná korekcí plochého pole:\cite{berry2005}
+\begin{equation}
+    \text{Kalibrovaný snímek} = \frac{\text{Surový snímek (Light)} - \text{Master Dark}}{\text{Master Flat}}
+\end{equation}
+
+\textbf{Použití a redundance Bias snímků:}\ Při kalibraci se často řeší, zda používat ofsetové snímky (\textit{Bias}), které zachycují základní čtecí šum elektroniky kamery. V našem moderním zpracování platí tato jednoduchá logika:
+\begin{enumerate} 
+    \item \textbf{Pokud máme k dispozici Master Dark:} Bias snímek v tomto případě \textbf{zcela vynecháváme}, protože by byl nadbytečný a výslednému obrazu by dokonce uškodil. Každý temný snímek (\textit{Dark}) už v sobě totiž základní čtecí šum přirozeně obsahuje. Jelikož náš algoritmus přesně páruje temné snímky tak, aby měly totožnou expozici a teplotu jako snímky světelné (\textit{Light}), nemusíme je nijak uměle přepočítávat a škálovat.
+    Díky tomu stačí provést jeden jednoduchý krok: Light-Dark. Starší a zastaralé poučky někdy radí odečítat Bias od obou snímků zvlášť pomocí rovnice (Light-Bias)-(Dark-Bias). Přestože to matematicky vychází nastejno, z hlediska fyziky obrazu jde o obrovskou chybu. Při zpracování digitálního obrazu totiž platí, že každá další sčítací nebo odčítací operace zvyšuje celkový šum~\cite{howell2006} podle statistického pravidla $\sigma result =\sigma 12 + \sigma 22 $. Pokud bychom Bias do rovnice zbytečně zařadili, provedli bychom místo jedné čisté operace rovnou tři. Tím bychom do výsledné fotky zbytečně dvakrát přimíchali šum obsažený v samotném Bias snímku a zbytečně si tak snížili cenný odstup signálu od šumu.
+    \item \textbf{Pokud Master Dark nemáme:} Teprve v situaci, kdy pro dané světelné snímky temné snímky vůbec nemáme (nebo mají zcela odlišnou expozici), přichází na řadu \textit{Master Bias}. V takovém případě ho odečítáme přímo od světelného snímku. Sice se tím nedokážeme zbavit nahromaděného tepelného šumu senzoru, ale odečtením Biasu se zbavíme alespoň onoho fixního čtecího šumu kamery.
+\end{enumerate}
+\textbf{Korekce optických vad:}\\
+Proces dělení korespondujícím pixelem z \textit{Master Flat} snímku odstraňuje artefakty nerovnoměrného osvětlení optické soustavy. Pixely na okrajích surového obrazu, které jsou vlivem vinětace tmavší, jsou při kalibraci děleny menší hodnotou z \textit{Master Flat} snímku, čímž se jejich světelný tok (flux) matematicky „dorovná“ na úroveň středu pole. Díky integrální normalizaci \textit{Master Flat} snímku při jeho tvorbě nedochází při finálním dělení k nežádoucímu posunu celkové škály jasů ani ke zkreslení absolutních hodnot pixelů.

@@ -1,0 +1,37 @@
+\section{Struktura souboru FITS} \label{sec:fits_structure}
+Formát \textbf{\ac{FITS}} je nejpoužívanější datový formát v astronomii pro přenos, analýzu a archivaci vědeckých datových sad. Není to pouze jednoduchý obrazový formát (jako například JPG nebo GIF), ale je primárně navržen tak, aby dokázal ukládat komplexní vědecká data skládající se z vícerozměrných polí (obrazů) a dvourozměrných tabulek organizovaných do řádků a sloupců. 
+\subsection{Základní uspořádání a HDU} Základním stavebním kamenem souboru \ac{FITS} je tzv. \textbf{\ac{HDU}}. Každý \ac{FITS} soubor se skládá z jednoho nebo více těchto segmentů. První \ac{HDU} v souboru je povinné a nazývá se \textbf{primární HDU} (Primary HDU).
+\ac{FITS} soubor obsahující pouze primární HDU je označován jako \textit{Single Image FITS} (SIF) nebo \textit{Basic FITS}. Za primárním \ac{HDU} však může následovat libovolný počet dalších \ac{HDU}, které se nazývají \textbf{rozšíření} (extensions). Takové soubory se označují jako \textit{Multi-Extension FITS} (MEF).
+Fyzická i logická struktura celého souboru je přísně formátována do \textbf{logických bloků (záznamů) o přesné velikosti 2880 bajtů} (odpovídá 23040 bitům). Každé \ac{HDU} se skládá z hlavičky (Header Unit) a datové části (Data Unit), přičemž každá z těchto částí je zarovnána na násobky 2880 bajtů. Pokud data nebo hlavička tento blok zcela nevyplní, je zbytek bloku doplněn mezerami ve formátu ASCII (v hlavičce) nebo nulovými bity (v datové části).\cite{fits_standard}
+\subsection{Hlavička (Header Unit)} Hlavička každého \ac{HDU} obsahuje metadata o datech a skládá se z formátovaného ASCII textu. Je tvořena sekvencí \textbf{80znakových textových řetězců} (card images), z nichž každý obvykle definuje jeden klíč ve formátu: \begin{verbatim} KLÍČ    = hodnota / volitelný komentář \end{verbatim} Název klíče (keyword name) smí obsahovat maximálně 8 znaků a je omezen pouze na velká písmena anglické abecedy, číslice, spojovník a podtržítko.
+Každá hlavička začíná sekvencí povinných klíčů v přesně daném pořadí. Pro primární hlavičku to jsou: \begin{itemize} \item \textbf{SIMPLE}: Logická hodnota (T/F) udávající, zda soubor plně vyhovuje standardu \ac{FITS}. \item \textbf{BITPIX}: Celočíselná hodnota určující počet bitů na jeden datový prvek (pixel). Platné hodnoty jsou 8, 16, 32 pro celá čísla a -32 nebo -64 pro čísla s plovoucí řádovou čárkou podle standardu IEEE. \item \textbf{NAXIS}: Počet os v přidruženém datovém poli (hodnota 0-999). Hodnota 0 znamená, že po hlavičce nenásledují žádná obrazová data. \item \textbf{NAXISn}: Sériový klíč (např. NAXIS1, NAXIS2) definující velikost podél každé příslušné osy n. \end{itemize} Na samotný konec metadat v rámci hlavičky je vždy vyžadován klíč \textbf{END}, po kterém je zbytek 2880bajtového bloku hlavičky doplněn mezerami.\cite{fits_standard}
+\subsection{Datová část (Data Unit)} Datová část, pokud je definována (při \texttt{NAXIS > 0}), bezprostředně následuje za posledním blokem hlavičky. V případě obrazových dat je pole pixelů uloženo jako souvislý proud bitů bez mezer či výplňových znaků uprostřed. U vícerozměrných polí se data ukládají sekvenčně tak, že index podél první osy (\texttt{NAXIS1}) se mění nejrychleji, a u dalších os se mění postupně pomaleji, což je konvence převzatá z programovacího jazyka Fortran.
+Nativně \ac{FITS} nepodporuje datový typ neznaménkových celých čísel (unsigned integer) větších než 8 bitů. Řeší to však obecně uznávanou konvencí, podle které se hodnoty ukládají jako znaménková čísla (signed) s aplikací fixního offsetu. Offset se z definice ukládá pomocí hlavičkového klíče \texttt{BZERO} (často v kombinaci s koeficientem \texttt{BSCALE}).\cite{fits_standard}
+\subsection{Standardní rozšíření (Extensions)} Současný standard \ac{FITS} plně specifikuje tři základní typy rozšíření (extensions), které umožňují ukládat komplexní datové struktury do jediného souboru: \begin{enumerate} \item \textbf{Image Extensions} (\texttt{XTENSION = 'IMAGE'}): Obsahují vícerozměrné pole pixelů stejným způsobem jako primární \ac{HDU}. \item \textbf{ASCII Table Extensions} (\texttt{XTENSION = 'TABLE'}): Ukládají tabulková data organizovaná do řádků a sloupců, přičemž všechny číselné i textové položky jsou kódovány ve formátu ASCII. Jsou snadněji čitelná pro lidi, avšak výpočetně a paměťově méně efektivní. \item \textbf{Binary Table Extensions} (\texttt{XTENSION = 'BINTABLE'}): Ukládají tabulková data v binární reprezentaci, což zajišťuje kompaktnější velikost a rychlejší zpracování dat (čtení i zápis) ve srovnání s ASCII tabulkami. Binární tabulky jsou vysoce flexibilní a v každé buňce pole umožňují uložení celého vícerozměrného pole pomocí konvencí pro pole s proměnnou délkou (Variable Length Arrays), která jsou odkazována formou tzv. heap oblasti uvnitř datové části. \end{enumerate}
+\begin{figure}[htbp] 
+    \centering 
+    \begin{verbatim} 
+        +===================================================+ 
+        |                   Primární HDU                    | 
+        |---------------------------------------------------| 
+        | Primární hlavička (Header Unit)                   | 
+        | (bloky 2880 bajtů, klíče SIMPLE, BITPIX, atd.)    | 
+        |---------------------------------------------------| 
+        | Primární data (Data Unit) - volitelná             | 
+        | (bloky 2880 bajtů, vícerozměrné pole bitů)        | 
+        +===================================================+ 
+        |                 HDU Rozšíření 1                   | 
+        |---------------------------------------------------| 
+        | Hlavička rozšíření (XTENSION='IMAGE'|'BINTABLE')  | 
+        | (bloky 2880 bajtů)                                | 
+        |---------------------------------------------------| 
+        | Data rozšíření (Data Unit) - volitelná            | 
+        | (bloky 2880 bajtů)                                | 
+        +===================================================+ 
+        |                 HDU Rozšíření N                   | 
+        |                      ...                          | 
+        +===================================================+ 
+    \end{verbatim} 
+    \caption{Schéma blokové struktury souboru ve formátu FITS.} 
+    \label{fig:fits_structure} 
+\end{figure}

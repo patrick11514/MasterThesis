@@ -1,0 +1,17 @@
+\chapter{Úvod}
+\label{ch:introduction}
+
+Digitální astrofotografie hlubokého vesmíru prošla v posledním desetiletí masivním technologickým vývojem, především díky přechodu od klasických \ac{CCD} snímačů k vysoce citlivým \ac{CMOS} architekturám. Tento posun umožnil zachycovat rozsáhlé struktury s vysokým kvantovým ziskem, avšak přinesl s sebou kritickou výzvu v podobě exponenciálního nárůstu objemu generovaných dat. Výsledná kvalita finálního obrazu je přímo závislá na statistickém sloučení desítek až stovek dílčích expozic. Během několikahodinových akvizičních sekvencí však dochází k neustálým změnám atmosférických podmínek, poryvům větru, chybám v mechanickém vedení montáže nebo k přechodům oblačnosti a umělých družic. Všechny tyto jevy vnášejí do datové sady anomálie a deformace hvězdných profilů.
+
+Tradiční lidská kontrola a manuální vyřazování poškozených snímků (tzv. \textit{culling}) představuje v moderní astrofotografické praxi časově náročné a vysoce subjektivní úzké hrdlo. Předložená práce se proto zabývá návrhem, architekturou a implementací desktopového systému, který tento proces plně automatizuje na základě exaktních statistických a fyzikálních parametrů bodových zdrojů.
+
+Obsah této práce je strukturován do sedmi navazujících kapitol:
+\begin{itemize}
+    \item \textbf{Kapitola 2} se věnuje hluboké analýze astronomického souborového formátu \acs{FITS}, popisu jeho vnitřní datové struktury a algoritmickému návrhu pro metadatový \textit{fingerprinting}, který slouží k bezpečné automatické segmentaci kalibračních relací.
+    \item \textbf{Kapitola 3} rozebírá matematicko-fyzikální základy profilování hvězd. Zaměřuje se na komparaci robustnosti metrik \acs{FWHM} a \acs{HFR}, výpočet excentricity profilů pomocí prostorových momentů druhého řádu a mřížkovou estimaci pozadí.
+    \item \textbf{Kapitola 4} popisuje výpočetní zpracování signálu a pixelovou aritmetiku redukce systematických chyb, včetně streamovaných streamingových výpočtů statistických předloh (\textit{Master} snímků).
+    \item \textbf{Kapitola 5} se zaměřuje na softwarovou architekturu celého systému, kde je rozebráno propojení reaktivního webového frontendu s vysoce výkonným nativním jádrem a paralelním modelem konkurence.
+    \item \textbf{Kapitola 6} se zabývá nelineárními transformacemi dynamicého rozsahu surových dat pro účely lidské vizualizace a popisuje hardwarovou akceleraci vykreslovacího enginu.
+    \item \textbf{Kapitola 7} detailně specifikuje samotnou implementační logiku dvouprůchodového skórování, uživatelské řízení prahových hodnot a deterministické ochranné pojistky hodnotícího systému.
+    \item \textbf{Kapitola 8} v závěru přináší výkonnostní a kritickou analýzu celého řešení nad reálným komplexním datasetem a definuje roadmapu přechodu k modelům hlubokého učení v navazující diplomové práci.
+\end{itemize}

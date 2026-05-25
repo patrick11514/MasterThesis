@@ -1,0 +1,97 @@
+[
+    {
+        "type": "manual",
+        "organization": "NASA/Goddard Space Flight Center",
+        "year": "2018",
+        "edition": "Version 4.0",
+        "url": "https://fits.gsfc.nasa.gov/standard40/fits_standard40aa-le.pdf",
+        "urldate": "2026-05-24",
+        "name": "fits_standard",
+        "title": "Definition of the Flexible Image Transport System (FITS)",
+        "author": "{IAU FITS Working Group}",
+        "lang": "english"
+    },
+    {
+        "type": "article",
+        "journal": "Astronomy and Astrophysics Supplement Series",
+        "year": "1996",
+        "volume": "117",
+        "number": "2",
+        "name": "sextractor",
+        "title": "{SExtractor: Software for source extraction}",
+        "author": "Bertin, Emmanuel and Arnouts, St{\\'e}phane",
+        "lang": "english"
+    },
+    {
+        "type": "book",
+        "year": "2001",
+        "publisher": "Paradigm Dual-Imaging Systems",
+        "name": "hfr",
+        "title": "{Fast Auto-Focus Method and Software for CCD-based Telescopes}",
+        "author": "Weber, Larry and Brady, Steve",
+        "lang": "english"
+    },
+    {
+        "type": "article",
+        "journal": "The Astrophysical Journal Supplement Series",
+        "year": "2015",
+        "volume": "220",
+        "number": "1",
+        "name": "noisechisel",
+        "title": "{Noise-based Detection and Segmentation of Nebulous Objects}",
+        "author": "Akhlaghi, Mohammad and Ichikawa, Takashi",
+        "lang": "english"
+    },
+    {
+        "type": "article",
+        "journal": "Monthly Notices of the Royal Astronomical Society",
+        "year": "2015",
+        "volume": "452",
+        "number": "1",
+        "name": "popowicz",
+        "title": "{A method of complex background estimation in astronomical images}",
+        "author": "Popowicz, Adam and Smolka, Bogdan",
+        "lang": "english"
+    },
+    {
+        "type": "book",
+        "year": "2006",
+        "publisher": "Cambridge University Press",
+        "name": "howell2006",
+        "title": "{Handbook of CCD Astronomy}",
+        "author": "Howell, Steve B.",
+        "lang": "english"
+    },
+    {
+        "type": "book",
+        "year": "2005",
+        "publisher": "Willmann-Bell",
+        "isbn": "0943396824",
+        "name": "berry2005",
+        "title": "{The Handbook of Astronomical Image Processing}",
+        "author": "Berry, Richard and Burnell, James",
+        "lang": "english"
+    },
+    {
+        "type": "article",
+        "journal": "Technometrics",
+        "year": "1962",
+        "volume": "4",
+        "number": "3",
+        "name": "welford1962",
+        "title": "{Note on a Method for Calculating Corrected Sums of Squares and Products}",
+        "author": "Welford, B. P.",
+        "lang": "english"
+    },
+    {
+        "type": "article",
+        "journal": "Communications of the ACM",
+        "year": "1961",
+        "volume": "4",
+        "number": "7",
+        "name": "hoare1961find",
+        "title": "{Algorithm 65: Find}",
+        "author": "Hoare, Charles A. R.",
+        "lang": "english"
+    }
+]

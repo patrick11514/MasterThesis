@@ -43,11 +43,9 @@
   }
 
   // Selection map keyed by file path
-  let selectionMap: Record<string, boolean> = {};
+  let selectionMap = $state<Record<string, boolean>>({});
 
-  function getSelectedCount() {
-    return Object.values(selectionMap).filter(Boolean).length;
-  }
+  let selectedCount = $derived(Object.values(selectionMap).filter(Boolean).length);
 
   function isSelected(path: string) {
     return !!selectionMap[path];
@@ -254,7 +252,7 @@
               size="sm"
               variant="outline"
               onclick={moveSelected}
-              disabled={getSelectedCount() === 0}
+              disabled={selectedCount === 0}
             >
               Move selected files
             </Button>
@@ -262,12 +260,12 @@
               size="sm"
               variant="destructive"
               onclick={removeSelected}
-              disabled={getSelectedCount() === 0}
+              disabled={selectedCount === 0}
             >
               Remove selected files
             </Button>
           </div>
-          <div class="text-sm text-muted-foreground">Selected: {getSelectedCount()}</div>
+          <div class="text-sm text-muted-foreground">Selected: {selectedCount}</div>
         </div>
 
         <h1 class="mt-2 text-xl font-bold">Light frames</h1>

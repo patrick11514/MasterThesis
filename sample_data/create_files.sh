@@ -21,11 +21,11 @@ OBJECT_MAP=(
 
 for obj in "${OBJECT_MAP[@]}"
 do
-    mkdir -p "NIGHTS/OBJECT_${obj}"
+    mkdir -p "NIGHTS/Object ${obj}"
     
     for j in {01..10}
     do
-        mkdir -p "NIGHTS/OBJECT_${obj}/Session_2026_02-${j}"
-        cp "$FILE" "NIGHTS/OBJECT_${obj}/Session_2026_02-${j}/$(basename "$FILE")"
+        mkdir -p "NIGHTS/Object ${obj}/Session 2026_02-${j}"
+        cp "$FILE" "NIGHTS/Object ${obj}/Session 2026_02-${j}/$(basename "$FILE")"
     done
 done

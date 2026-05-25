@@ -1,0 +1,133 @@
+\documentclass[12pt,a4paper,oneside]{report}
+
+% --- Jazyková a typografická nastavení (Language & Typography) ---
+\usepackage[utf8]{inputenc}
+\usepackage[czech]{babel}
+\usepackage[T1]{fontenc}
+\renewcommand{\familydefault}{\sfdefault}
+
+% --- Geometrie stránky a řádkování (Page Geometry & Spacing) ---
+\usepackage{geometry}
+\geometry{
+    a4paper,
+    top=25mm,
+    bottom=25mm,
+    left=30mm,   % Větší prostor pro případnou vazbu
+    right=25mm
+}
+\usepackage{setspace}
+
+% --- Balíčky pro matematiku a grafiku (Math & Graphics) ---
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{newunicodechar}
+\newunicodechar{−}{-}
+\usepackage{xcolor}
+
+% --- Nastavení zdrojových kódů (Source Code Setup) ---
+\usepackage{listings} % Odstraněn parametr [listof], který způsoboval reset do angličtiny
+\renewcommand{\lstlistingname}{Zdrojový kód}
+
+\makeatletter
+\renewcommand\lstlistoflistings{%
+    \chapter*{Seznam zdrojových kódů}% Přímé vynucení českého názvu o velikosti kapitoly
+    \addcontentsline{toc}{chapter}{Seznam zdrojových kódů}% Volitelné: přidá seznam i do Obsahu
+    \@starttoc{lol}% Načtení obsahu souboru .lol
+}
+\makeatother
+
+% Definice vzhledu pro ukázky kódů (např. Rust/TypeScript)
+\lstset{
+    backgroundcolor=\color{gray!5},
+    basicstyle=\ttfamily\small,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    commentstyle=\color{green!50!black},
+    keywordstyle=\color{blue},
+    stringstyle=\color{orange},
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    rulecolor=\color{black!30},
+    tabsize=4,
+    showstringspaces=false
+}
+
+% --- Křížové odkazy a hyperodkazy (Hyperlinks) ---
+\usepackage[unicode]{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,      % Pro tiskovou verzi je lepší nechat černé, 
+    citecolor=blue,       % nebo změnit na barvy, pokud odevzdáváš pouze PDF
+    urlcolor=teal
+}
+
+% --- bib
+\usepackage[autostyle=true,czech=quotes]{csquotes} % Správné uvozovky
+\usepackage[backend=biber, style=iso-numeric, alldates=iso]{biblatex} % Bibliografie dle ISO 690
+\addbibresource{literature.bib} % Import souboru s literaturou
+
+% --- acronyms
+\usepackage{acronym}
+
+% --- Metadata Dokumentu ---
+\title{
+    {\Huge\bfseries Klasifikace astronomických fotografií}\\[0.4cm]
+    {\LARGE Semestrální projekt}\\[1.5cm]
+}
+\author{\large\bfseries Patrik Mintěl}
+\date{\large \today}
+
+% =========================================================================
+% INDIVIDUAL CHAPTER TEXTS (In Czech as requested)
+% =========================================================================
+\begin{document}
+
+% --- Titulní strana ---
+\maketitle
+
+% --- Nečíslované povinné seznamy ---
+\pagenumbering{roman}
+
+\tableofcontents
+\cleardoublepage
+
+% --- Seznam zkratek ---
+\include{acronyms}
+
+\clearpage
+\listoffigures
+
+%\clearpage
+%\lstlistoflistings
+
+\listoftables
+\clearpage
+
+% --- Reset číslování pro hlavní obsah ---
+\cleardoublepage
+\pagenumbering{arabic}
+
+% =========================================================================
+% HLAVNÍ KAPITOLY DOKUMENTU
+% =========================================================================
+
+\include{Chapters/1_introduction}
+\include{Chapters/2_formats_and_metadata}
+\include{Chapters/3_star_extraction}
+\include{Chapters/4_calibration}
+\include{Chapters/5_app_architecture}
+\include{Chapters/6_stretching}
+\include{Chapters/7_quality_calculation}
+\include{Chapters/8_summary}
+
+% =========================================================================
+% LITERATURA A CITACE (Bibliography)
+% =========================================================================
+\clearpage
+\printbibliography[title={Literatura}, heading=bibintoc]
+
+\end{document}

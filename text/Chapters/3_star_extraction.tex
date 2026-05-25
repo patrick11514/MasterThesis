@@ -1,0 +1,50 @@
+\chapter{Matematická fyzika extrakce zdrojů a profilování hvězd}
+\label{ch:math}
+
+Tato kapitola stručně popisuje základní matematické a fyzikální principy, pomocí kterých analyzujeme tvar hvězd a vlastnosti pozadí na astronomických snímcích. Abychom dokázali spolehlivě zhodnotit kvalitu pořízené expozice, musíme vzít surová data z kamery – tedy obyčejnou mřížku pixelů nesoucí číselné hodnoty jasu – a matematicky je přepočítat na skutečné fyzikální vlastnosti vyfocených objektů. Zjišťujeme z nich tak například \textbf{celkové množství světla (flux) a přesnou velikost nebo tvar hvězdy} oddělené od rušivého jasu pozadí
+
+\section{Profilování bodových zdrojů (FWHM vs. HFR)}
+Kvantifikace průměru hvězd slouží jako primární indikátor zaostření a okamžitého stavu atmosférického neklidu (\textit{seeing}). Distribuce jasu bodového zdroje je v ploše snímače popsaná funkcí rozptylu bodu — \ac{PSF}. Tradičně se pro tento účel využívá aproximace Gaussovou funkcí a měření metriky \ac{FWHM}, která udává šířku profilu v polovině jeho maximální intenzity. Pro ideální izotropní distribuci platí vztah:
+\begin{equation}
+\text{FWHM} \approx 2.35482 \cdot \sigma
+\end{equation}
+kde $\sigma$ reprezentuje směrodatnou odchylku rozdělení jasu. Výpočetní jádro systému využívá pro odhad \ac{FWHM} adaptivní modifikaci, pracující s délkami poloos $a$ a $b$, získanými z prostorových momentů obrazu \cite{sextractor}: $\text{FWHM} = 2.3548203 \cdot \sqrt{a \cdot b}$.
+
+Tento matematický model však vykazuje závažné limity při silném rozostření. U zrcadlových dalekohledů dochází vlivem centrálního stínění sekundárním zrcadlem k deformaci \ac{PSF} do tvaru mezikruží (toroidu). Gaussovo prokládání v takovém případě selhává, algoritmus nedokáže spolehlivě lokalizovat vrchol amplitudy a vypočtená hodnota \ac{FWHM} ztrácí stabilitu.
+
+Z tohoto důvodu se jako robustnější klasifikační alternativa zavádí poloměr polovičního toku energie — \ac{HFR} (respektive průměr \ac{HFD}, kde platí $\text{HFD} = 2 \cdot \text{HFR}$). Tato integrální metrika definuje poloměr kruhové apertury kolem těžiště hvězdy, uvnitř které se nachází přesně polovina celkového emitovaného světelného toku $F_{\text{total}}$ \cite{hfr}:
+\begin{equation}
+\int_{0}^{R_{\text{HFR}}} 2\pi r \cdot [I(r) - I_{\text{bg}}] \, dr = \frac{1}{2} F_{\text{total}}
+\end{equation}
+
+Protože \ac{HFR} integruje energii z celé plochy objektu, vykazuje vysokou odolnost vůči vysokofrekvenčnímu šumu a lineárně škáluje i u prstencových profilů rozostřených hvězd. V systému se proto \ac{HFR} využívá ke sledování stability zaostření napříč nocí, zatímco \ac{FWHM} slouží jako doplňkový indikátor pro detekci směrového rozmazání snímku.
+
+\section{Centrální momenty obrazu a výpočet excentricity}
+Excentricita popisuje míru eliptického protažení hvězd a indikuje mechanické či atmosférické poruchy, jako jsou chyby pointace montáže, průhyby tubusu nebo poryvy větru. Výpočet tvarových parametrů bodových zdrojů vychází z teorie prostorových momentů diskrétní distribuce intenzit $I(x, y)$ řádu $(p+q)$ \cite{popowicz}:
+\begin{equation}
+M_{pq} = \sum_{x} \sum_{y} x^p y^q \cdot I(x, y)
+\end{equation}
+
+Z momentů nultého a prvního řádu se určují souřadnice těžiště objektu $(\bar{x}, \bar{y})$. Pro zajištění invariance vůči posunutí v ploše snímače se následně počítají centrální momenty druhého řádu $\mu_{pq}$, ze kterých se konstruuje symetrická matice kovariance:
+\begin{equation}
+\mathbf{\Sigma} = \frac{1}{M_{00}} \begin{pmatrix} \mu_{20} & \mu_{11} \\ \mu_{11} & \mu_{02} \end{pmatrix}
+\end{equation}
+
+Analytickým řešením této matice (nalezením vlastních čísel) se získávají délky hlavní poloosy $a$ a vedlejší poloosy $b$ aproximační elipsy jasu hvězdy \cite{sextractor}. Finální excentricita $\epsilon$ je pak definována poměrem těchto geometrických poloos \cite{sextractor}:
+\begin{equation}
+\epsilon = \sqrt{1 - \frac{b^2}{a^2}}
+\end{equation}
+
+
+Veličina nabývá hodnot v intervalu $\langle 0, 1)$, kde $0$ značí dokonalou kružnici. Excentricita vstupuje do lineárního hodnocení kvality snímku s váhou $W_{\text{ecc}} = 0.6$ a zároveň slouží v kombinaci s poměrem $\text{HFD}/\text{FWHM}$ v ochranné logice systému. Pokud průměrná excentricita překročí hodnotu $0.6$, snímek vykazuje závažné protažení hvězd (např. vlivem selhání pointace) a je automaticky vyřazen, čímž se zabrání poškození datové sady.
+
+\section{Mřížkový odhad pozadí a filtrace šumu}
+Pro úspěšnou extrakci hvězd je nutné ze snímků odstranit parazitní signál pozadí způsobený svitem oblohy či světelným znečištěním. Prostorové změny pozadí se modelují rozdělením obrazu do mřížky buněk o velikosti $64 \times 64$ pixelů. Uvnitř každé buňky se pomocí iterativního algoritmu \textit{sigma-clipping} izoluje čistá úroveň pozadí a určí směrodatná odchylka šumu \ac{RMS} \cite{sextractor, popowicz}. Výsledná diskrétní mapa je vyhlazena filtrem o velikosti $3 \times 3$ buňky a následně odečtena od původního obrazu.
+
+Detekční práh pro extrakci hvězd se stanovuje na trojnásobek globálního šumu ($3\sigma$) nad úroveň pozadí \cite{sextractor}:
+\begin{equation}
+\text{Práh} = 3.0 \cdot \text{RMS}_{\text{global}}
+\end{equation}
+
+
+Poměr globálního pozadí a jeho doprovodné hodnoty \ac{RMS} se ukládá jako metrika kontrastu pozadí, která citlivě reaguje na přechod oblačnosti a změny transparentnosti oblohy. Pokud tato hodnota překročí kritickou mez $15.0$, ochranná logika expozici okamžitě vyřadí, čímž se zajistí vysoký kontrast a čistota datové sady před spuštěním finálních kalibračních a skládacích procesů.
