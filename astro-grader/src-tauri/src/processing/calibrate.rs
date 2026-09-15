@@ -3,9 +3,9 @@ use std::{
     fs,
     hash::Hasher,
     path::{Path, PathBuf},
-    sync::atomic::Ordering,
+    sync::atomic::{AtomicBool, Ordering},
     sync::{Arc, Mutex},
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use rayon::prelude::*;
@@ -39,6 +39,31 @@ enum LightCalibrationOutcome {
         source_path: PathBuf,
         calibrated_path: PathBuf,
     },
+}
+
+struct LightFrameMetadata {
+    camera: Option<String>,
+    telescope: Option<String>,
+    filter: Option<String>,
+    exposure: Option<f32>,
+    gain: Option<f32>,
+    bayer_pattern: Option<String>,
+    x_bayer_offset: Option<i32>,
+    y_bayer_offset: Option<i32>,
+}
+
+struct LoadedLightFrame {
+    source_path: PathBuf,
+    target_path: PathBuf,
+    img: ImageDataPixels,
+    metadata: LightFrameMetadata,
+}
+
+struct CalibratedLightFrame {
+    source_path: PathBuf,
+    target_path: PathBuf,
+    img: ImageDataPixels,
+    metadata: LightFrameMetadata,
 }
 
 impl MasterType {
@@ -210,7 +235,7 @@ fn replace_hot_pixels_in_plane(
     }
 
     target_plane
-        .par_chunks_mut(width)
+        .chunks_mut(width)
         .enumerate()
         .map(|(y, row)| {
             if y == 0 || y + 1 == height {
@@ -225,11 +250,12 @@ fn replace_hot_pixels_in_plane(
                 let mut neighbors = [0.0f32; 8];
                 let mut k = 0usize;
                 for yy in (y - 1)..=(y + 1) {
+                    let r_start = yy * width;
                     for xx in (x - 1)..=(x + 1) {
                         if yy == y && xx == x {
                             continue;
                         }
-                        neighbors[k] = source_plane[yy * width + xx];
+                        neighbors[k] = source_plane[r_start + xx];
                         k += 1;
                     }
                 }
@@ -888,7 +914,7 @@ pub fn calibrate_light_prepared(
     dark_or_bias: Option<&[f32]>,
     normalized_flat: Option<&[f32]>,
 ) {
-    light.par_iter_mut().enumerate().for_each(|(i, pixel)| {
+    for (i, pixel) in light.iter_mut().enumerate() {
         let sub_val = dark_or_bias.map(|d| d[i]).unwrap_or(0.0);
         let mut calibrated = *pixel - sub_val;
 
@@ -906,7 +932,7 @@ pub fn calibrate_light_prepared(
         }
 
         *pixel = calibrated;
-    });
+    }
 }
 
 #[allow(dead_code)]
@@ -1056,10 +1082,12 @@ pub fn run_calibration(
                 let flat_pixels = read_master(flat_path)?;
                 let bias_pixels = read_master(bias_path)?;
 
-                let dark_or_bias = dark_pixels.as_deref().or(bias_pixels.as_deref());
-                let normalized_flat = flat_pixels
+                let dark_or_bias: Option<Arc<Vec<f32>>> = dark_pixels
+                    .or(bias_pixels.clone())
+                    .map(Arc::new);
+                let normalized_flat: Option<Arc<Vec<f32>>> = flat_pixels
                     .as_deref()
-                    .map(|f| prepare_normalized_flat(f, bias_pixels.as_deref()));
+                    .map(|f| Arc::new(prepare_normalized_flat(f, bias_pixels.as_deref())));
 
                 // Clear stale calibrated_frame references (file was deleted externally)
                 // so the frontend state doesn't show a ghost path.
@@ -1106,244 +1134,382 @@ pub fn run_calibration(
 
                 if light_files.is_empty() {
                     println!("  All light frames already calibrated, skipping session.");
-                }
+                    Ok(())
+                } else {
+                    let total_cpus = std::thread::available_parallelism()
+                        .map(|n| n.get())
+                        .unwrap_or(4);
 
-                let mut chunk_err = None;
-
-                let num_threads = rayon::current_num_threads();
-                let total_chunks = (light_files.len() + num_threads - 1) / num_threads;
-
-                for (chunk_idx, chunk) in light_files.chunks(num_threads).enumerate() {
-                    check_cancelled(calibration_cancellation)?;
+                    let (num_loaders, num_writers) = if total_cpus <= 12 {
+                        (1, 1)
+                    } else {
+                        (2, 2)
+                    };
+                    let num_workers =
+                        (total_cpus.saturating_sub(num_loaders + num_writers)).max(1);
 
                     println!(
-                        "Calibrating lights (Chunk {}/{}): Processing {} frames...",
-                        chunk_idx + 1,
-                        total_chunks,
-                        chunk.len()
+                        "Streaming calibration pipeline: {} loaders, {} workers, {} writers (total threads: {})",
+                        num_loaders, num_workers, num_writers, total_cpus
                     );
 
-                    let chunk_result: Result<Vec<LightCalibrationOutcome>, String> =
-                                            chunk.par_iter().map(|light_file| {
-                                                check_cancelled(calibration_cancellation)?;
+                    let buffer_cap = (num_workers * 2).max(4);
+                    let (frame_tx, frame_rx) =
+                        crossbeam_channel::bounded::<File>(buffer_cap);
+                    let (loaded_tx, loaded_rx) =
+                        crossbeam_channel::bounded::<LoadedLightFrame>(buffer_cap);
+                    let (save_tx, save_rx) =
+                        crossbeam_channel::bounded::<CalibratedLightFrame>(buffer_cap);
+                    let (outcome_tx, outcome_rx) =
+                        crossbeam_channel::bounded::<Result<LightCalibrationOutcome, String>>(
+                            buffer_cap * 2,
+                        );
 
-                    let stem = light_file.path().file_stem()
-                        .map(|s| s.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "light".to_string());
+                    let stop_flag = Arc::new(AtomicBool::new(false));
+                    let mut pipeline_error: Option<String> = None;
 
-                    let target_path = match storage_mode {
-                        CalibrationStorageMode::NextToOriginal => {
-                            // Appends _cal.fits to the original name in the same folder
-                            light_file.path().with_file_name(format!("{}_cal.fits", stem))
-                        }
-                        CalibrationStorageMode::TempFolder => {
-                            // Convert the UUID to a String, then slice the first 8 characters
-                            let uuid_str = light_file.uuid().to_string();
-                            let short_id = &uuid_str[0..8];
-                            temp_folder_path.join(format!("{}_{}_cal.fits", stem, short_id))
-                        }
-                    };
+                    std::thread::scope(|s| {
+                        // 1. Loader threads: read FITS files and extract metadata
+                        for _ in 0..num_loaders {
+                            let frame_rx = frame_rx.clone();
+                            let loaded_tx = loaded_tx.clone();
+                            let outcome_tx = outcome_tx.clone();
+                            let stop_flag = Arc::clone(&stop_flag);
+                            let temp_folder = temp_folder_path.to_path_buf();
+                            let storage = storage_mode.clone();
 
-                    if target_path.exists()
-                        && calibrated_output_is_valid(light_file.path(), &target_path)
-                            {
-                                println!(
-                                    "  -> Skipping already calibrated frame: {}",
-                                    target_path.display()
-                                );
-
-                                return Ok(LightCalibrationOutcome::Skipped {
-                                    source_path: light_file.path().clone(),
-                                    calibrated_path: target_path,
-                                });
-                            }
-
-                            if target_path.exists() {
-                                println!(
-                                    "  -> Existing calibrated frame is invalid, recalibrating: {}",
-                                    target_path.display()
-                                );
-                                let _ = fs::remove_file(&target_path);
-                            }
-
-                            let mut fits =
-                                FitsFile::new(light_file.path().clone()).map_err(|_| {
-                                    format!(
-                                        "Unable to open light frame: {}",
-                                        light_file.path().display()
-                                    )
-                                })?;
-                            let mut img = ImageDataPixels::from_fits(&mut fits).map_err(|_| {
-                                format!(
-                                    "Unable to read light frame: {}",
-                                    light_file.path().display()
-                                )
-                            })?;
-
-                            normalize_pixels_if_needed(&mut img.pixels);
-
-                            calibrate_light_prepared(
-                                &mut img.pixels,
-                                dark_or_bias,
-                                normalized_flat.as_deref(),
-                            );
-
-                            let hot_pixels_replaced = remove_hot_pixels(&mut img);
-
-                            // Debug: print basic pixel statistics after calibration
-                            let (mut min_v, mut max_v, mut sum) = (
-                                std::f32::INFINITY,
-                                std::f32::NEG_INFINITY,
-                                0f64,
-                            );
-                            let mut count = 0usize;
-                            for &p in &img.pixels {
-                                if p.is_finite() {
-                                    if p < min_v {
-                                        min_v = p;
-                                    }
-                                    if p > max_v {
-                                        max_v = p;
-                                    }
-                                    sum += p as f64;
-                                    count += 1;
-                                }
-                            }
-                            let mean = if count == 0 { 0.0 } else { sum / count as f64 };
-
-                            println!(
-                                "Calibrated pixels for {} -> min {:.6}, max {:.6}, mean {:.6}, hotfix:{}",
-                                light_file.path().display(),
-                                min_v,
-                                max_v,
-                                mean,
-                                hot_pixels_replaced
-                            );
-
-                            println!(
-                                "  -> Calibrating: {} => {}",
-                                light_file.path().display(),
-                                target_path.display()
-                            );
-
-                            // Save image to target path
-                            img.save_to_fits(target_path.clone()).map_err(|_| {
-                                format!(
-                                    "Unable to write calibrated frame: {}",
-                                    target_path.display()
-                                )
-                            })?;
-
-                            // Copy all FITS headers from original file to calibrated file
-                            let mut dst = FitsFile::edit(target_path.clone()).map_err(|_| {
-                                "Unable to open output light frame for metadata write".to_string()
-                            })?;
-
-                            dst.write_key_string("IMAGETYP", "Light Frame")
-                                .map_err(|_| {
-                                    "Unable to write IMAGETYP into light frame".to_string()
-                                })?;
-
-                            // Also carry over camera, filter, etc.
-                            if let Some(value) = fits.get_tag_value(crate::fits::Tag::Camera) {
-                                let _ = dst.write_key_string("INSTRUME", value.trim());
-                            }
-                            if let Some(value) = fits.get_tag_value(crate::fits::Tag::Telescope) {
-                                let _ = dst.write_key_string("TELESCOP", value.trim());
-                            }
-                            if let Some(value) = fits.get_tag_value(crate::fits::Tag::Filter) {
-                                let _ = dst.write_key_string("FILTER", value.trim());
-                            }
-                            if let Some(value) =
-                                fits.get_tag_custom::<f32>(crate::fits::Tag::ExposureTime)
-                            {
-                                let _ = dst.write_key_f32("EXPTIME", value);
-                            }
-                            if let Some(value) = fits.get_tag_custom::<f32>(crate::fits::Tag::Gain)
-                            {
-                                let _ = dst.write_key_f32("GAIN", value);
-                            }
-                            if let Some(value) = fits.get_tag_value(crate::fits::Tag::BayerPattern)
-                            {
-                                let _ = dst.write_key_string("BAYERPAT", value.trim());
-                            }
-                            if let Some(value) =
-                                fits.get_tag_custom::<i32>(crate::fits::Tag::XBayerOffset)
-                            {
-                                let _ = dst.write_key_i32("XBAYROFF", value);
-                            }
-                            if let Some(value) =
-                                fits.get_tag_custom::<i32>(crate::fits::Tag::YBayerOffset)
-                            {
-                                let _ = dst.write_key_i32("YBAYROFF", value);
-                            }
-
-                            Ok(LightCalibrationOutcome::Processed {
-                                source_path: light_file.path().clone(),
-                                calibrated_path: target_path,
-                            })
-                        }).collect();
-
-                    match chunk_result {
-                        Err(e) => {
-                            chunk_err = Some(e);
-                            break;
-                        }
-                        Ok(outcomes) => {
-                            // Mutate calibrated_frame on the originals — must be done
-                            // single-threaded since session.lights is not Arc/Mutex.
-                            for outcome in outcomes {
-                                let (source_path, cal_path, was_skipped) = match outcome {
-                                    LightCalibrationOutcome::Processed {
-                                        source_path,
-                                        calibrated_path,
-                                    } => (source_path, calibrated_path, false),
-                                    LightCalibrationOutcome::Skipped {
-                                        source_path,
-                                        calibrated_path,
-                                    } => (source_path, calibrated_path, true),
-                                };
-
-                                if was_skipped {
-                                    skipped_count += 1;
-                                } else {
-                                    processed_count += 1;
-                                }
-
-                                // Update in session.lights (grouped view)
-                                if let Some(f) =
-                                    session.lights.iter_mut().find(|f| f.path() == &source_path)
-                                {
-                                    f.calibrated_frame = Some(cal_path.clone());
-                                    f.state = FrameState::Calibrated;
-                                }
-
-                                // Also update in state.raw_nights (flat file list)
-                                for night_files in state.raw_nights.values_mut() {
-                                    if let Some(f) =
-                                        night_files.iter_mut().find(|f| f.path() == &source_path)
+                            s.spawn(move || {
+                                while let Ok(light_file) = frame_rx.recv() {
+                                    if stop_flag.load(Ordering::Relaxed)
+                                        || calibration_cancellation
+                                            .requested
+                                            .load(Ordering::Relaxed)
                                     {
-                                        f.calibrated_frame = Some(cal_path.clone());
-                                        f.state = FrameState::Calibrated;
+                                        break;
+                                    }
+
+                                    let stem = light_file
+                                        .path()
+                                        .file_stem()
+                                        .map(|st| st.to_string_lossy().to_string())
+                                        .unwrap_or_else(|| "light".to_string());
+
+                                    let target_path = match storage {
+                                        CalibrationStorageMode::NextToOriginal => light_file
+                                            .path()
+                                            .with_file_name(format!("{}_cal.fits", stem)),
+                                        CalibrationStorageMode::TempFolder => {
+                                            let uuid_str = light_file.uuid().to_string();
+                                            let short_id =
+                                                &uuid_str[0..8.min(uuid_str.len())];
+                                            temp_folder
+                                                .join(format!("{}_{}_cal.fits", stem, short_id))
+                                        }
+                                    };
+
+                                    if target_path.exists()
+                                        && calibrated_output_is_valid(
+                                            light_file.path(),
+                                            &target_path,
+                                        )
+                                    {
+                                        println!(
+                                            "  -> Skipping already calibrated frame: {}",
+                                            target_path.display()
+                                        );
+                                        let _ = outcome_tx.send(Ok(
+                                            LightCalibrationOutcome::Skipped {
+                                                source_path: light_file.path().clone(),
+                                                calibrated_path: target_path,
+                                            },
+                                        ));
+                                        continue;
+                                    }
+
+                                    if target_path.exists() {
+                                        println!(
+                                            "  -> Existing calibrated frame is invalid, recalibrating: {}",
+                                            target_path.display()
+                                        );
+                                        let _ = fs::remove_file(&target_path);
+                                    }
+
+                                    let mut fits = match FitsFile::new(light_file.path().clone()) {
+                                        Ok(f) => f,
+                                        Err(_) => {
+                                            let _ = outcome_tx.send(Err(format!(
+                                                "Unable to open light frame: {}",
+                                                light_file.path().display()
+                                            )));
+                                            stop_flag.store(true, Ordering::Relaxed);
+                                            break;
+                                        }
+                                    };
+
+                                    let img = match ImageDataPixels::from_fits(&mut fits) {
+                                        Ok(i) => i,
+                                        Err(_) => {
+                                            let _ = outcome_tx.send(Err(format!(
+                                                "Unable to read light frame: {}",
+                                                light_file.path().display()
+                                            )));
+                                            stop_flag.store(true, Ordering::Relaxed);
+                                            break;
+                                        }
+                                    };
+
+                                    let metadata = LightFrameMetadata {
+                                        camera: fits
+                                            .get_tag_value(Tag::Camera)
+                                            .map(|s| s.trim().to_string()),
+                                        telescope: fits
+                                            .get_tag_value(Tag::Telescope)
+                                            .map(|s| s.trim().to_string()),
+                                        filter: fits
+                                            .get_tag_value(Tag::Filter)
+                                            .map(|s| s.trim().to_string()),
+                                        exposure: fits.get_tag_custom::<f32>(Tag::ExposureTime),
+                                        gain: fits.get_tag_custom::<f32>(Tag::Gain),
+                                        bayer_pattern: fits
+                                            .get_tag_value(Tag::BayerPattern)
+                                            .map(|s| s.trim().to_string()),
+                                        x_bayer_offset: fits
+                                            .get_tag_custom::<i32>(Tag::XBayerOffset),
+                                        y_bayer_offset: fits
+                                            .get_tag_custom::<i32>(Tag::YBayerOffset),
+                                    };
+
+                                    if loaded_tx
+                                        .send(LoadedLightFrame {
+                                            source_path: light_file.path().clone(),
+                                            target_path,
+                                            img,
+                                            metadata,
+                                        })
+                                        .is_err()
+                                    {
                                         break;
                                     }
                                 }
+                            });
+                        }
+
+                        // 2. Worker threads: in-memory calibration and hot pixel removal
+                        for _ in 0..num_workers {
+                            let loaded_rx = loaded_rx.clone();
+                            let save_tx = save_tx.clone();
+                            let dark_or_bias = dark_or_bias.clone();
+                            let normalized_flat = normalized_flat.clone();
+                            let stop_flag = Arc::clone(&stop_flag);
+
+                            s.spawn(move || {
+                                while let Ok(mut loaded) = loaded_rx.recv() {
+                                    if stop_flag.load(Ordering::Relaxed)
+                                        || calibration_cancellation
+                                            .requested
+                                            .load(Ordering::Relaxed)
+                                    {
+                                        break;
+                                    }
+
+                                    normalize_pixels_if_needed(&mut loaded.img.pixels);
+                                    calibrate_light_prepared(
+                                        &mut loaded.img.pixels,
+                                        dark_or_bias.as_deref().map(|v| v.as_slice()),
+                                        normalized_flat.as_deref().map(|v| v.as_slice()),
+                                    );
+                                    let _ = remove_hot_pixels(&mut loaded.img);
+
+                                    if save_tx
+                                        .send(CalibratedLightFrame {
+                                            source_path: loaded.source_path,
+                                            target_path: loaded.target_path,
+                                            img: loaded.img,
+                                            metadata: loaded.metadata,
+                                        })
+                                        .is_err()
+                                    {
+                                        break;
+                                    }
+                                }
+                            });
+                        }
+
+                        // 3. Writer threads: save calibrated FITS and write headers
+                        for _ in 0..num_writers {
+                            let save_rx = save_rx.clone();
+                            let outcome_tx = outcome_tx.clone();
+                            let stop_flag = Arc::clone(&stop_flag);
+
+                            s.spawn(move || {
+                                while let Ok(calibrated) = save_rx.recv() {
+                                    if stop_flag.load(Ordering::Relaxed)
+                                        || calibration_cancellation
+                                            .requested
+                                            .load(Ordering::Relaxed)
+                                    {
+                                        break;
+                                    }
+
+                                    if let Err(e) = calibrated
+                                        .img
+                                        .save_to_fits(calibrated.target_path.clone())
+                                    {
+                                        let _ = outcome_tx.send(Err(format!(
+                                            "Unable to write calibrated frame {}: {:?}",
+                                            calibrated.target_path.display(),
+                                            e
+                                        )));
+                                        stop_flag.store(true, Ordering::Relaxed);
+                                        break;
+                                    }
+
+                                    let mut dst = match FitsFile::edit(calibrated.target_path.clone()) {
+                                        Ok(d) => d,
+                                        Err(_) => {
+                                            let _ = outcome_tx.send(Err(
+                                                "Unable to open output light frame for metadata write".to_string(),
+                                            ));
+                                            stop_flag.store(true, Ordering::Relaxed);
+                                            break;
+                                        }
+                                    };
+
+                                    let _ = dst.write_key_string("IMAGETYP", "Light Frame");
+                                    if let Some(val) = calibrated.metadata.camera {
+                                        let _ = dst.write_key_string("INSTRUME", &val);
+                                    }
+                                    if let Some(val) = calibrated.metadata.telescope {
+                                        let _ = dst.write_key_string("TELESCOP", &val);
+                                    }
+                                    if let Some(val) = calibrated.metadata.filter {
+                                        let _ = dst.write_key_string("FILTER", &val);
+                                    }
+                                    if let Some(val) = calibrated.metadata.exposure {
+                                        let _ = dst.write_key_f32("EXPTIME", val);
+                                    }
+                                    if let Some(val) = calibrated.metadata.gain {
+                                        let _ = dst.write_key_f32("GAIN", val);
+                                    }
+                                    if let Some(val) = calibrated.metadata.bayer_pattern {
+                                        let _ = dst.write_key_string("BAYERPAT", &val);
+                                    }
+                                    if let Some(val) = calibrated.metadata.x_bayer_offset {
+                                        let _ = dst.write_key_i32("XBAYROFF", val);
+                                    }
+                                    if let Some(val) = calibrated.metadata.y_bayer_offset {
+                                        let _ = dst.write_key_i32("YBAYROFF", val);
+                                    }
+
+                                    let _ = outcome_tx.send(Ok(
+                                        LightCalibrationOutcome::Processed {
+                                            source_path: calibrated.source_path,
+                                            calibrated_path: calibrated.target_path,
+                                        },
+                                    ));
+                                }
+                            });
+                        }
+
+                        // Drop channel senders owned by main thread so receivers detect completion
+                        drop(loaded_tx);
+                        drop(save_tx);
+                        drop(outcome_tx);
+
+                        // Feeder thread feeds light_files into frame_tx, then drops frame_tx
+                        let feeder_stop_flag = Arc::clone(&stop_flag);
+                        s.spawn(move || {
+                            for light in light_files {
+                                if feeder_stop_flag.load(Ordering::Relaxed)
+                                    || calibration_cancellation
+                                        .requested
+                                        .load(Ordering::Relaxed)
+                                {
+                                    break;
+                                }
+                                if frame_tx.send(light).is_err() {
+                                    break;
+                                }
+                            }
+                        });
+
+                        // Main thread collects outcomes in real-time and updates session progress
+                        let total_expected = session.lights.len();
+                        while (processed_count + skipped_count) < total_expected {
+                            if calibration_cancellation
+                                .requested
+                                .load(Ordering::Relaxed)
+                            {
+                                stop_flag.store(true, Ordering::Relaxed);
+                                pipeline_error = Some("Calibration canceled".to_string());
+                                break;
+                            }
+
+                            match outcome_rx.recv_timeout(Duration::from_millis(100)) {
+                                Ok(Ok(outcome)) => {
+                                    let (source_path, cal_path, was_skipped) = match outcome {
+                                        LightCalibrationOutcome::Processed {
+                                            source_path,
+                                            calibrated_path,
+                                        } => (source_path, calibrated_path, false),
+                                        LightCalibrationOutcome::Skipped {
+                                            source_path,
+                                            calibrated_path,
+                                        } => (source_path, calibrated_path, true),
+                                    };
+
+                                    if was_skipped {
+                                        skipped_count += 1;
+                                    } else {
+                                        processed_count += 1;
+                                    }
+
+                                    if let Some(f) = session
+                                        .lights
+                                        .iter_mut()
+                                        .find(|f| f.path() == &source_path)
+                                    {
+                                        f.calibrated_frame = Some(cal_path.clone());
+                                        f.state = FrameState::Calibrated;
+                                    }
+
+                                    for night_files in state.raw_nights.values_mut() {
+                                        if let Some(f) =
+                                            night_files.iter_mut().find(|f| f.path() == &source_path)
+                                        {
+                                            f.calibrated_frame = Some(cal_path.clone());
+                                            f.state = FrameState::Calibrated;
+                                            break;
+                                        }
+                                    }
+
+                                    if let Some(step) = progress.steps.get_mut(step_index) {
+                                        step.completed_count = processed_count;
+                                        step.skipped_count = skipped_count;
+                                    }
+                                    send_progress(&channel, &progress);
+                                }
+                                Ok(Err(err)) => {
+                                    stop_flag.store(true, Ordering::Relaxed);
+                                    pipeline_error = Some(err);
+                                    break;
+                                }
+                                Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
+                                    continue;
+                                }
+                                Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
+                                    break;
+                                }
                             }
                         }
-                    }
+                    });
 
-                    // Update completed_count and send progress after each chunk
-                    if let Some(step) = progress.steps.get_mut(step_index) {
-                        step.completed_count = processed_count;
-                        step.skipped_count = skipped_count;
+                    if let Some(e) = pipeline_error {
+                        Err(e)
+                    } else {
+                        check_cancelled(calibration_cancellation)?;
+                        Ok(())
                     }
-                    send_progress(&channel, &progress);
-                }
-
-                if let Some(e) = chunk_err {
-                    Err(e)
-                } else {
-                    Ok(())
                 }
             }
         };

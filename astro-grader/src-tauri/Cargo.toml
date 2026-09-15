@@ -36,3 +36,4 @@ ts-rs = "12.0.1"
 tauri-plugin-os = "2"
 uuid = { version = "1.23.1", features = ["serde", "v4"] }
 twox-hash = "2.1.2"
+crossbeam-channel = "0.5"

@@ -102,6 +102,7 @@ name = "astro-grader"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
+ "crossbeam-channel",
  "fitsio",
  "image",
  "image-convert",
