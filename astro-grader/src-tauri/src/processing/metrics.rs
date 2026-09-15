@@ -135,7 +135,7 @@ pub fn classify_frame(
         );
     }
 
-    if bg_contrast > 15.0 {
+    if bg_contrast > 35.0 {
         return (
             FrameState::Rejected,
             Some("Severe Background Glow".to_string()),
