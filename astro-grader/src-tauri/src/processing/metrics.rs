@@ -3,10 +3,11 @@ use std::{
     ffi::{c_char, c_void, CStr},
     path::PathBuf,
     ptr,
-    sync::atomic::Ordering,
+    sync::atomic::{AtomicBool, Ordering},
+    sync::Arc,
+    time::Duration,
 };
 
-use rayon::prelude::*;
 use sep_sys::*;
 
 use crate::processing::scoring;
@@ -19,6 +20,25 @@ use crate::{
         CalibrationRunStatus, CalibrationStepKind, CalibrationStepStatus,
     },
 };
+
+struct MetricsWorkItem {
+    session_idx: usize,
+    light_idx: usize,
+    image_path: PathBuf,
+}
+
+struct LoadedMetricsFrame {
+    item: MetricsWorkItem,
+    image: ImageDataPixels,
+}
+
+struct MetricsFrameResult {
+    session_idx: usize,
+    light_idx: usize,
+    stats: ImageStats,
+    state_after: FrameState,
+    reject_reason: Option<String>,
+}
 
 const BACKGROUND_TILE_SIZE: i64 = 64;
 const BACKGROUND_FILTER_SIZE: i64 = 3;
@@ -480,144 +500,268 @@ pub fn run_metrics(
     let mut raw_score_by_path = HashMap::<String, f32>::new();
     let mut score_sources_by_session = Vec::with_capacity(state.grouped_nights.len());
 
-    for (session_index, session) in state.grouped_nights.iter_mut().enumerate() {
-        if cancellation.requested.load(Ordering::Relaxed) {
-            progress.finished_at = Some(now_millis());
-            progress.status = CalibrationRunStatus::Cancelled;
-            let _ = channel.send(progress.clone());
-            return Err("Metrics calculation cancelled".to_string());
+    // Flatten all light frames across all sessions into a single continuous stream of work items.
+    // This eliminates inter-session thread starvation and keeps 100% of CPU cores busy on SEP math.
+    let mut work_items = Vec::new();
+    for (session_idx, session) in state.grouped_nights.iter().enumerate() {
+        for (light_idx, light) in session.lights.iter().enumerate() {
+            work_items.push(MetricsWorkItem {
+                session_idx,
+                light_idx,
+                image_path: image_path_for_metrics(light),
+            });
         }
+    }
 
-        progress.steps[session_index].status = CalibrationStepStatus::Running;
-        progress.steps[session_index].started_at = Some(now_millis());
-        progress.current_step_id = Some(progress.steps[session_index].id.clone());
-        let _ = channel.send(progress.clone());
+    let mut session_results: Vec<Vec<Option<(ImageStats, FrameState, Option<String>)>>> = state
+        .grouped_nights
+        .iter()
+        .map(|s| vec![None; s.lights.len()])
+        .collect();
 
+    let total_expected = work_items.len();
+
+    if total_expected > 0 {
+        let total_cpus = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4);
+
+        let num_loaders = if total_cpus >= 16 { 2 } else { 1 };
+        let num_workers = (total_cpus.saturating_sub(num_loaders)).max(1);
+
+        println!(
+            "Streaming metrics pipeline: {} loaders, {} workers (total threads: {})",
+            num_loaders, num_workers, total_cpus
+        );
+
+        let buffer_cap = (num_workers * 2).max(4);
+        let (work_tx, work_rx) = crossbeam_channel::bounded::<MetricsWorkItem>(buffer_cap);
+        let (loaded_tx, loaded_rx) =
+            crossbeam_channel::bounded::<LoadedMetricsFrame>(buffer_cap);
+        let (result_tx, result_rx) = crossbeam_channel::bounded::<
+            Result<MetricsFrameResult, String>,
+        >(buffer_cap * 2);
+
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let mut pipeline_error: Option<String> = None;
+
+        std::thread::scope(|s| {
+            // 1. Loader threads: prefetch FITS files into memory so compute threads never wait on I/O
+            for _ in 0..num_loaders {
+                let work_rx = work_rx.clone();
+                let loaded_tx = loaded_tx.clone();
+                let result_tx = result_tx.clone();
+                let stop_flag = Arc::clone(&stop_flag);
+
+                s.spawn(move || {
+                    while let Ok(item) = work_rx.recv() {
+                        if stop_flag.load(Ordering::Relaxed)
+                            || cancellation.requested.load(Ordering::Relaxed)
+                        {
+                            break;
+                        }
+
+                        let mut fits = match FitsFile::new(item.image_path.clone()) {
+                            Ok(f) => f,
+                            Err(_) => {
+                                let _ = result_tx.send(Err(format!(
+                                    "Unable to open calibrated frame for metrics: {}",
+                                    item.image_path.display()
+                                )));
+                                stop_flag.store(true, Ordering::Relaxed);
+                                break;
+                            }
+                        };
+
+                        let image = match ImageDataPixels::from_fits(&mut fits) {
+                            Ok(img) => img,
+                            Err(_) => {
+                                let _ = result_tx.send(Err(format!(
+                                    "Unable to read calibrated frame for metrics: {}",
+                                    item.image_path.display()
+                                )));
+                                stop_flag.store(true, Ordering::Relaxed);
+                                break;
+                            }
+                        };
+
+                        if loaded_tx.send(LoadedMetricsFrame { item, image }).is_err() {
+                            break;
+                        }
+                    }
+                });
+            }
+
+            // 2. Compute worker threads: heavy SEP star detection and background extraction
+            for _ in 0..num_workers {
+                let loaded_rx = loaded_rx.clone();
+                let result_tx = result_tx.clone();
+                let stop_flag = Arc::clone(&stop_flag);
+
+                s.spawn(move || {
+                    while let Ok(loaded) = loaded_rx.recv() {
+                        if stop_flag.load(Ordering::Relaxed)
+                            || cancellation.requested.load(Ordering::Relaxed)
+                        {
+                            break;
+                        }
+
+                        let stats_res = extract_metrics_from_pixels(
+                            &loaded.image.pixels,
+                            loaded.image.data.width,
+                            loaded.image.data.height,
+                        );
+
+                        let mut stats = match stats_res {
+                            Ok(st) => st,
+                            Err(e) => {
+                                let _ = result_tx.send(Err(e));
+                                stop_flag.store(true, Ordering::Relaxed);
+                                break;
+                            }
+                        };
+
+                        let (raw_score, is_trail) = scoring::compute_score(&stats);
+                        stats.quality_score = Some(raw_score);
+
+                        let (mut state_after, reject_reason) =
+                            classify_frame(None, &stats, max_fwhm, rejection_threshold, is_trail);
+
+                        if let Some(ref r) = reject_reason {
+                            if r != &format!("Score below limit ({:.2})", rejection_threshold) {
+                                state_after = FrameState::Rejected;
+                            }
+                        }
+
+                        if result_tx
+                            .send(Ok(MetricsFrameResult {
+                                session_idx: loaded.item.session_idx,
+                                light_idx: loaded.item.light_idx,
+                                stats,
+                                state_after,
+                                reject_reason,
+                            }))
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                });
+            }
+
+            // Drop main thread copies of senders
+            drop(loaded_tx);
+            drop(result_tx);
+
+            // Feeder thread feeds work items into work_tx, then drops work_tx
+            let feeder_stop_flag = Arc::clone(&stop_flag);
+            s.spawn(move || {
+                for item in work_items {
+                    if feeder_stop_flag.load(Ordering::Relaxed)
+                        || cancellation.requested.load(Ordering::Relaxed)
+                    {
+                        break;
+                    }
+                    if work_tx.send(item).is_err() {
+                        break;
+                    }
+                }
+            });
+
+            // Main thread collects results in real-time and streams progress
+            let mut total_processed = 0usize;
+            while total_processed < total_expected {
+                if cancellation.requested.load(Ordering::Relaxed) {
+                    stop_flag.store(true, Ordering::Relaxed);
+                    pipeline_error = Some("Metrics calculation cancelled".to_string());
+                    break;
+                }
+
+                match result_rx.recv_timeout(Duration::from_millis(100)) {
+                    Ok(Ok(res)) => {
+                        total_processed += 1;
+                        let s_idx = res.session_idx;
+
+                        if progress.steps[s_idx].status == CalibrationStepStatus::Pending {
+                            progress.steps[s_idx].status = CalibrationStepStatus::Running;
+                            progress.steps[s_idx].started_at = Some(now_millis());
+                            progress.current_step_id = Some(progress.steps[s_idx].id.clone());
+                        }
+
+                        progress.steps[s_idx].completed_count += 1;
+                        if res.state_after == FrameState::Rejected {
+                            progress.steps[s_idx].rejected_count += 1;
+                        }
+
+                        if progress.steps[s_idx].completed_count == progress.steps[s_idx].count {
+                            progress.steps[s_idx].status = CalibrationStepStatus::Completed;
+                            progress.steps[s_idx].ended_at = Some(now_millis());
+                        }
+
+                        session_results[res.session_idx][res.light_idx] =
+                            Some((res.stats, res.state_after, res.reject_reason));
+
+                        let _ = channel.send(progress.clone());
+                    }
+                    Ok(Err(err)) => {
+                        stop_flag.store(true, Ordering::Relaxed);
+                        pipeline_error = Some(err);
+                        break;
+                    }
+                    Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
+                        continue;
+                    }
+                    Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
+                        break;
+                    }
+                }
+            }
+        });
+
+        if let Some(err) = pipeline_error {
+            progress.finished_at = Some(now_millis());
+            progress.status = if err == "Metrics calculation cancelled" {
+                CalibrationRunStatus::Cancelled
+            } else {
+                CalibrationRunStatus::Failed
+            };
+            let _ = channel.send(progress.clone());
+            return Err(err);
+        }
+    }
+
+    // Merge results back into sessions
+    for (session_index, session) in state.grouped_nights.iter_mut().enumerate() {
         let mut score_source = Vec::with_capacity(session.lights.len());
 
-        // Parallel metrics extraction per-session. We collect per-light results and
-        // then merge them back into the session in a single-threaded step to
-        // avoid mutable aliasing issues.
-        let outcomes: Vec<Result<(usize, ImageStats, FrameState, Option<String>), String>> =
-            session
-                .lights
-                .par_iter()
-                .enumerate()
-                .map(|(i, light)| {
-                    if cancellation.requested.load(Ordering::Relaxed) {
-                        return Err("Metrics calculation cancelled".to_string());
-                    }
-
-                    let image_path = image_path_for_metrics(light);
-                    println!("[METRICS] Processing file {}: {}", i, image_path.display());
-
-                    let mut fits = FitsFile::new(image_path.clone()).map_err(|_| {
-                        format!(
-                            "Unable to open calibrated frame for metrics: {}",
-                            image_path.display()
-                        )
-                    })?;
-
-                    let image = ImageDataPixels::from_fits(&mut fits).map_err(|_| {
-                        format!(
-                            "Unable to read calibrated frame for metrics: {}",
-                            image_path.display()
-                        )
-                    })?;
-
-                    let mut stats = extract_metrics_from_pixels(
-                        &image.pixels,
-                        image.data.width,
-                        image.data.height,
-                    )?;
-
-                    // Compute score and detect trails (raw_score preserved for final decisions)
-                    let (raw_score, is_trail) = scoring::compute_score(&stats);
-                    stats.quality_score = Some(raw_score);
-                    println!(
-                        "  [RAW_SCORE] raw_score={:.3}, is_trail={}, stars={:?}, fwhm={:?}",
-                        raw_score, is_trail, stats.star_count, stats.fwhm
-                    );
-
-                    let (mut state_after, reject_reason) =
-                        classify_frame(None, &stats, max_fwhm, rejection_threshold, is_trail);
-
-                    // If the reason is an absolute rejection (not a "Score below limit"),
-                    // enforce the score guillotine here by setting quality_score to 0.0
-                    if let Some(ref r) = reject_reason {
-                        if r != &format!("Score below limit ({:.2})", rejection_threshold) {
-                            state_after = FrameState::Rejected;
-                            println!("  [STATE] Absolute rejection ({}) -> {:?}", r, state_after);
-                        } else {
-                            println!(
-                                "  [STATE] Statistical rejection ({}) -> {:?}",
-                                r, state_after
-                            );
-                        }
-                    } else {
-                        println!("  [STATE] Initial classification -> {:?}", state_after);
-                    }
-
-                    Ok((i, stats, state_after, reject_reason))
-                })
-                .collect();
-
-        // Check for errors
-        for r in &outcomes {
-            if let Err(e) = r {
-                return Err(e.clone());
-            }
-        }
-
-        // Merge results back into session and update progress counters
-        let mut processed = 0usize;
-        let mut rejected = 0usize;
-        for r in outcomes.into_iter().map(|r| r.unwrap()) {
-            let (idx, stats, new_state, reject_reason) = r;
-            if let Some(light) = session.lights.get_mut(idx) {
+        for (light_idx, light) in session.lights.iter_mut().enumerate() {
+            if let Some((stats, state_after, reject_reason)) =
+                session_results[session_index][light_idx].take()
+            {
                 light.stats = Some(stats.clone());
-                light.state = new_state;
+                light.state = state_after;
                 light.reject_reason = reject_reason.clone();
-                println!("[MERGE] File {} merged with state: {:?}", idx, new_state);
-            }
 
-            processed += 1;
-            if new_state == FrameState::Rejected {
-                rejected += 1;
-            }
+                if let Some(raw_score) = stats.quality_score {
+                    score_source.push(raw_score);
+                }
 
-            // record star counts for cross-night scoring distribution
-            if let Some(raw_score) = stats.quality_score {
-                score_source.push(raw_score);
-            }
-
-            // record raw score for the image so cross-night normalization doesn't
-            // mask obviously-bad raw frames when we decide final state
-            if let Some(light) = session.lights.get(idx) {
                 let image_path = image_path_for_metrics(light);
                 let image_path_key = normalize_path(&image_path);
-                raw_score_by_path
-                    .insert(image_path_key.clone(), stats.quality_score.unwrap_or(0.0));
+                raw_score_by_path.insert(image_path_key.clone(), stats.quality_score.unwrap_or(0.0));
                 metrics_by_path.insert(
                     image_path_key,
-                    (stats.clone(), new_state, reject_reason.clone()),
+                    (stats, state_after, reject_reason),
                 );
             }
         }
 
-        progress.steps[session_index].completed_count = processed;
-        progress.steps[session_index].rejected_count = rejected;
-        println!(
-            "[SESSION] Session {} complete: {} processed, {} rejected",
-            session_index, processed, rejected
-        );
-        let _ = channel.send(progress.clone());
+        if progress.steps[session_index].status == CalibrationStepStatus::Pending {
+            progress.steps[session_index].status = CalibrationStepStatus::Completed;
+            progress.steps[session_index].ended_at = Some(now_millis());
+        }
 
         score_sources_by_session.push(score_source);
-        progress.steps[session_index].ended_at = Some(now_millis());
-        progress.steps[session_index].status = CalibrationStepStatus::Completed;
-        progress.current_step_id = None;
-        let _ = channel.send(progress.clone());
     }
 
     if cross_night_reference {

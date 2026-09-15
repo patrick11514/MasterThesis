@@ -30,7 +30,7 @@ pub struct GroupFramesProgress {
     pub total: usize,
 }
 
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
 #[ts(export)]
 pub enum CalibrationStepKind {
     Dark,
@@ -39,7 +39,7 @@ pub enum CalibrationStepKind {
     Light,
 }
 
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
 #[ts(export)]
 pub enum CalibrationStepStatus {
     Pending,
@@ -50,7 +50,7 @@ pub enum CalibrationStepStatus {
     Cancelled,
 }
 
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
 #[ts(export)]
 pub enum CalibrationRunStatus {
     Running,
