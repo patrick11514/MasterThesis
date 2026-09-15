@@ -9,8 +9,12 @@
   import { Badge } from './ui/badge';
   import { Button } from './ui/button';
   import ScrollArea from './ui/scroll-area/scroll-area.svelte';
+  import { createVirtualizer } from '@tanstack/svelte-virtual';
+  import { untrack } from 'svelte';
 
   const appState = await getAppState();
+
+  let viewportElement = $state<HTMLDivElement | null>(null);
 
   const selectedSession = $derived.by(() => {
     if (appState.groupedNights.length === 0) {
@@ -24,6 +28,26 @@
     );
   });
 
+  const lights = $derived(selectedSession?.lights ?? []);
+
+  const virtualizer = createVirtualizer<HTMLDivElement, HTMLTableRowElement>({
+    count: 0,
+    getScrollElement: () => viewportElement,
+    estimateSize: () => 38,
+    overscan: 12
+  });
+
+  $effect(() => {
+    const count = lights.length;
+    const el = viewportElement;
+    untrack(() => {
+      $virtualizer.setOptions({
+        count,
+        getScrollElement: () => el
+      });
+    });
+  });
+
   $effect(() => {
     if (!selectedSession) {
       return;
@@ -31,6 +55,12 @@
 
     if (selectedSession.uuid !== appState.activeGroupedSessionUuid) {
       appState.setActiveGroupedSession(selectedSession.uuid);
+    }
+  });
+
+  $effect(() => {
+    if (selectedSession && viewportElement) {
+      viewportElement.scrollTop = 0;
     }
   });
 
@@ -188,199 +218,219 @@
     </div>
   </ScrollArea>
 
-  <ScrollArea orientation="vertical" class="min-h-0">
-    <div class="h-max w-full p-2">
-      {#if selectedSession}
-        <div class="grid gap-1 text-sm text-muted-foreground">
-          <div>
-            Name: <span class="text-foreground">{selectedSession.fingerprint.name}</span>
-          </div>
-          <div>
-            Filter: <span class="text-foreground">
-              {selectedSession.fingerprint.filter || 'n/a'}
-            </span>
-          </div>
-          <div>
-            Exposure: <span class="text-foreground">{selectedSession.fingerprint.exposure}</span>
-          </div>
-          <div>
-            Gain: <span class="text-foreground">{selectedSession.fingerprint.gain}</span>
-          </div>
-          <div>
-            Temperature: <span class="text-foreground">
-              {selectedSession.fingerprint.temperature}
-            </span>
-          </div>
+  {#if selectedSession}
+    <div class="shrink-0 space-y-2">
+      <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 text-sm text-muted-foreground">
+        <div>
+          Name: <span class="text-foreground">{selectedSession.fingerprint.name}</span>
         </div>
+        <div>
+          Filter: <span class="text-foreground">
+            {selectedSession.fingerprint.filter || 'n/a'}
+          </span>
+        </div>
+        <div>
+          Exposure: <span class="text-foreground">{selectedSession.fingerprint.exposure}s</span>
+        </div>
+        <div>
+          Gain: <span class="text-foreground">{selectedSession.fingerprint.gain}</span>
+        </div>
+        <div>
+          Temperature: <span class="text-foreground">
+            {selectedSession.fingerprint.temperature}
+          </span>
+        </div>
+      </div>
 
-        <div class="flex flex-wrap gap-2">
-          <Badge variant="outline" class={FILE_BADGES.Light}>
-            Light: {selectedSession.lights.length}
+      <div class="flex flex-wrap gap-2">
+        <Badge variant="outline" class={FILE_BADGES.Light}>
+          Light: {selectedSession.lights.length}
+        </Badge>
+
+        {#if 'Master' in selectedSession.darks}
+          <Badge variant="outline" class={FILE_BADGES.Dark}>Master Dark found</Badge>
+        {:else}
+          <Badge variant="outline" class={FILE_BADGES.Dark}>
+            Dark: {countMasterOrFrames(selectedSession.darks)}
           </Badge>
+        {/if}
 
-          {#if 'Master' in selectedSession.darks}
-            <Badge variant="outline" class={FILE_BADGES.Dark}>Master Dark found</Badge>
-          {:else}
-            <Badge variant="outline" class={FILE_BADGES.Dark}>
-              Dark: {countMasterOrFrames(selectedSession.darks)}
-            </Badge>
-          {/if}
+        {#if 'Master' in selectedSession.flats}
+          <Badge variant="outline" class={FILE_BADGES.Flat}>Master Flat found</Badge>
+        {:else}
+          <Badge variant="outline" class={FILE_BADGES.Flat}>
+            Flat: {countMasterOrFrames(selectedSession.flats)}
+          </Badge>
+        {/if}
 
-          {#if 'Master' in selectedSession.flats}
-            <Badge variant="outline" class={FILE_BADGES.Flat}>Master Flat found</Badge>
-          {:else}
-            <Badge variant="outline" class={FILE_BADGES.Flat}>
-              Flat: {countMasterOrFrames(selectedSession.flats)}
-            </Badge>
-          {/if}
+        {#if 'Master' in selectedSession.biases}
+          <Badge variant="outline" class={FILE_BADGES.Bias}>Master Bias found</Badge>
+        {:else}
+          <Badge variant="outline" class={FILE_BADGES.Bias}>
+            Bias: {countMasterOrFrames(selectedSession.biases)}
+          </Badge>
+        {/if}
+      </div>
 
-          {#if 'Master' in selectedSession.biases}
-            <Badge variant="outline" class={FILE_BADGES.Bias}>Master Bias found</Badge>
-          {:else}
-            <Badge variant="outline" class={FILE_BADGES.Bias}>
-              Bias: {countMasterOrFrames(selectedSession.biases)}
-            </Badge>
-          {/if}
+      <div class="flex items-center justify-between gap-2">
+        <div class="flex gap-2">
+          <Button size="sm" variant="outline" onclick={selectAllRejected}>
+            Select all rejected
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onclick={moveSelected}
+            disabled={selectedCount === 0}
+          >
+            Move selected files
+          </Button>
+          <Button
+            size="sm"
+            variant="destructive"
+            onclick={removeSelected}
+            disabled={selectedCount === 0}
+          >
+            Remove selected files
+          </Button>
         </div>
+        <div class="text-sm text-muted-foreground">Selected: {selectedCount}</div>
+      </div>
+    </div>
 
-        <div class="mt-3 flex items-center justify-between gap-2">
-          <div class="flex gap-2">
-            <Button size="sm" variant="outline" onclick={selectAllRejected}>
-              Select all rejected
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onclick={moveSelected}
-              disabled={selectedCount === 0}
-            >
-              Move selected files
-            </Button>
-            <Button
-              size="sm"
-              variant="destructive"
-              onclick={removeSelected}
-              disabled={selectedCount === 0}
-            >
-              Remove selected files
-            </Button>
-          </div>
-          <div class="text-sm text-muted-foreground">Selected: {selectedCount}</div>
-        </div>
+    <div
+      bind:this={viewportElement}
+      class="flex-1 min-h-0 overflow-auto rounded-md border border-border bg-background/60"
+    >
+      <table class="w-full min-w-140 text-sm">
+        <thead
+          class="sticky top-0 z-10 bg-muted/95 backdrop-blur text-left text-xs tracking-wide text-muted-foreground uppercase border-b border-border"
+        >
+          <tr>
+            <th class="px-3 py-2 font-medium">
+              <input
+                type="checkbox"
+                checked={getVisiblePaths().length > 0 &&
+                  getVisiblePaths().every((path) => !!selectionMap[path])}
+                onclick={(e) => {
+                  e.stopPropagation();
+                  selectAllVisible(getVisiblePaths());
+                }}
+              />
+            </th>
+            <th class="px-3 py-2 font-medium">Filename</th>
+            <th class="px-3 py-2 font-medium">Calibrated</th>
+            <th class="px-3 py-2 font-medium">Status</th>
+            <th class="px-3 py-2 font-medium">Star count</th>
+            <th class="px-3 py-2 font-medium">Eccentricity</th>
+            <th class="px-3 py-2 font-medium">FWHM</th>
+            <th class="px-3 py-2 font-medium">Background contrast</th>
+            <th class="px-3 py-2 font-medium">Exposure (s)</th>
+            <th class="px-3 py-2 font-medium">Gain</th>
+            <th class="px-3 py-2 font-medium">Temperature (C)</th>
+            <th class="px-3 py-2 font-medium">Quality</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#if lights.length === 0}
+            <tr class="border-t border-border/70">
+              <td colspan={12} class="px-3 py-3 text-muted-foreground">
+                No light frames in this grouped session.
+              </td>
+            </tr>
+          {:else}
+            {@const virtualItems = $virtualizer.getVirtualItems()}
+            {@const totalSize = $virtualizer.getTotalSize()}
+            {@const paddingTop = virtualItems.length > 0 ? virtualItems[0].start : 0}
+            {@const paddingBottom =
+              virtualItems.length > 0 ? totalSize - virtualItems[virtualItems.length - 1].end : 0}
 
-        <h1 class="mt-2 text-xl font-bold">Light frames</h1>
-
-        <div class="mt-3 overflow-x-auto rounded-md border border-border bg-background/60">
-          <table class="w-full min-w-140 text-sm">
-            <thead
-              class="bg-muted/40 text-left text-xs tracking-wide text-muted-foreground uppercase"
-            >
+            {#if paddingTop > 0}
               <tr>
-                <th class="px-3 py-2 font-medium">
-                  <input
-                    type="checkbox"
-                    checked={getVisiblePaths().length > 0 &&
-                      getVisiblePaths().every((path) => !!selectionMap[path])}
-                    onclick={(e) => {
-                      e.stopPropagation();
-                      selectAllVisible(getVisiblePaths());
-                    }}
-                  />
-                </th>
-                <th class="px-3 py-2 font-medium">Filename</th>
-                <th class="px-3 py-2 font-medium">Calibrated</th>
-                <th class="px-3 py-2 font-medium">Status</th>
-                <th class="px-3 py-2 font-medium">Star count</th>
-                <th class="px-3 py-2 font-medium">Eccentricity</th>
-                <th class="px-3 py-2 font-medium">FWHM</th>
-                <th class="px-3 py-2 font-medium">Background contrast</th>
-                <th class="px-3 py-2 font-medium">Exposure (s)</th>
-                <th class="px-3 py-2 font-medium">Gain</th>
-                <th class="px-3 py-2 font-medium">Temperature (C)</th>
-                <th class="px-3 py-2 font-medium">Quality</th>
+                <td style="height: {paddingTop}px" colspan={12} class="p-0 border-0"></td>
               </tr>
-            </thead>
-            <tbody>
-              {#if selectedSession.lights.length === 0}
-                <tr class="border-t border-border/70">
-                  <td colspan={10} class="px-3 py-3 text-muted-foreground">
-                    No light frames in this grouped session.
+            {/if}
+
+            {#each virtualItems as virtualRow (virtualRow.index)}
+              {@const light = lights[virtualRow.index]}
+              {#if light}
+                <tr class="border-t border-border/70 h-[38px]" data-index={virtualRow.index}>
+                  <td class="px-3 py-2">
+                    <input
+                      type="checkbox"
+                      checked={isSelected(light.path)}
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        toggleSelect(light.path);
+                      }}
+                    />
+                  </td>
+                  <td
+                    class="max-w-[320px] truncate px-3 py-2 text-foreground cursor-pointer hover:underline"
+                    title={light.path}
+                    onclick={(ev) => {
+                      // prevent from clicking through when using buttons/checkbox
+                      // @ts-expect-error Target is type of Node, which ts doesn't like
+                      if (ev.target?.closest('button') || ev.target?.closest('input')) return;
+                      previewState.previewImage = light;
+                      previewState.imageOptions = undefined;
+                      appState.setCurrentPreviewFile(light.path);
+                    }}
+                  >
+                    {light.name}
+                  </td>
+                  <td>
+                    {#if light.calibrated_frame}
+                      <CheckIcon class="size-5 text-green-500" />
+                    {:else}
+                      <XIcon class="size-5 text-red-500" />
+                    {/if}
+                  </td>
+                  <td class="px-3 py-2">
+                    <Badge
+                      title={light.reject_reason}
+                      variant="outline"
+                      class={statusBadgeClass(light.state)}
+                    >
+                      {light.state}
+                    </Badge>
+                  </td>
+                  <td class="px-3 py-2 text-muted-foreground">
+                    {light.stats?.star_count ?? '-'}
+                  </td>
+                  <td class="px-3 py-2 text-muted-foreground">
+                    {formatMetric(light.stats?.eccentricity, 3)}
+                  </td>
+                  <td class="px-3 py-2 text-muted-foreground">
+                    {formatMetric(light.stats?.fwhm)}
+                  </td>
+                  <td class="px-3 py-2 text-muted-foreground">
+                    {formatMetric(light.stats?.background_contrast, 3)}
+                  </td>
+                  <td class="px-3 py-2 text-muted-foreground">
+                    {formatMetric(light.default_headers?.exposure_time, 2)}
+                  </td>
+                  <td class="px-3 py-2 text-muted-foreground">
+                    {formatMetric(light.default_headers?.gain, 2)}
+                  </td>
+                  <td class="px-3 py-2 text-muted-foreground">
+                    {formatMetric(light.default_headers?.temperature, 1)}
+                  </td>
+                  <td class="px-3 py-2 text-muted-foreground">
+                    {formatMetric(light.stats?.quality_score)}
                   </td>
                 </tr>
-              {:else}
-                {#each selectedSession.lights as light (light.path)}
-                  <tr class="border-t border-border/70">
-                    <td class="px-3 py-2">
-                      <input
-                        type="checkbox"
-                        checked={isSelected(light.path)}
-                        onclick={(e) => {
-                          e.stopPropagation();
-                          toggleSelect(light.path);
-                        }}
-                      />
-                    </td>
-                    <td
-                      class="max-w-[320px] truncate px-3 py-2 text-foreground"
-                      title={light.path}
-                      onclick={(ev) => {
-                        // prevent from clicking through when using buttons/checkbox
-                        // @ts-expect-error Target is type of Node, which ts doesn't like
-                        if (ev.target?.closest('button') || ev.target?.closest('input')) return;
-                        previewState.previewImage = light;
-                        previewState.imageOptions = undefined;
-                        appState.setCurrentPreviewFile(light.path);
-                      }}
-                    >
-                      {light.name}
-                    </td>
-                    <td>
-                      {#if light.calibrated_frame}
-                        <CheckIcon class="size-5 text-green-500" />
-                      {:else}
-                        <XIcon class="size-5 text-red-500" />
-                      {/if}
-                    </td>
-                    <td class="px-3 py-2">
-                      <Badge
-                        title={light.reject_reason}
-                        variant="outline"
-                        class={statusBadgeClass(light.state)}
-                      >
-                        {light.state}
-                      </Badge>
-                    </td>
-                    <td class="px-3 py-2 text-muted-foreground">
-                      {light.stats?.star_count ?? '-'}
-                    </td>
-                    <td class="px-3 py-2 text-muted-foreground">
-                      {formatMetric(light.stats?.eccentricity, 3)}
-                    </td>
-                    <td class="px-3 py-2 text-muted-foreground">
-                      {formatMetric(light.stats?.fwhm)}
-                    </td>
-                    <td class="px-3 py-2 text-muted-foreground">
-                      {formatMetric(light.stats?.background_contrast, 3)}
-                    </td>
-                    <td class="px-3 py-2 text-muted-foreground">
-                      {formatMetric(light.default_headers?.exposure_time, 2)}
-                    </td>
-                    <td class="px-3 py-2 text-muted-foreground">
-                      {formatMetric(light.default_headers?.gain, 2)}
-                    </td>
-                    <td class="px-3 py-2 text-muted-foreground">
-                      {formatMetric(light.default_headers?.temperature, 1)}
-                    </td>
-                    <td class="px-3 py-2 text-muted-foreground">
-                      {formatMetric(light.stats?.quality_score)}
-                    </td>
-                  </tr>
-                {/each}
               {/if}
-            </tbody>
-          </table>
-        </div>
-      {/if}
+            {/each}
+
+            {#if paddingBottom > 0}
+              <tr>
+                <td style="height: {paddingBottom}px" colspan={12} class="p-0 border-0"></td>
+              </tr>
+            {/if}
+          {/if}
+        </tbody>
+      </table>
     </div>
-  </ScrollArea>
+  {/if}
 </div>

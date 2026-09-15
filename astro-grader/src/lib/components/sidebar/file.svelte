@@ -20,6 +20,9 @@
   const setType = (type: File['type']) => {
     appState.updateFileType(night, file.path, type);
   };
+
+  let dropdownOpen = $state(false);
+  let popoverOpen = $state(false);
 </script>
 
 <Item.Root class="w-full border-none p-0">
@@ -54,7 +57,7 @@
       </span>
     {/if}
 
-    <DropdownMenu.Root>
+    <DropdownMenu.Root bind:open={dropdownOpen}>
       <DropdownMenu.Trigger>
         {#snippet child({ props })}
           <Button {...props} variant="outline" size="icon-sm">
@@ -62,19 +65,21 @@
           </Button>
         {/snippet}
       </DropdownMenu.Trigger>
-      <DropdownMenu.Content class="w-56">
-        <DropdownMenu.Group>
-          <DropdownMenu.Label>File Type</DropdownMenu.Label>
-          <DropdownMenu.Separator />
-          <DropdownMenu.RadioGroup bind:value={getType, setType}>
-            {#each FILE_TYPES as type (type)}
-              <DropdownMenu.RadioItem value={type}>{type}</DropdownMenu.RadioItem>
-            {/each}
-          </DropdownMenu.RadioGroup>
-        </DropdownMenu.Group>
-      </DropdownMenu.Content>
+      {#if dropdownOpen}
+        <DropdownMenu.Content class="w-56">
+          <DropdownMenu.Group>
+            <DropdownMenu.Label>File Type</DropdownMenu.Label>
+            <DropdownMenu.Separator />
+            <DropdownMenu.RadioGroup bind:value={getType, setType}>
+              {#each FILE_TYPES as type (type)}
+                <DropdownMenu.RadioItem value={type}>{type}</DropdownMenu.RadioItem>
+              {/each}
+            </DropdownMenu.RadioGroup>
+          </DropdownMenu.Group>
+        </DropdownMenu.Content>
+      {/if}
     </DropdownMenu.Root>
-    <Popover.Root>
+    <Popover.Root bind:open={popoverOpen}>
       <Popover.Trigger class="shrink-0">
         {#snippet child({ props })}
           <Button {...props} variant="outline" size="icon-sm">
@@ -82,38 +87,40 @@
           </Button>
         {/snippet}
       </Popover.Trigger>
-      <Popover.Content class="flex w-max flex-col gap-2">
-        <div>
-          <strong>Name:</strong>
-          {file.name}
-        </div>
-        <div>
-          <strong>Path:</strong>
-          {file.path}
-        </div>
-        <div>
-          <strong>Type:</strong>
-          {file.type}
-        </div>
-        {#if file.default_headers.temperature !== undefined}
+      {#if popoverOpen}
+        <Popover.Content class="flex w-max flex-col gap-2">
           <div>
-            <strong>Temperature:</strong>
-            {file.default_headers.temperature}
+            <strong>Name:</strong>
+            {file.name}
           </div>
-        {/if}
-        {#if file.default_headers.exposure_time !== undefined}
           <div>
-            <strong>Exposure Time:</strong>
-            {file.default_headers.exposure_time}
+            <strong>Path:</strong>
+            {file.path}
           </div>
-        {/if}
-        {#if file.default_headers.gain !== undefined}
           <div>
-            <strong>Gain:</strong>
-            {file.default_headers.gain}
+            <strong>Type:</strong>
+            {file.type}
           </div>
-        {/if}
-      </Popover.Content>
+          {#if file.default_headers.temperature !== undefined}
+            <div>
+              <strong>Temperature:</strong>
+              {file.default_headers.temperature}
+            </div>
+          {/if}
+          {#if file.default_headers.exposure_time !== undefined}
+            <div>
+              <strong>Exposure Time:</strong>
+              {file.default_headers.exposure_time}
+            </div>
+          {/if}
+          {#if file.default_headers.gain !== undefined}
+            <div>
+              <strong>Gain:</strong>
+              {file.default_headers.gain}
+            </div>
+          {/if}
+        </Popover.Content>
+      {/if}
     </Popover.Root>
     <Button
       class="shrink-0"
