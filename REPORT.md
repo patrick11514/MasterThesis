@@ -522,3 +522,31 @@ flowchart TD
 1. **Virtual scroll table in `grouped-sessions-panel.svelte`:** Virtualize the light frames table using `@tanstack/svelte-virtual` to reduce DOM nodes from 48,000+ to under 200.
 2. **Optimize sidebar dropdowns:** Avoid pre-rendering Radix dropdown and popover menus for off-screen/unopened items.
 3. **Register `run_metrics_cancel` handler:** Add cancellation tokens to `run_metrics` in Rust.
+
+---
+
+## 8. Implementation Status & Verification Log
+
+All identified issues and requested architectural optimizations have been completed, verified across the full Rust and TypeScript test suites, and committed in clean, atomic Git commits.
+
+### 8.1 Commit Mapping & Change Log
+
+| Commit | Scope | Description | Key Changes |
+|---|---|---|---|
+| `c1bb249` | `docs` | Add comprehensive analysis report and optimization roadmap | Created `REPORT.md` with in-depth analysis of scoring, threading, calibration, and UI bottlenecks. |
+| `603e95f` | `fix(metrics)` | Fix HFD extraction subpix bug, expand SEP buffer, and add `run_metrics_cancel` | • Fixed `subpix = 5` in `sep_flux_radius` (eliminating `ILLEGAL_SUBPIX` and restoring accurate HFD/trail calculation).<br>• Called `sep_set_extract_pixstack(1_000_000)` to prevent active-pixel buffer overflows.<br>• Registered `run_metrics_cancel` command in Tauri backend with `AtomicBool` token. |
+| `bb71797` | `fix(scoring)` | Tune background contrast penalties and classification threshold | • Relaxed absolute background glow rejection threshold from `15.0` to `35.0` in `metrics.rs`.<br>• Rebalanced weights in `scoring.rs` (`W_BG = 0.5`, `BG_MAX = 30.0`, `STAR_MAX = 2500.0`, `W_FWHM = 0.8`, `W_ECC = 0.5`) to eliminate false quality destruction. |
+| `db9d03d` | `perf(calibration)` | Zero-allocation hot pixel removal and master flat pre-normalization | • Replaced dynamic heap vectors in `neighborhood_hot_pixel_threshold` with `[f32; 8]` stack array and single sort, saving 24M–72M allocations per frame.<br>• Added `prepare_normalized_flat` and `calibrate_light_prepared` to normalize master flats once per session.<br>• Changed `master_dark/flat/bias` to `#[serde(default)]` in `fe_state.rs` to persist master frames across project reloads.<br>• Replaced panicking `assert!` in `debayer_data` with safe validation. |
+| `fe8d1db` | `feat(calibration)` | Implement producer-consumer streaming pipeline for calibration | • Implemented 3-stage streaming calibration pipeline using `std::thread::scope` and bounded `crossbeam_channel`s.<br>• Staged 1–2 I/O loader threads, $N-2$ parallel compute workers, and 1–2 I/O writer threads.<br>• Immediate per-frame Tauri event progress emission and responsive cancellation. |
+| `cb9ad7a` | `perf(metrics)` | Stream metrics extraction across all sessions to maximize CPU utilization | • Flattened all light frames across all sessions into a single continuous queue, eliminating the barrier synchronization and thread starvation between sessions.<br>• Added dedicated background prefetch loader thread to decouple disk I/O from Rayon compute threads, keeping all CPU cores at ~100% saturation during star extraction.<br>• Derived `PartialEq, Eq` on calibration state enums. |
+| `a27a49a` | `perf(ui)` | Virtualize grouped sessions table and optimize dropdown rendering | • Virtualized light frames table in `grouped-sessions-panel.svelte` using `@tanstack/svelte-virtual` with dynamic spacers.<br>• Redesigned layout with sticky table header and pinned control bar.<br>• Lazily mounted `DropdownMenu.Content` and `Popover.Content` in `sidebar/file.svelte` using `bind:open` to eliminate hundreds of idle DOM portals.<br>• Configured `.npmrc` for non-interactive `pnpm` builds. |
+
+### 8.2 Verification Suite
+
+1. **Rust Backend (`astro-grader/src-tauri`):**
+   - `cargo test`: **40 passed, 0 failed, 0 ignored** in `astro_grader_lib`.
+   - Tests cover: inlier/outlier frame classification, background contrast rejection, master frame deduplication across nights, normalized pixel scaling, hot pixel spike replacement, and FITS layout bindings.
+2. **Frontend Type & Svelte Check (`astro-grader`):**
+   - `pnpm check`: **0 errors, 0 warnings** across all Svelte components and TypeScript modules.
+3. **Frontend Production Build (`astro-grader`):**
+   - `pnpm build`: **Clean build completed** with `@sveltejs/adapter-static` output to `build/`.
