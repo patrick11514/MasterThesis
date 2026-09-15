@@ -10,9 +10,10 @@ use crate::fits::{
     utils::{calculate_channel_stats, calculate_stf, debayer_data},
 };
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS, PartialEq)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS, PartialEq, Default)]
 #[ts(export)]
 pub enum ImageDataLayout {
+    #[default]
     Grayscale, //Single channel, no bayer pattern
     RGB,       // The pixels are already in RGBRGBRGB... order
     RGBPlanar, // The pixels are in planar format (3 channels in separate planes), needs interleaving
@@ -61,7 +62,7 @@ pub struct AutoSFT {
     pub unlinked: STFPair,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS, Default)]
 #[ts(export)]
 pub struct ImageData {
     //this will store currently applied options on the image, so we know, what
@@ -253,9 +254,7 @@ impl ImageDataPixels {
             self,
             bayer_pattern.pattern,
             (bayer_pattern.x_offset, bayer_pattern.y_offset),
-        );
-
-        true
+        )
     }
 
     pub fn scale(&mut self, scale: f32) {

@@ -16,11 +16,15 @@ pub fn debayer_data(
     data: &mut super::image_data_pixels::ImageDataPixels,
     bayer_pattern: String,
     offset: (usize, usize),
-) {
-    assert!(bayer_pattern.len() == 4);
-    assert!(bayer_pattern.contains('R'));
-    assert!(bayer_pattern.contains('G'));
-    assert!(bayer_pattern.contains('B'));
+) -> bool {
+    let pattern_upper = bayer_pattern.to_ascii_uppercase();
+    if pattern_upper.len() != 4
+        || !pattern_upper.contains('R')
+        || !pattern_upper.contains('G')
+        || !pattern_upper.contains('B')
+    {
+        return false;
+    }
 
     let new_width = data.data.width / 2;
     let new_height = data.data.height / 2;
@@ -112,6 +116,7 @@ pub fn debayer_data(
     data.data.layout = ImageDataLayout::RGB;
     data.data.applied_options.bayer_pattern = Some(bayer_pattern);
     data.data.applied_options.scale = 1.0;
+    true
 }
 
 pub fn normalize_data(data: &mut Vec<f32>, format: &fitsio::images::ImageType) {

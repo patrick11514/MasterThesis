@@ -3,7 +3,6 @@ use std::{path::PathBuf, sync::Mutex};
 use crate::{
     fits::{
         file::ReadImageError,
-        image_data_pixels::{ImageData, ImageOptions},
         structs::FitsOpenError,
         utils::normalize_data,
     },
@@ -18,7 +17,7 @@ pub mod utils;
 
 //public re-exports
 pub use file::FitsFile;
-pub use image_data_pixels::{ImageDataLayout, ImageDataPixels};
+pub use image_data_pixels::{ImageData, ImageDataLayout, ImageDataPixels, ImageOptions};
 pub use structs::{FileType, FrameState, ImageStats};
 pub use tag::Tag;
 

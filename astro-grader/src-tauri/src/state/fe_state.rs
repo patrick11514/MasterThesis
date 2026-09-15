@@ -43,11 +43,11 @@ pub struct AstroSession {
     pub biases: MasterOrFrames,
 
     //runtime data
-    #[serde(skip)]
+    #[serde(default)]
     pub master_dark: Option<PathBuf>,
-    #[serde(skip)]
+    #[serde(default)]
     pub master_flat: Option<PathBuf>,
-    #[serde(skip)]
+    #[serde(default)]
     pub master_bias: Option<PathBuf>,
 }
 

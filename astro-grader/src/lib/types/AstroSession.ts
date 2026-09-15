@@ -3,4 +3,4 @@ import type { File } from "./File";
 import type { MasterOrFrames } from "./MasterOrFrames";
 import type { SessionFingerprint } from "./SessionFingerprint";
 
-export type AstroSession = { uuid: string, fingerprint: SessionFingerprint, lights: Array<File>, darks: MasterOrFrames, flats: MasterOrFrames, biases: MasterOrFrames, };
+export type AstroSession = { uuid: string, fingerprint: SessionFingerprint, lights: Array<File>, darks: MasterOrFrames, flats: MasterOrFrames, biases: MasterOrFrames, master_dark: string | null, master_flat: string | null, master_bias: string | null, };

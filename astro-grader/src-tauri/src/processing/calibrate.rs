@@ -183,22 +183,20 @@ fn calibrated_output_is_valid(source_path: &Path, calibrated_path: &Path) -> boo
 const HOT_PIXEL_SIGMA_FACTOR: f32 = 6.0;
 const HOT_PIXEL_ABS_FLOOR: f32 = 0.0005;
 
-fn neighborhood_hot_pixel_threshold(neighbors: &[f32]) -> f32 {
-    if neighbors.is_empty() {
-        return f32::INFINITY;
-    }
-
-    let mut sorted = neighbors.to_vec();
+#[inline]
+fn neighborhood_hot_pixel_threshold(neighbors: &[f32; 8]) -> (f32, f32) {
+    let mut sorted = *neighbors;
     sorted.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let median = sorted[sorted.len() / 2];
+    let median = sorted[4];
 
-    let mad = neighbors
-        .iter()
-        .map(|value| (*value - median).abs())
-        .sum::<f32>()
-        / neighbors.len() as f32;
+    let mut mad_sum = 0.0f32;
+    for &value in neighbors {
+        mad_sum += (value - median).abs();
+    }
+    let mad = mad_sum * 0.125;
 
-    median + HOT_PIXEL_SIGMA_FACTOR * mad.max(1e-12) + HOT_PIXEL_ABS_FLOOR
+    let threshold = median + HOT_PIXEL_SIGMA_FACTOR * mad.max(1e-12) + HOT_PIXEL_ABS_FLOOR;
+    (threshold, median)
 }
 
 fn replace_hot_pixels_in_plane(
@@ -211,8 +209,6 @@ fn replace_hot_pixels_in_plane(
         return 0;
     }
 
-    let original = source_plane.to_vec();
-
     target_plane
         .par_chunks_mut(width)
         .enumerate()
@@ -224,7 +220,7 @@ fn replace_hot_pixels_in_plane(
             let mut replaced = 0usize;
             for x in 1..(width - 1) {
                 let idx = y * width + x;
-                let center = original[idx];
+                let center = source_plane[idx];
 
                 let mut neighbors = [0.0f32; 8];
                 let mut k = 0usize;
@@ -233,18 +229,14 @@ fn replace_hot_pixels_in_plane(
                         if yy == y && xx == x {
                             continue;
                         }
-                        neighbors[k] = original[yy * width + xx];
+                        neighbors[k] = source_plane[yy * width + xx];
                         k += 1;
                     }
                 }
 
-                let threshold = neighborhood_hot_pixel_threshold(&neighbors);
+                let (threshold, median) = neighborhood_hot_pixel_threshold(&neighbors);
                 if center > threshold {
-                    let mut sorted = neighbors;
-                    sorted.sort_unstable_by(|a, b| {
-                        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
-                    });
-                    row[x] = sorted[sorted.len() / 2];
+                    row[x] = median;
                     replaced += 1;
                 }
             }
@@ -858,58 +850,56 @@ fn resolve_master_for_slot(
     }
 }
 
-pub fn calibrate_light(
-    light: &mut [f32],
-    dark: Option<&[f32]>,
-    flat: Option<&[f32]>,
-    bias: Option<&[f32]>,
-) {
-    let pixel_count = light.len();
-
-    // 1. Calculate the mean of the Bias-subtracted Flat
-    let mut flat_mean = 1.0;
-    if let Some(flat_data) = flat {
-        let flat_sum: f32 = flat_data
-            .par_iter()
-            .enumerate()
-            .map(|(i, &f_val)| {
-                let bias_val = bias.map(|b| b[i]).unwrap_or(0.0);
-                let mut flat_val = f_val - bias_val;
-                if flat_val < 0.0 {
-                    flat_val = 0.0;
-                }
-                flat_val
-            })
-            .sum();
-
-        flat_mean = flat_sum / (pixel_count as f32);
-        if flat_mean == 0.0 {
-            flat_mean = 1.0; // avoid division by zero overall
-        }
+pub fn prepare_normalized_flat(flat: &[f32], bias: Option<&[f32]>) -> Vec<f32> {
+    let pixel_count = flat.len();
+    if pixel_count == 0 {
+        return Vec::new();
     }
 
-    // 2. The Calibration Loop
-    light.par_iter_mut().enumerate().for_each(|(i, pixel)| {
-        let sub_val = if let Some(dark_data) = dark {
-            dark_data[i]
-        } else if let Some(bias_data) = bias {
-            bias_data[i]
-        } else {
-            0.0
-        };
+    let flat_sum: f32 = flat
+        .par_iter()
+        .enumerate()
+        .map(|(i, &f_val)| {
+            let bias_val = bias.map(|b| b[i]).unwrap_or(0.0);
+            let mut flat_val = f_val - bias_val;
+            if flat_val < 0.0 {
+                flat_val = 0.0;
+            }
+            flat_val
+        })
+        .sum();
 
+    let mut flat_mean = flat_sum / (pixel_count as f32);
+    if flat_mean == 0.0 {
+        flat_mean = 1.0;
+    }
+
+    flat.par_iter()
+        .enumerate()
+        .map(|(i, &f_val)| {
+            let bias_val = bias.map(|b| b[i]).unwrap_or(0.0);
+            (f_val - bias_val) / flat_mean
+        })
+        .collect()
+}
+
+pub fn calibrate_light_prepared(
+    light: &mut [f32],
+    dark_or_bias: Option<&[f32]>,
+    normalized_flat: Option<&[f32]>,
+) {
+    light.par_iter_mut().enumerate().for_each(|(i, pixel)| {
+        let sub_val = dark_or_bias.map(|d| d[i]).unwrap_or(0.0);
         let mut calibrated = *pixel - sub_val;
 
         if calibrated < 0.0 {
             calibrated = 0.0;
         }
 
-        if let Some(flat_data) = flat {
-            let bias_val = bias.map(|b| b[i]).unwrap_or(0.0);
-            let flat_norm = (flat_data[i] - bias_val) / flat_mean;
-
-            if flat_norm > 0.0001 {
-                calibrated /= flat_norm;
+        if let Some(flat_norm) = normalized_flat {
+            let fn_val = flat_norm[i];
+            if fn_val > 0.0001 {
+                calibrated /= fn_val;
             } else {
                 calibrated = 0.0;
             }
@@ -917,6 +907,18 @@ pub fn calibrate_light(
 
         *pixel = calibrated;
     });
+}
+
+#[allow(dead_code)]
+pub fn calibrate_light(
+    light: &mut [f32],
+    dark: Option<&[f32]>,
+    flat: Option<&[f32]>,
+    bias: Option<&[f32]>,
+) {
+    let dark_or_bias = dark.or(bias);
+    let normalized_flat = flat.map(|f| prepare_normalized_flat(f, bias));
+    calibrate_light_prepared(light, dark_or_bias, normalized_flat.as_deref());
 }
 
 pub fn run_calibration(
@@ -1054,6 +1056,11 @@ pub fn run_calibration(
                 let flat_pixels = read_master(flat_path)?;
                 let bias_pixels = read_master(bias_path)?;
 
+                let dark_or_bias = dark_pixels.as_deref().or(bias_pixels.as_deref());
+                let normalized_flat = flat_pixels
+                    .as_deref()
+                    .map(|f| prepare_normalized_flat(f, bias_pixels.as_deref()));
+
                 // Clear stale calibrated_frame references (file was deleted externally)
                 // so the frontend state doesn't show a ghost path.
                 for f in session.lights.iter_mut() {
@@ -1175,11 +1182,10 @@ pub fn run_calibration(
 
                             normalize_pixels_if_needed(&mut img.pixels);
 
-                            calibrate_light(
+                            calibrate_light_prepared(
                                 &mut img.pixels,
-                                dark_pixels.as_deref(),
-                                flat_pixels.as_deref(),
-                                bias_pixels.as_deref(),
+                                dark_or_bias,
+                                normalized_flat.as_deref(),
                             );
 
                             let hot_pixels_replaced = remove_hot_pixels(&mut img);
@@ -1400,7 +1406,8 @@ pub fn run_calibration(
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_pixels_if_needed;
+    use super::*;
+    use crate::fits::ImageData;
 
     #[test]
     fn normalize_pixels_scales_raw_sensor_counts() {
@@ -1420,5 +1427,45 @@ mod tests {
         normalize_pixels_if_needed(&mut pixels);
 
         assert_eq!(pixels, vec![0.0, 0.25, 0.8, 1.0]);
+    }
+
+    #[test]
+    fn hot_pixel_removal_replaces_isolated_spike() {
+        let mut data = ImageData::default();
+        data.width = 3;
+        data.height = 3;
+        data.depth = 1;
+        data.layout = ImageDataLayout::Grayscale;
+
+        let mut img = ImageDataPixels {
+            data,
+            pixels: vec![
+                1.0, 1.0, 1.0,
+                1.0, 100.0, 1.0,
+                1.0, 1.0, 1.0,
+            ],
+        };
+
+        let replaced = remove_hot_pixels(&mut img);
+        assert_eq!(replaced, 1);
+        assert!((img.pixels[4] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn calibrate_light_prepared_matches_unprepared() {
+        let light = vec![0.5, 0.8, 1.0];
+        let dark = vec![0.1, 0.1, 0.1];
+        let flat = vec![1.0, 2.0, 1.0];
+
+        let norm_flat = prepare_normalized_flat(&flat, None);
+        let mut light_prepared = light.clone();
+        calibrate_light_prepared(&mut light_prepared, Some(&dark), Some(&norm_flat));
+
+        let mut light_legacy = light.clone();
+        calibrate_light(&mut light_legacy, Some(&dark), Some(&flat), None);
+
+        for (a, b) in light_prepared.iter().zip(light_legacy.iter()) {
+            assert!((a - b).abs() < 1e-6, "prepared: {}, legacy: {}", a, b);
+        }
     }
 }
