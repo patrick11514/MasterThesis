@@ -76,6 +76,7 @@ pub fn run() {
             processing::calibrate,
             processing::run_metrics,
             processing::calibrate_cancel,
+            processing::run_metrics_cancel,
             state::save_state,
             state::load_state
         ])

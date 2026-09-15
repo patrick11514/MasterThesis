@@ -1,8 +1,9 @@
 use std::{
     collections::HashMap,
-    ffi::{CStr, c_char, c_void},
+    ffi::{c_char, c_void, CStr},
     path::PathBuf,
     ptr,
+    sync::atomic::Ordering,
 };
 
 use rayon::prelude::*;
@@ -14,8 +15,8 @@ use crate::{
     fits::{FitsFile, FrameState, ImageDataPixels, ImageStats},
     state::fe_state::FeState,
     state::{
-        CalibrationProgressMessage, CalibrationProgressStep, CalibrationRunStatus,
-        CalibrationStepKind, CalibrationStepStatus,
+        CalibrationCancellation, CalibrationProgressMessage, CalibrationProgressStep,
+        CalibrationRunStatus, CalibrationStepKind, CalibrationStepStatus,
     },
 };
 
@@ -127,7 +128,7 @@ pub fn classify_frame(
         );
     }
 
-    if fwhm > max_fwhm {
+    if max_fwhm > 0.0 && fwhm > max_fwhm {
         return (
             FrameState::Rejected,
             Some("Out of Focus / High FWHM".to_string()),
@@ -163,6 +164,10 @@ pub fn extract_metrics_from_pixels(
 ) -> Result<ImageStats, String> {
     if pixels.is_empty() || width == 0 || height == 0 {
         return Err("Image is empty".to_string());
+    }
+
+    unsafe {
+        sep_set_extract_pixstack(1_000_000);
     }
 
     let input_image = build_sep_image(pixels, width, height);
@@ -300,7 +305,7 @@ pub fn extract_metrics_from_pixels(
                 y,
                 (major as f64 * 4.0).max(4.0),
                 0,
-                0,
+                5,
                 0,
                 ptr::null(),
                 flux_fraction.as_ptr(),
@@ -420,6 +425,7 @@ pub fn run_metrics(
     cross_night_reference: bool,
     max_fwhm: f32,
     rejection_threshold: f32,
+    cancellation: &CalibrationCancellation,
 ) -> Result<(), String> {
     // Helper to get current time
     fn now_millis() -> u64 {
@@ -475,6 +481,13 @@ pub fn run_metrics(
     let mut score_sources_by_session = Vec::with_capacity(state.grouped_nights.len());
 
     for (session_index, session) in state.grouped_nights.iter_mut().enumerate() {
+        if cancellation.requested.load(Ordering::Relaxed) {
+            progress.finished_at = Some(now_millis());
+            progress.status = CalibrationRunStatus::Cancelled;
+            let _ = channel.send(progress.clone());
+            return Err("Metrics calculation cancelled".to_string());
+        }
+
         progress.steps[session_index].status = CalibrationStepStatus::Running;
         progress.steps[session_index].started_at = Some(now_millis());
         progress.current_step_id = Some(progress.steps[session_index].id.clone());
@@ -491,6 +504,10 @@ pub fn run_metrics(
                 .par_iter()
                 .enumerate()
                 .map(|(i, light)| {
+                    if cancellation.requested.load(Ordering::Relaxed) {
+                        return Err("Metrics calculation cancelled".to_string());
+                    }
+
                     let image_path = image_path_for_metrics(light);
                     println!("[METRICS] Processing file {}: {}", i, image_path.display());
 

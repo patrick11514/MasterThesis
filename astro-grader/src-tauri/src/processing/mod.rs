@@ -9,6 +9,7 @@ use calibrate::run_calibration;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::atomic::Ordering;
+use tauri::Manager;
 
 use crate::{
     config,
@@ -104,7 +105,12 @@ pub async fn run_metrics(
     channel: tauri::ipc::Channel<crate::state::CalibrationProgressMessage>,
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, Mutex<AppState>>,
+    calibration_cancellation: tauri::State<'_, CalibrationCancellation>,
 ) -> Result<FeState, String> {
+    calibration_cancellation
+        .requested
+        .store(false, Ordering::Relaxed);
+
     let config = config::read_config(&app_handle).await.unwrap_or_default();
 
     let mut fe_state = {
@@ -116,12 +122,14 @@ pub async fn run_metrics(
     };
 
     let updated_fe_state = tokio::task::spawn_blocking(move || {
+        let cancellation_state = app_handle.state::<CalibrationCancellation>();
         metrics::run_metrics(
             &mut fe_state,
             channel,
             config.cross_night_reference,
             config.max_fwhm,
             config.rejection_threshold,
+            &cancellation_state,
         )?;
         Ok::<_, String>(fe_state)
     })
@@ -138,6 +146,16 @@ pub async fn run_metrics(
 
 #[tauri::command]
 pub async fn calibrate_cancel(
+    calibration_cancellation: tauri::State<'_, CalibrationCancellation>,
+) -> Result<(), String> {
+    calibration_cancellation
+        .requested
+        .store(true, Ordering::Relaxed);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn run_metrics_cancel(
     calibration_cancellation: tauri::State<'_, CalibrationCancellation>,
 ) -> Result<(), String> {
     calibration_cancellation
