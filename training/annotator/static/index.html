@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>AstroGrader - FITS Tagging Tool</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Left Sidebar: File Browser & Directory -->
+    <div id="sidebar">
+      <div class="sidebar-header">
+        <label for="dir-input">Directory:</label>
+        <div class="input-row">
+          <input type="text" id="dir-input" value="../test_fits" spellcheck="false" />
+          <button id="btn-load-dir">Load</button>
+        </div>
+      </div>
+      <div class="file-list-container">
+        <div class="file-list-header">Files (<span id="file-count">0</span>)</div>
+        <ul id="file-list"></ul>
+      </div>
+      <div class="sidebar-footer">
+        <div class="nav-row">
+          <button id="btn-prev">&lt; Prev (A)</button>
+          <button id="btn-next">Next (D) &gt;</button>
+        </div>
+        <button id="btn-save" class="btn-primary">Save Annotations (S)</button>
+      </div>
+    </div>
+
+    <!-- Main Workspace -->
+    <div id="workspace">
+      <!-- Top Control Bar -->
+      <div id="toolbar">
+        <div class="tool-group">
+          <span class="label">File:</span>
+          <span id="current-filename" class="value">No file loaded</span>
+          <span id="image-dimensions" class="meta"></span>
+        </div>
+
+        <div class="tool-group">
+          <label>Class:</label>
+          <div class="btn-group" id="class-buttons">
+            <button class="btn-class active" data-class="satellite_streak" data-key="1">[1] Satellite</button>
+            <button class="btn-class" data-class="airplane" data-key="2">[2] Airplane</button>
+            <button class="btn-class" data-class="cloud" data-key="3">[3] Cloud</button>
+            <button class="btn-class" data-class="obstruction" data-key="4">[4] Obstruction</button>
+            <button class="btn-class" data-class="star_trail" data-key="5">[5] Star Trail</button>
+          </div>
+        </div>
+
+        <div class="tool-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="chk-global-star-trail" />
+            Global Star Trailing
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="chk-clean-sky" checked />
+            Clean Sky
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="chk-grid" />
+            512x512 Grid
+          </label>
+        </div>
+
+        <div class="tool-group stretch-controls">
+          <label for="slider-stretch">STF Stretch:</label>
+          <input type="range" id="slider-stretch" min="-3.5" max="-1.5" step="0.1" value="-2.8" />
+          <span id="stretch-val">-2.8</span>
+          <button id="btn-reset-view">Reset View</button>
+        </div>
+      </div>
+
+      <!-- Canvas Viewport -->
+      <div id="canvas-container">
+        <canvas id="viewport"></canvas>
+      </div>
+
+      <!-- Bottom Info Bar -->
+      <div id="statusbar">
+        <span id="status-text">Ready. Drag on canvas to draw bounding box. Press Delete to remove selected.</span>
+        <span id="cursor-pos">X: 0, Y: 0</span>
+        <span id="box-count">Boxes: 0</span>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
