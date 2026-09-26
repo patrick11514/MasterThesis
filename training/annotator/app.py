@@ -40,10 +40,16 @@ IMAGE_CACHE = {}
 class BoundingBox(BaseModel):
     id: str
     label: str  # satellite_streak, airplane, cloud, obstruction, star_trail
-    x: float    # pixel coords on full image
-    y: float
-    width: float
-    height: float
+    type: str = "box"  # "box", "line", "polygon"
+    x: float = 0.0     # pixel coords on full image
+    y: float = 0.0
+    width: float = 0.0
+    height: float = 0.0
+    x1: Optional[float] = None
+    y1: Optional[float] = None
+    x2: Optional[float] = None
+    y2: Optional[float] = None
+    points: Optional[List[List[float]]] = None  # [[x0, y0], [x1, y1], ...] for polygon
 
 
 class FrameAnnotation(BaseModel):
@@ -51,6 +57,7 @@ class FrameAnnotation(BaseModel):
     width: int
     height: int
     global_star_trailing: bool = False
+    global_cloud: bool = False
     is_clean: bool = True
     boxes: List[BoundingBox] = []
 
@@ -99,6 +106,8 @@ def get_fits_preview(
     path: str = Query(...),
     shadows: float = Query(-2.80),
     target_bg: float = Query(0.25),
+    mode: str = Query("stf"),
+    linked: bool = Query(False),
     max_dim: int = Query(2048, description="Max width/height for display downscale"),
 ):
     fits_path = Path(path).resolve()
@@ -129,7 +138,7 @@ def get_fits_preview(
         rgb_preview = rgb_f32
         scale = 1.0
 
-    stf_u8 = to_stf_u8(rgb_preview, shadows_clipping=shadows, target_bg=target_bg)
+    stf_u8 = to_stf_u8(rgb_preview, shadows_clipping=shadows, target_bg=target_bg, rgb_linked=linked, mode=mode)
 
     pil_img = Image.fromarray(stf_u8, mode="RGB")
     buf = io.BytesIO()
@@ -165,6 +174,7 @@ def get_annotations(path: str = Query(...)):
         "width": 0,
         "height": 0,
         "global_star_trailing": False,
+        "global_cloud": False,
         "is_clean": True,
         "boxes": [],
     }
@@ -176,8 +186,8 @@ def save_annotations(path: str = Query(...), annot: FrameAnnotation = ...):
     json_path = fits_path.with_suffix(".json")
     txt_path = fits_path.with_suffix(".txt")
 
-    # Clean status: if any box exists or global star trailing is checked, not clean
-    if len(annot.boxes) > 0 or annot.global_star_trailing:
+    # Clean status: if any box exists or global flags are checked, not clean
+    if len(annot.boxes) > 0 or annot.global_star_trailing or annot.global_cloud:
         annot.is_clean = False
     else:
         annot.is_clean = True
@@ -192,11 +202,24 @@ def save_annotations(path: str = Query(...), annot: FrameAnnotation = ...):
         for box in annot.boxes:
             if box.label in CLASSES:
                 cid = CLASSES.index(box.label)
-                xc = (box.x + box.width / 2.0) / annot.width
-                yc = (box.y + box.height / 2.0) / annot.height
-                bw = box.width / annot.width
-                bh = box.height / annot.height
-                lines.append(f"{cid} {xc:.6f} {yc:.6f} {bw:.6f} {bh:.6f}")
+                if box.type == "polygon" and box.points and len(box.points) >= 3:
+                    min_x = min(p[0] for p in box.points)
+                    min_y = min(p[1] for p in box.points)
+                    max_x = max(p[0] for p in box.points)
+                    max_y = max(p[1] for p in box.points)
+                    bx, by, bw, bh = min_x, min_y, max(max_x - min_x, 4.0), max(max_y - min_y, 4.0)
+                elif box.type == "line" and box.x1 is not None and box.x2 is not None:
+                    bx = min(box.x1, box.x2)
+                    by = min(box.y1, box.y2)
+                    bw = max(abs(box.x2 - box.x1), 4.0)
+                    bh = max(abs(box.y2 - box.y1), 4.0)
+                else:
+                    bx, by, bw, bh = box.x, box.y, box.width, box.height
+                xc = (bx + bw / 2.0) / annot.width
+                yc = (by + bh / 2.0) / annot.height
+                norm_w = bw / annot.width
+                norm_h = bh / annot.height
+                lines.append(f"{cid} {xc:.6f} {yc:.6f} {norm_w:.6f} {norm_h:.6f}")
         with open(txt_path, "w", encoding="utf-8") as f:
             f.write("\n".join(lines))
 

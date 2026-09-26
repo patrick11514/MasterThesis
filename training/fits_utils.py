@@ -12,6 +12,14 @@ import numpy as np
 from astropy.io import fits
 import cv2
 
+CLASSES = [
+    "satellite_streak",
+    "airplane",
+    "cloud",
+    "obstruction",
+    "star_trail",
+]
+
 
 def mtf_scalar(m: float, x: float) -> float:
     """Midtone Transfer Function (MTF) formula yoinked from PixInsight / AstroGrader."""
@@ -66,46 +74,56 @@ def calculate_stf(
 ) -> list[Tuple[float, float, float]]:
     """
     Calculates AutoSTF parameters [c0 (shadows), m (midtones), c1 (highlights)] per channel.
-    Matches AstroGrader's Rust algorithm.
+    Matches AstroGrader's Rust algorithm with numerical safeguards against blowout / black crush.
     """
     n = len(medians)
-    scaled_mads = [mad * 1.4826 for mad in mads]
+    scaled_mads = [max(float(mad) * 1.4826, 1e-5) for mad in mads]
     channels = [(0.0, 0.5, 1.0) for _ in range(n)]
 
     if rgb_linked and n == 3:
-        inverted = sum(1 for m in medians if m > 0.5)
+        # Astronomical frames are dark (median << 0.5); only true inverted negatives exceed 0.85
+        inverted = sum(1 for m in medians if m > 0.85)
         if inverted < n:
-            c0 = 0.0
+            c0_sum = 0.0
             m_avg = 0.0
             for c in range(n):
-                if 1.0 + scaled_mads[c] != 1.0:
-                    c0 += medians[c] + shadows_clipping * scaled_mads[c]
+                c0_sum += medians[c] + shadows_clipping * scaled_mads[c]
                 m_avg += medians[c]
-            c0 = float(np.clip(c0 / float(n), 0.0, 1.0))
-            m = mtf_scalar(target_bg, (m_avg / float(n)) - c0)
+            avg_med = m_avg / float(n)
+            # Ensure c0 is strictly below median so median - c0 > 0
+            c0 = float(np.clip(c0_sum / float(n), 0.0, max(0.0, avg_med - 1e-4)))
+            diff = max(avg_med - c0, 1e-5)
+            m = mtf_scalar(target_bg, diff)
+            m = float(np.clip(m, 0.005, 0.995))
             channels = [(c0, m, 1.0) for _ in range(n)]
         else:
-            c1 = 0.0
+            c1_sum = 0.0
             m_avg = 0.0
             for c in range(n):
                 m_avg += medians[c]
-                if 1.0 + scaled_mads[c] != 1.0:
-                    c1 += medians[c] - shadows_clipping * scaled_mads[c]
-                else:
-                    c1 += 1.0
-            c1 = float(np.clip(c1 / float(n), 0.0, 1.0))
-            m = mtf_scalar(c1 - (m_avg / float(n)), target_bg)
+                c1_sum += medians[c] - shadows_clipping * scaled_mads[c]
+            avg_med = m_avg / float(n)
+            c1 = float(np.clip(c1_sum / float(n), min(1.0, avg_med + 1e-4), 1.0))
+            diff = max(c1 - avg_med, 1e-5)
+            m = mtf_scalar(diff, target_bg)
+            m = float(np.clip(m, 0.005, 0.995))
             channels = [(0.0, m, c1) for _ in range(n)]
     else:
         out = []
         for c in range(n):
-            if medians[c] < 0.5:
-                c0 = float(np.clip(medians[c] + shadows_clipping * scaled_mads[c], 0.0, 1.0))
-                m = mtf_scalar(target_bg, medians[c] - c0)
+            if medians[c] <= 0.85:
+                raw_c0 = medians[c] + shadows_clipping * scaled_mads[c]
+                c0 = float(np.clip(raw_c0, 0.0, max(0.0, medians[c] - 1e-4)))
+                diff = max(medians[c] - c0, 1e-5)
+                m = mtf_scalar(target_bg, diff)
+                m = float(np.clip(m, 0.005, 0.995))
                 out.append((c0, m, 1.0))
             else:
-                c1 = float(np.clip(medians[c] - shadows_clipping * scaled_mads[c], 0.0, 1.0))
-                m = mtf_scalar(c1 - medians[c], target_bg)
+                raw_c1 = medians[c] - shadows_clipping * scaled_mads[c]
+                c1 = float(np.clip(raw_c1, min(1.0, medians[c] + 1e-4), 1.0))
+                diff = max(c1 - medians[c], 1e-5)
+                m = mtf_scalar(diff, target_bg)
+                m = float(np.clip(m, 0.005, 0.995))
                 out.append((0.0, m, c1))
         channels = out
 
@@ -117,17 +135,13 @@ def debayer_image(raw_2d: np.ndarray, bayer_pat: str) -> np.ndarray:
     Debayers 2D CFA sensor data into 3-channel [H, W, 3] RGB float32.
     """
     pat = bayer_pat.upper().strip()
-    # OpenCV expects uint16 or uint8 for cvtColor, or we can use demosaicing
-    # Let's map pattern to OpenCV code:
     code_map = {
-        "RGGB": cv2.COLOR_BayerBG2RGB,  # Note OpenCV Bayer naming convention is inverted
+        "RGGB": cv2.COLOR_BayerBG2RGB,
         "BGGR": cv2.COLOR_BayerRG2RGB,
         "GRBG": cv2.COLOR_BayerGB2RGB,
         "GBRG": cv2.COLOR_BayerGR2RGB,
     }
-    # Direct Bilinear fallback if OpenCV code is unavailable or format issues
     if pat in code_map:
-        # cv2.cvtColor requires uint8 or uint16, so let's scale float [0..1] to uint16, demosaic, then back to float
         scaled = np.clip(raw_2d * 65535.0, 0, 65535).astype(np.uint16)
         debayered_u16 = cv2.cvtColor(scaled, code_map[pat])
         return debayered_u16.astype(np.float32) / 65535.0
@@ -135,7 +149,6 @@ def debayer_image(raw_2d: np.ndarray, bayer_pat: str) -> np.ndarray:
     # Fallback to simple bilinear demosaic
     h, w = raw_2d.shape
     rgb = np.zeros((h, w, 3), dtype=np.float32)
-    # Default fallback: replicate raw as luminance
     for c in range(3):
         rgb[:, :, c] = raw_2d
     return rgb
@@ -153,7 +166,6 @@ def load_fits_unified_rgb(
     """
     path = Path(path)
     with fits.open(path, memmap=False) as hdul:
-        # Find first image HDU
         hdu = None
         for item in hdul:
             if item.data is not None and item.data.ndim in (2, 3):
@@ -165,30 +177,24 @@ def load_fits_unified_rgb(
         header = hdu.header
         raw_data = np.asarray(hdu.data, dtype=np.float32)
 
-    # Clean non-finite values (NaN / Inf)
+    # Clean non-finite values (NaN / Inf) and clip negative bias artifacts
     np.nan_to_num(raw_data, copy=False, nan=0.0, posinf=1.0, neginf=0.0)
+    raw_data = np.maximum(raw_data, 0.0)
 
-    # Normalize raw data to [0.0, 1.0] based on bitpix or max value
-    bitpix = header.get("BITPIX", 16)
-    bzero = header.get("BZERO", 0.0)
-    bscale = header.get("BSCALE", 1.0)
-    raw_data = raw_data * bscale + bzero
+    # Note: astropy.io.fits AUTOMATICALLY applies BSCALE and BZERO on load!
+    # Normalize pixel range to [0.0, 1.0] based on actual max ADU
+    bitpix = abs(header.get("BITPIX", 16))
+    max_val = float(np.max(raw_data)) if raw_data.size > 0 else 1.0
 
-    if bitpix == 16:
-        max_possible = 65535.0
-        data_norm = np.clip(raw_data / max_possible, 0.0, 1.0)
-    elif bitpix == 8:
+    if max_val > 255.0 or bitpix == 16:
+        # Standard 16-bit unsigned (0..65535)
+        data_norm = np.clip(raw_data / 65535.0, 0.0, 1.0)
+    elif max_val > 1.0 or bitpix == 8:
+        # 8-bit unsigned (0..255)
         data_norm = np.clip(raw_data / 255.0, 0.0, 1.0)
-    elif bitpix in (32, -32, -64):
-        # Float images: if already in [0, 1], keep; otherwise normalize by max
-        max_val = float(np.max(raw_data)) if raw_data.size > 0 else 1.0
-        if max_val > 1.0:
-            data_norm = np.clip(raw_data / max(max_val, 65535.0), 0.0, 1.0)
-        else:
-            data_norm = np.clip(raw_data, 0.0, 1.0)
     else:
-        max_val = float(np.max(raw_data)) if raw_data.size > 0 else 1.0
-        data_norm = np.clip(raw_data / max(max_val, 1.0), 0.0, 1.0)
+        # Already normalized floating point [0.0, 1.0]
+        data_norm = np.clip(raw_data, 0.0, 1.0)
 
     # Extract Bayer pattern from header
     bayer_pat = explicit_bayer or header.get("BAYERPAT") or header.get("COLORTYP")
@@ -265,27 +271,21 @@ def to_auto_stf_f32(
 
 def to_asinh_f32(
     img_rgb: np.ndarray,
-    softening_factor: float = 3.0,
+    beta: float = 30.0,
+    black_percentile: float = 0.5,
 ) -> np.ndarray:
     """
     Astronomical ArcSinh (Asinh) normalization on 3-channel float32.
-    Preserves faint signals and satellite streaks while logarithmically compressing bright star cores.
-    f(x) = asinh((x - median) / (softening * sigma))
+    Smoothly maps faint nebulosity/streaks without clipping stars or blowing out background.
     """
     assert img_rgb.ndim == 3 and img_rgb.shape[2] == 3, "Input must be [H, W, 3]"
     out = np.zeros_like(img_rgb, dtype=np.float32)
     for c in range(3):
-        med, mad = calculate_channel_stats(img_rgb[:, :, c], stride=100)
-        sigma = max(mad * 1.4826, 1e-5)
-        # Shift sky background to ~0
-        shifted = (img_rgb[:, :, c] - med) / (softening_factor * sigma)
-        # Apply asinh
-        stretched = np.arcsinh(np.maximum(shifted, 0.0))
-        # Scale to [0.0, 1.0] by 99.8th percentile
-        p99 = float(np.percentile(stretched, 99.8))
-        scale = max(p99, 1.0)
-        out[:, :, c] = np.clip(stretched / scale, 0.0, 1.0)
-    return out
+        ch = img_rgb[:, :, c]
+        bp = float(np.percentile(ch, black_percentile))
+        norm = np.maximum(0.0, ch - bp) / max(1.0 - bp, 1e-4)
+        out[:, :, c] = np.arcsinh(beta * norm) / np.arcsinh(beta)
+    return np.clip(out, 0.0, 1.0)
 
 
 def to_stf_u8(
@@ -293,17 +293,25 @@ def to_stf_u8(
     shadows_clipping: float = -2.80,
     target_bg: float = 0.25,
     rgb_linked: bool = True,
+    mode: str = "stf",
 ) -> np.ndarray:
     """
     Renders 8-bit RGB image [H, W, 3] in uint8 [0..255] for visual preview and tagging UI.
+    Supports AutoSTF, Asinh, and Linear display modes.
     """
-    stf_float = to_auto_stf_f32(
-        img_rgb,
-        shadows_clipping=shadows_clipping,
-        target_bg=target_bg,
-        rgb_linked=rgb_linked,
-    )
-    return np.clip(stf_float * 255.0, 0, 255).astype(np.uint8)
+    if mode == "asinh":
+        beta = max(1.0, (target_bg / 0.25) * 35.0)
+        stretched = to_asinh_f32(img_rgb, beta=beta)
+    elif mode == "linear":
+        stretched = img_rgb
+    else:
+        stretched = to_auto_stf_f32(
+            img_rgb,
+            shadows_clipping=shadows_clipping,
+            target_bg=target_bg,
+            rgb_linked=rgb_linked,
+        )
+    return np.clip(stretched * 255.0, 0, 255).astype(np.uint8)
 
 
 def apply_stretch_jitter(

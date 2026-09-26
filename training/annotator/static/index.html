@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>AstroGrader - FITS Tagging Tool</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/style.css?v=4">
 </head>
 <body>
   <div id="app">
@@ -12,7 +12,7 @@
       <div class="sidebar-header">
         <label for="dir-input">Directory:</label>
         <div class="input-row">
-          <input type="text" id="dir-input" value="../test_fits" spellcheck="false" />
+          <input type="text" id="dir-input" value="../TRAINING_FILES" spellcheck="false" />
           <button id="btn-load-dir">Load</button>
         </div>
       </div>
@@ -40,6 +40,16 @@
         </div>
 
         <div class="tool-group">
+          <label>Tool:</label>
+          <div class="btn-group" id="tool-buttons">
+            <button class="btn-tool active" data-tool="box" id="tool-box" title="Box tool (drag rectangle) [B]">▢ Box</button>
+            <button class="btn-tool" data-tool="polygon" id="tool-polygon" title="Polygon shape tool (click N points to draw freeform shape, double-click or Enter to close) [P]">⬡ Shape (N-pts)</button>
+            <button class="btn-tool" data-tool="line" id="tool-line" title="Streak line tool (click and drag line for satellite/airplane) [L]">╱ Streak Line</button>
+          </div>
+          <button class="btn-tool-action" id="btn-full-frame" title="Mark entire frame with selected class (e.g. 100% cloud cover) [F]">⛶ Full Frame</button>
+        </div>
+
+        <div class="tool-group">
           <label>Class:</label>
           <div class="btn-group" id="class-buttons">
             <button class="btn-class active" data-class="satellite_streak" data-key="1">[1] Satellite</button>
@@ -51,7 +61,11 @@
         </div>
 
         <div class="tool-group">
-          <label class="checkbox-label">
+          <label class="checkbox-label" title="Entire frame has 100% cloud/overcast/fog coverage">
+            <input type="checkbox" id="chk-global-cloud" />
+            Global Cloud
+          </label>
+          <label class="checkbox-label" title="Mount tracking error deformed all stars across sensor">
             <input type="checkbox" id="chk-global-star-trail" />
             Global Star Trailing
           </label>
@@ -65,11 +79,39 @@
           </label>
         </div>
 
+        <div class="tool-group zoom-controls">
+          <label>View:</label>
+          <div class="btn-group">
+            <button id="btn-zoom-out" title="Zoom Out (-)">−</button>
+            <button id="btn-zoom-in" title="Zoom In (+)">+</button>
+            <button id="btn-zoom-100" title="100% Zoom (1:1)">1:1</button>
+            <button id="btn-center-view" title="Center & Fit Frame to Screen">⛶ Fit</button>
+          </div>
+          <span id="zoom-level-text" class="meta">100%</span>
+        </div>
+
         <div class="tool-group stretch-controls">
-          <label for="slider-stretch">STF Stretch:</label>
-          <input type="range" id="slider-stretch" min="-3.5" max="-1.5" step="0.1" value="-2.8" />
-          <span id="stretch-val">-2.8</span>
-          <button id="btn-reset-view">Reset View</button>
+          <label>Stretch:</label>
+          <div class="btn-group" id="stretch-modes">
+            <button class="btn-mode active" data-mode="stf">AutoSTF</button>
+            <button class="btn-mode" data-mode="asinh">Asinh</button>
+            <button class="btn-mode" data-mode="linear">Linear</button>
+          </div>
+
+          <label class="checkbox-label" title="Unlinked independently stretches R, G, B channels to neutralize green/yellow camera cast">
+            <input type="checkbox" id="chk-linked-rgb" />
+            Linked RGB
+          </label>
+
+          <label for="slider-brightness">Brightness:</label>
+          <input type="range" id="slider-brightness" min="0.05" max="0.50" step="0.01" value="0.25" title="Target background brightness" />
+          <span id="brightness-val">25%</span>
+
+          <label for="slider-shadows">Shadows:</label>
+          <input type="range" id="slider-shadows" min="-6.0" max="0.0" step="0.2" value="-2.8" title="Shadows clipping offset" />
+          <span id="shadows-val">-2.8</span>
+
+          <button id="btn-reset-stretch">Reset STF</button>
         </div>
       </div>
 
@@ -80,13 +122,13 @@
 
       <!-- Bottom Info Bar -->
       <div id="statusbar">
-        <span id="status-text">Ready. Drag on canvas to draw bounding box. Press Delete to remove selected.</span>
+        <span id="status-text">Ready. Drag to draw bounding box. Press Delete to remove selected.</span>
         <span id="cursor-pos">X: 0, Y: 0</span>
-        <span id="box-count">Boxes: 0</span>
+        <span id="box-count">Annotations: 0</span>
       </div>
     </div>
   </div>
 
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=4"></script>
 </body>
 </html>

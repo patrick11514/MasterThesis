@@ -1,0 +1,18 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+env
+checkpoints/
+dataset*/
+verification_output/
+*.onnx
+
+# Do not commit raw FITS images or metadata info files inside training directory
+*.fits
+*.fit
+*.FITS
+*.FIT
+*.info.txt
+*.cal.info.txt

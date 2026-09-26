@@ -1,6 +1,6 @@
-// Minimalist FITS Annotator Frontend Logic
+// Minimalist FITS Annotator Frontend Logic with Polygon & Streak Line Support
 const state = {
-  currentDir: "../test_fits",
+  currentDir: "../TRAINING_FILES",
   files: [],
   currentIndex: -1,
   currentFile: null,
@@ -18,20 +18,27 @@ const state = {
   panStartX: 0,
   panStartY: 0,
 
-  // Box Drawing & Selection
+  // Drawing Tools: 'box', 'polygon', 'line'
+  activeTool: "box",
   isDrawing: false,
   drawStartX: 0,
   drawStartY: 0,
+  currentDrawEnd: null,
+  polygonPoints: [], // [{x, y}, ...]
+  cursorPt: null,
   activeClass: "satellite_streak",
   boxes: [],
   selectedBoxId: null,
   globalStarTrailing: false,
+  globalCloud: false,
   isClean: true,
 
   // Settings
   showGrid: false,
   shadowsClipping: -2.8,
   targetBg: 0.25,
+  stretchMode: "stf",
+  rgbLinked: false,
 };
 
 const CLASS_COLORS = {
@@ -60,7 +67,29 @@ function init() {
   document.getElementById("btn-prev").addEventListener("click", prevFile);
   document.getElementById("btn-next").addEventListener("click", nextFile);
   document.getElementById("btn-save").addEventListener("click", saveAnnotations);
-  document.getElementById("btn-reset-view").addEventListener("click", resetView);
+
+  // Tool buttons (Box, Polygon, Streak Line)
+  document.querySelectorAll("#tool-buttons .btn-tool").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      setTool(btn.dataset.tool);
+    });
+  });
+
+  // Full Frame button
+  const btnFull = document.getElementById("btn-full-frame");
+  if (btnFull) {
+    btnFull.addEventListener("click", selectFullFrame);
+  }
+
+  // Zoom / View buttons
+  const btnZoomIn = document.getElementById("btn-zoom-in");
+  const btnZoomOut = document.getElementById("btn-zoom-out");
+  const btnZoom100 = document.getElementById("btn-zoom-100");
+  const btnCenterView = document.getElementById("btn-center-view");
+  if (btnZoomIn) btnZoomIn.addEventListener("click", zoomIn);
+  if (btnZoomOut) btnZoomOut.addEventListener("click", zoomOut);
+  if (btnZoom100) btnZoom100.addEventListener("click", zoom100);
+  if (btnCenterView) btnCenterView.addEventListener("click", resetView);
 
   // Class Buttons
   document.querySelectorAll(".btn-class").forEach((btn) => {
@@ -70,6 +99,14 @@ function init() {
   });
 
   // Toggles
+  const chkGlobalCloud = document.getElementById("chk-global-cloud");
+  if (chkGlobalCloud) {
+    chkGlobalCloud.addEventListener("change", (e) => {
+      state.globalCloud = e.target.checked;
+      updateCleanStatus();
+    });
+  }
+
   const chkGlobal = document.getElementById("chk-global-star-trail");
   chkGlobal.addEventListener("change", (e) => {
     state.globalStarTrailing = e.target.checked;
@@ -82,7 +119,9 @@ function init() {
     if (state.isClean) {
       state.boxes = [];
       state.globalStarTrailing = false;
+      state.globalCloud = false;
       chkGlobal.checked = false;
+      if (chkGlobalCloud) chkGlobalCloud.checked = false;
       render();
     }
   });
@@ -93,13 +132,57 @@ function init() {
     render();
   });
 
-  // Stretch Slider
-  const slider = document.getElementById("slider-stretch");
-  slider.addEventListener("input", (e) => {
-    state.shadowsClipping = parseFloat(e.target.value);
-    document.getElementById("stretch-val").innerText = state.shadowsClipping.toFixed(1);
+  // Stretch Mode Buttons
+  document.querySelectorAll("#stretch-modes .btn-mode").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.stretchMode = btn.dataset.mode;
+      document.querySelectorAll("#stretch-modes .btn-mode").forEach((b) => {
+        b.classList.toggle("active", b.dataset.mode === state.stretchMode);
+      });
+      if (state.currentFile) loadFilePreview(state.currentFile);
+    });
   });
-  slider.addEventListener("change", () => {
+
+  // Stretch Sliders
+  const sliderBright = document.getElementById("slider-brightness");
+  sliderBright.addEventListener("input", (e) => {
+    state.targetBg = parseFloat(e.target.value);
+    document.getElementById("brightness-val").innerText = `${Math.round(state.targetBg * 100)}%`;
+  });
+  sliderBright.addEventListener("change", () => {
+    if (state.currentFile) loadFilePreview(state.currentFile);
+  });
+
+  const sliderShadows = document.getElementById("slider-shadows");
+  sliderShadows.addEventListener("input", (e) => {
+    state.shadowsClipping = parseFloat(e.target.value);
+    document.getElementById("shadows-val").innerText = state.shadowsClipping.toFixed(1);
+  });
+  sliderShadows.addEventListener("change", () => {
+    if (state.currentFile) loadFilePreview(state.currentFile);
+  });
+
+  const chkLinked = document.getElementById("chk-linked-rgb");
+  chkLinked.checked = state.rgbLinked;
+  chkLinked.addEventListener("change", (e) => {
+    state.rgbLinked = e.target.checked;
+    if (state.currentFile) loadFilePreview(state.currentFile);
+  });
+
+  // Reset STF
+  document.getElementById("btn-reset-stretch").addEventListener("click", () => {
+    state.targetBg = 0.25;
+    state.shadowsClipping = -2.8;
+    state.stretchMode = "stf";
+    state.rgbLinked = false;
+    chkLinked.checked = false;
+    sliderBright.value = "0.25";
+    sliderShadows.value = "-2.8";
+    document.getElementById("brightness-val").innerText = "25%";
+    document.getElementById("shadows-val").innerText = "-2.8";
+    document.querySelectorAll("#stretch-modes .btn-mode").forEach((b) => {
+      b.classList.toggle("active", b.dataset.mode === "stf");
+    });
     if (state.currentFile) loadFilePreview(state.currentFile);
   });
 
@@ -107,10 +190,14 @@ function init() {
   canvas.addEventListener("mousedown", onMouseDown);
   canvas.addEventListener("mousemove", onMouseMove);
   canvas.addEventListener("mouseup", onMouseUp);
+  canvas.addEventListener("dblclick", onDoubleClick);
   canvas.addEventListener("wheel", onWheel, { passive: false });
 
   // Global Hotkeys
   window.addEventListener("keydown", onKeyDown);
+
+  // Set initial tool
+  setTool("box");
 
   // Initial load
   loadDirectory();
@@ -119,6 +206,26 @@ function init() {
 function resizeCanvas() {
   canvas.width = container.clientWidth;
   canvas.height = container.clientHeight;
+  render();
+}
+
+function setTool(tool) {
+  // If leaving polygon tool with points in progress, cancel them
+  if (state.activeTool === "polygon" && tool !== "polygon") {
+    state.polygonPoints = [];
+  }
+  state.activeTool = tool;
+  document.querySelectorAll("#tool-buttons .btn-tool").forEach((b) => {
+    b.classList.toggle("active", b.dataset.tool === tool);
+  });
+
+  if (tool === "polygon") {
+    setStatus("Tool: Polygon / Freeform Shape | Click N points on canvas to draw shape. Double-click or click start point to close. Esc to cancel.");
+  } else if (tool === "line") {
+    setStatus("Tool: Streak Line | Click and drag along straight satellite or airplane streak.");
+  } else {
+    setStatus("Tool: Box | Click and drag rectangle to outline defect area.");
+  }
   render();
 }
 
@@ -134,6 +241,58 @@ function setActiveClass(cls) {
       render();
     }
   }
+}
+
+function selectFullFrame() {
+  if (!state.imageLoaded || !state.currentFile) return;
+  const newBox = {
+    id: "full_" + Date.now(),
+    type: "box",
+    label: state.activeClass,
+    x: 0,
+    y: 0,
+    width: state.origWidth,
+    height: state.origHeight,
+  };
+  state.boxes.push(newBox);
+  state.selectedBoxId = newBox.id;
+  updateCleanStatus();
+  setStatus(`Marked entire frame as ${state.activeClass.replace("_", " ")}`);
+  render();
+}
+
+function zoomIn() {
+  zoomBy(1.25);
+}
+
+function zoomOut() {
+  zoomBy(0.8);
+}
+
+function zoom100() {
+  if (!state.imageLoaded) return;
+  state.zoom = 1.0;
+  state.panX = (canvas.width - state.image.width) / 2;
+  state.panY = (canvas.height - state.image.height) / 2;
+  updateZoomDisplay();
+  render();
+}
+
+function zoomBy(factor) {
+  if (!state.imageLoaded) return;
+  const newZoom = Math.max(0.05, Math.min(20.0, state.zoom * factor));
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+  state.panX = cx - (cx - state.panX) * (newZoom / state.zoom);
+  state.panY = cy - (cy - state.panY) * (newZoom / state.zoom);
+  state.zoom = newZoom;
+  updateZoomDisplay();
+  render();
+}
+
+function updateZoomDisplay() {
+  const el = document.getElementById("zoom-level-text");
+  if (el) el.innerText = `${Math.round(state.zoom * 100)}%`;
 }
 
 async function loadDirectory() {
@@ -175,6 +334,7 @@ async function loadFile(index) {
   if (index < 0 || index >= state.files.length) return;
   state.currentIndex = index;
   state.currentFile = state.files[index];
+  state.polygonPoints = [];
   renderFileList();
 
   document.getElementById("current-filename").innerText = state.currentFile.name;
@@ -187,7 +347,7 @@ async function loadFile(index) {
 
 async function loadFilePreview(file) {
   try {
-    const url = `/api/preview?path=${encodeURIComponent(file.path)}&shadows=${state.shadowsClipping}&target_bg=${state.targetBg}`;
+    const url = `/api/preview?path=${encodeURIComponent(file.path)}&shadows=${state.shadowsClipping}&target_bg=${state.targetBg}&mode=${state.stretchMode}&linked=${state.rgbLinked}`;
     const res = await fetch(url);
     if (!res.ok) throw new Error("Failed to load preview");
 
@@ -217,9 +377,12 @@ async function loadAnnotations(file) {
     const data = await res.json();
     state.boxes = data.boxes || [];
     state.globalStarTrailing = data.global_star_trailing || false;
-    state.isClean = data.is_clean !== undefined ? data.is_clean : state.boxes.length === 0;
+    state.globalCloud = data.global_cloud || false;
+    state.isClean = data.is_clean !== undefined ? data.is_clean : (state.boxes.length === 0 && !state.globalStarTrailing && !state.globalCloud);
 
     document.getElementById("chk-global-star-trail").checked = state.globalStarTrailing;
+    const chkGlobalCloud = document.getElementById("chk-global-cloud");
+    if (chkGlobalCloud) chkGlobalCloud.checked = state.globalCloud;
     document.getElementById("chk-clean-sky").checked = state.isClean;
     updateCleanStatus();
     render();
@@ -237,6 +400,7 @@ async function saveAnnotations() {
       width: state.origWidth,
       height: state.origHeight,
       global_star_trailing: state.globalStarTrailing,
+      global_cloud: state.globalCloud,
       is_clean: state.isClean,
       boxes: state.boxes,
     };
@@ -248,7 +412,7 @@ async function saveAnnotations() {
     if (!res.ok) throw new Error("Failed to save");
     state.currentFile.annotated = true;
     renderFileList();
-    setStatus(`Saved annotations (${state.boxes.length} boxes) for ${state.currentFile.name}`);
+    setStatus(`Saved annotations (${state.boxes.length} items) for ${state.currentFile.name}`);
   } catch (err) {
     setStatus("Error saving: " + err.message);
   }
@@ -269,7 +433,7 @@ function nextFile() {
 }
 
 function resetView() {
-  if (!state.imageLoaded) return;
+  if (!state.imageLoaded || !state.image) return;
   const padding = 20;
   const availW = canvas.width - padding * 2;
   const availH = canvas.height - padding * 2;
@@ -280,17 +444,18 @@ function resetView() {
 
   state.panX = (canvas.width - state.image.width * state.zoom) / 2;
   state.panY = (canvas.height - state.image.height * state.zoom) / 2;
+  updateZoomDisplay();
   render();
 }
 
 function updateCleanStatus() {
-  if (state.boxes.length > 0 || state.globalStarTrailing) {
+  if (state.boxes.length > 0 || state.globalStarTrailing || state.globalCloud) {
     state.isClean = false;
   } else {
     state.isClean = true;
   }
   document.getElementById("chk-clean-sky").checked = state.isClean;
-  document.getElementById("box-count").innerText = `Boxes: ${state.boxes.length}`;
+  document.getElementById("box-count").innerText = `Annotations: ${state.boxes.length}`;
 }
 
 // Canvas Coordinate Helpers
@@ -298,7 +463,6 @@ function screenToImage(screenX, screenY) {
   if (!state.imageLoaded) return { x: 0, y: 0 };
   const previewX = (screenX - state.panX) / state.zoom;
   const previewY = (screenY - state.panY) / state.zoom;
-  // Convert from preview pixel space to full original image pixel space
   const origX = previewX / state.previewScale;
   const origY = previewY / state.previewScale;
   return { x: origX, y: origY };
@@ -312,12 +476,95 @@ function imageToScreen(origX, origY) {
   return { x: screenX, y: screenY };
 }
 
+function hexToRgba(hex, alpha) {
+  let c = hex.replace("#", "");
+  if (c.length === 3) c = c.split("").map((x) => x + x).join("");
+  const r = parseInt(c.substring(0, 2), 16) || 0;
+  const g = parseInt(c.substring(2, 4), 16) || 0;
+  const b = parseInt(c.substring(4, 6), 16) || 0;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function pointInPolygon(x, y, points) {
+  let inside = false;
+  const n = points.length;
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const xi = points[i][0], yi = points[i][1];
+    const xj = points[j][0], yj = points[j][1];
+    const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function distToSegment(px, py, x1, y1, x2, y2) {
+  const l2 = (x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1);
+  if (l2 === 0) return Math.hypot(px - x1, py - y1);
+  let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (x1 + t * (x2 - x1)), py - (y1 + t * (y2 - y1)));
+}
+
+function findBoxAt(x, y) {
+  for (let i = state.boxes.length - 1; i >= 0; i--) {
+    const b = state.boxes[i];
+    if (b.type === "polygon" && b.points && b.points.length >= 3) {
+      if (pointInPolygon(x, y, b.points)) return b;
+    } else if (b.type === "line") {
+      const x1 = b.x1 !== undefined ? b.x1 : b.x;
+      const y1 = b.y1 !== undefined ? b.y1 : b.y;
+      const x2 = b.x2 !== undefined ? b.x2 : b.x + b.width;
+      const y2 = b.y2 !== undefined ? b.y2 : b.y + b.height;
+      const d = distToSegment(x, y, x1, y1, x2, y2);
+      const threshold = 16 / (state.zoom * state.previewScale);
+      if (d <= Math.max(10, threshold)) return b;
+    } else {
+      if (x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height) {
+        return b;
+      }
+    }
+  }
+  return null;
+}
+
+function closeAndCommitPolygon() {
+  if (state.polygonPoints.length < 3) {
+    state.polygonPoints = [];
+    render();
+    return;
+  }
+  const xs = state.polygonPoints.map((p) => p.x);
+  const ys = state.polygonPoints.map((p) => p.y);
+  const minX = Math.round(Math.min(...xs));
+  const minY = Math.round(Math.min(...ys));
+  const maxX = Math.round(Math.max(...xs));
+  const maxY = Math.round(Math.max(...ys));
+
+  const newPoly = {
+    id: "poly_" + Date.now(),
+    type: "polygon",
+    label: state.activeClass,
+    x: minX,
+    y: minY,
+    width: Math.max(maxX - minX, 4),
+    height: Math.max(maxY - minY, 4),
+    points: state.polygonPoints.map((p) => [Math.round(p.x), Math.round(p.y)]),
+  };
+
+  state.boxes.push(newPoly);
+  state.selectedBoxId = newPoly.id;
+  state.polygonPoints = [];
+  updateCleanStatus();
+  setStatus(`Created ${state.activeClass.replace("_", " ")} polygon (${newPoly.points.length} vertices)`);
+  render();
+}
+
 function onMouseDown(e) {
   const rect = canvas.getBoundingClientRect();
   const mouseX = e.clientX - rect.left;
   const mouseY = e.clientY - rect.top;
 
-  // Middle click or Space+click = Pan
+  // Middle click, space key, or shift+click = Pan
   if (e.button === 1 || e.spaceKey || (e.button === 0 && e.shiftKey)) {
     state.isPanning = true;
     state.panStartX = mouseX - state.panX;
@@ -325,9 +572,42 @@ function onMouseDown(e) {
     return;
   }
 
-  // Left click: Check if clicked inside existing box
+  // Left click
   if (e.button === 0) {
     const pt = screenToImage(mouseX, mouseY);
+
+    // --- POLYGON TOOL ---
+    if (state.activeTool === "polygon") {
+      // Check if clicking near first point to close
+      if (state.polygonPoints.length >= 3) {
+        const startScreen = imageToScreen(state.polygonPoints[0].x, state.polygonPoints[0].y);
+        const dist = Math.hypot(mouseX - startScreen.x, mouseY - startScreen.y);
+        if (dist < 15) {
+          closeAndCommitPolygon();
+          return;
+        }
+      }
+
+      // If no points in progress yet, check if clicking existing item to select
+      if (state.polygonPoints.length === 0) {
+        const clicked = findBoxAt(pt.x, pt.y);
+        if (clicked && !e.altKey) {
+          state.selectedBoxId = clicked.id;
+          setActiveClass(clicked.label);
+          render();
+          return;
+        }
+      }
+
+      // Add vertex to polygon
+      state.polygonPoints.push(pt);
+      state.selectedBoxId = null;
+      setStatus(`Polygon: ${state.polygonPoints.length} points placed. Click more, double-click or click first point to close.`);
+      render();
+      return;
+    }
+
+    // --- BOX OR LINE TOOL ---
     const clickedBox = findBoxAt(pt.x, pt.y);
     if (clickedBox && !e.altKey) {
       state.selectedBoxId = clickedBox.id;
@@ -336,7 +616,7 @@ function onMouseDown(e) {
       return;
     }
 
-    // Start drawing new box
+    // Start drawing
     state.selectedBoxId = null;
     state.isDrawing = true;
     state.drawStartX = pt.x;
@@ -350,11 +630,17 @@ function onMouseMove(e) {
   const mouseY = e.clientY - rect.top;
 
   const pt = screenToImage(mouseX, mouseY);
+  state.cursorPt = pt;
   document.getElementById("cursor-pos").innerText = `X: ${Math.round(pt.x)}, Y: ${Math.round(pt.y)}`;
 
   if (state.isPanning) {
     state.panX = mouseX - state.panStartX;
     state.panY = mouseY - state.panStartY;
+    render();
+    return;
+  }
+
+  if (state.activeTool === "polygon" && state.polygonPoints.length > 0) {
     render();
     return;
   }
@@ -376,29 +662,61 @@ function onMouseUp(e) {
     const rect = canvas.getBoundingClientRect();
     const pt = screenToImage(e.clientX - rect.left, e.clientY - rect.top);
 
-    const x1 = Math.min(state.drawStartX, pt.x);
-    const y1 = Math.min(state.drawStartY, pt.y);
-    const x2 = Math.max(state.drawStartX, pt.x);
-    const y2 = Math.max(state.drawStartY, pt.y);
-    const w = x2 - x1;
-    const h = y2 - y1;
+    if (state.activeTool === "line") {
+      const x1 = Math.round(state.drawStartX);
+      const y1 = Math.round(state.drawStartY);
+      const x2 = Math.round(pt.x);
+      const y2 = Math.round(pt.y);
+      const dist = Math.hypot(x2 - x1, y2 - y1);
+      if (dist > 15) {
+        const newLine = {
+          id: "l_" + Date.now(),
+          type: "line",
+          label: state.activeClass,
+          x: Math.min(x1, x2),
+          y: Math.min(y1, y2),
+          width: Math.abs(x2 - x1),
+          height: Math.abs(y2 - y1),
+          x1: x1,
+          y1: y1,
+          x2: x2,
+          y2: y2,
+        };
+        state.boxes.push(newLine);
+        state.selectedBoxId = newLine.id;
+        updateCleanStatus();
+      }
+    } else if (state.activeTool === "box") {
+      const x1 = Math.round(Math.min(state.drawStartX, pt.x));
+      const y1 = Math.round(Math.min(state.drawStartY, pt.y));
+      const x2 = Math.round(Math.max(state.drawStartX, pt.x));
+      const y2 = Math.round(Math.max(state.drawStartY, pt.y));
+      const w = x2 - x1;
+      const h = y2 - y1;
 
-    // Minimum box size to avoid accidental single clicks
-    if (w > 10 && h > 10) {
-      const newBox = {
-        id: "b_" + Date.now(),
-        label: state.activeClass,
-        x: x1,
-        y: y1,
-        width: w,
-        height: h,
-      };
-      state.boxes.push(newBox);
-      state.selectedBoxId = newBox.id;
-      updateCleanStatus();
+      if (w > 10 && h > 10) {
+        const newBox = {
+          id: "b_" + Date.now(),
+          type: "box",
+          label: state.activeClass,
+          x: x1,
+          y: y1,
+          width: w,
+          height: h,
+        };
+        state.boxes.push(newBox);
+        state.selectedBoxId = newBox.id;
+        updateCleanStatus();
+      }
     }
     state.currentDrawEnd = null;
     render();
+  }
+}
+
+function onDoubleClick(e) {
+  if (state.activeTool === "polygon" && state.polygonPoints.length >= 3) {
+    closeAndCommitPolygon();
   }
 }
 
@@ -416,29 +734,32 @@ function onWheel(e) {
   state.panY = mouseY - (mouseY - state.panY) * (newZoom / state.zoom);
   state.zoom = newZoom;
 
+  updateZoomDisplay();
   render();
 }
 
-function findBoxAt(x, y) {
-  for (let i = state.boxes.length - 1; i >= 0; i--) {
-    const b = state.boxes[i];
-    if (x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height) {
-      return b;
-    }
-  }
-  return null;
-}
-
 function onKeyDown(e) {
-  // Ignore inputs inside text box
   if (e.target.tagName === "INPUT") return;
 
+  // Tool Selection Hotkeys
+  if (e.key === "b" || e.key === "B") setTool("box");
+  if (e.key === "p" || e.key === "P") setTool("polygon");
+  if (e.key === "l" || e.key === "L") setTool("line");
+  if (e.key === "f" || e.key === "F") selectFullFrame();
+
+  // Class Selection Hotkeys
   if (e.key === "1") setActiveClass("satellite_streak");
   if (e.key === "2") setActiveClass("airplane");
   if (e.key === "3") setActiveClass("cloud");
   if (e.key === "4") setActiveClass("obstruction");
   if (e.key === "5") setActiveClass("star_trail");
 
+  // Zoom hotkeys
+  if (e.key === "+" || e.key === "=") zoomIn();
+  if (e.key === "-") zoomOut();
+  if (e.key === "0") resetView();
+
+  // Navigation Hotkeys
   if (e.key === "a" || e.key === "A") prevFile();
   if (e.key === "d" || e.key === "D") nextFile();
   if (e.key === "s" || e.key === "S") {
@@ -446,7 +767,28 @@ function onKeyDown(e) {
     saveAnnotations();
   }
 
+  // Polygon Commit
+  if (e.key === "Enter") {
+    if (state.activeTool === "polygon" && state.polygonPoints.length >= 3) {
+      closeAndCommitPolygon();
+    }
+  }
+
+  // Cancel polygon or delete
+  if (e.key === "Escape") {
+    if (state.polygonPoints.length > 0) {
+      state.polygonPoints = [];
+      setStatus("Cancelled polygon shape.");
+      render();
+    }
+  }
+
   if (e.key === "Delete" || e.key === "Backspace") {
+    if (state.polygonPoints.length > 0) {
+      state.polygonPoints.pop();
+      render();
+      return;
+    }
     if (state.selectedBoxId) {
       state.boxes = state.boxes.filter((b) => b.id !== state.selectedBoxId);
       state.selectedBoxId = null;
@@ -493,48 +835,181 @@ function render() {
     }
   }
 
-  // Draw existing bounding boxes
+  // Draw existing annotations (boxes, lines, polygons)
   state.boxes.forEach((b) => {
     const isSelected = b.id === state.selectedBoxId;
     const col = CLASS_COLORS[b.label] || "#4299e1";
-
-    const px = b.x * state.previewScale;
-    const py = b.y * state.previewScale;
-    const pw = b.width * state.previewScale;
-    const ph = b.height * state.previewScale;
-
-    // Fill
-    ctx.fillStyle = isSelected ? "rgba(255, 255, 255, 0.15)" : "rgba(0, 0, 0, 0.05)";
-    ctx.fillRect(px, py, pw, ph);
-
-    // Border
-    ctx.strokeStyle = col;
-    ctx.lineWidth = (isSelected ? 2.5 : 1.5) / state.zoom;
-    ctx.strokeRect(px, py, pw, ph);
-
-    // Label tag
-    ctx.fillStyle = col;
     const fontSize = Math.max(10, Math.min(14, 12 / state.zoom));
     ctx.font = `${fontSize}px monospace`;
     const labelText = b.label.replace("_", " ");
     const textW = ctx.measureText(labelText).width;
-    ctx.fillRect(px, py - fontSize - 2, textW + 6, fontSize + 4);
 
-    ctx.fillStyle = "#ffffff";
-    ctx.fillText(labelText, px + 3, py - 2);
+    // --- POLYGON ---
+    if (b.type === "polygon" && b.points && b.points.length >= 3) {
+      ctx.beginPath();
+      const p0 = { x: b.points[0][0] * state.previewScale, y: b.points[0][1] * state.previewScale };
+      ctx.moveTo(p0.x, p0.y);
+      for (let i = 1; i < b.points.length; i++) {
+        ctx.lineTo(b.points[i][0] * state.previewScale, b.points[i][1] * state.previewScale);
+      }
+      ctx.closePath();
+
+      // Semi-transparent fill
+      ctx.fillStyle = isSelected ? "rgba(255, 255, 255, 0.28)" : hexToRgba(col, 0.18);
+      ctx.fill();
+
+      // Stroke
+      ctx.strokeStyle = col;
+      ctx.lineWidth = (isSelected ? 3.0 : 1.8) / state.zoom;
+      ctx.stroke();
+
+      // Vertices
+      const vr = (isSelected ? 3.5 : 2.5) / state.zoom;
+      ctx.fillStyle = col;
+      for (let i = 0; i < b.points.length; i++) {
+        ctx.beginPath();
+        ctx.arc(b.points[i][0] * state.previewScale, b.points[i][1] * state.previewScale, vr, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Centroid label badge
+      const cX = (b.x + b.width / 2) * state.previewScale;
+      const cY = (b.y + b.height / 2) * state.previewScale;
+      ctx.fillStyle = col;
+      ctx.fillRect(cX - textW / 2 - 3, cY - fontSize / 2 - 2, textW + 6, fontSize + 4);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(labelText, cX - textW / 2, cY + fontSize / 2 - 3);
+
+    // --- STREAK LINE ---
+    } else if (b.type === "line") {
+      const lx1 = (b.x1 !== undefined ? b.x1 : b.x) * state.previewScale;
+      const ly1 = (b.y1 !== undefined ? b.y1 : b.y) * state.previewScale;
+      const lx2 = (b.x2 !== undefined ? b.x2 : b.x + b.width) * state.previewScale;
+      const ly2 = (b.y2 !== undefined ? b.y2 : b.y + b.height) * state.previewScale;
+
+      ctx.strokeStyle = col;
+      ctx.lineWidth = (isSelected ? 3.5 : 2.0) / state.zoom;
+      ctx.beginPath();
+      ctx.moveTo(lx1, ly1);
+      ctx.lineTo(lx2, ly2);
+      ctx.stroke();
+
+      const r = (isSelected ? 4.5 : 3.0) / state.zoom;
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.arc(lx1, ly1, r, 0, 2 * Math.PI);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(lx2, ly2, r, 0, 2 * Math.PI);
+      ctx.fill();
+
+      const midX = (lx1 + lx2) / 2;
+      const midY = (ly1 + ly2) / 2;
+      ctx.fillStyle = col;
+      ctx.fillRect(midX - textW / 2 - 3, midY - fontSize / 2 - 2, textW + 6, fontSize + 4);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(labelText, midX - textW / 2, midY + fontSize / 2 - 3);
+
+    // --- BOX ---
+    } else {
+      const px = b.x * state.previewScale;
+      const py = b.y * state.previewScale;
+      const pw = b.width * state.previewScale;
+      const ph = b.height * state.previewScale;
+
+      ctx.fillStyle = isSelected ? "rgba(255, 255, 255, 0.18)" : hexToRgba(col, 0.12);
+      ctx.fillRect(px, py, pw, ph);
+
+      ctx.strokeStyle = col;
+      ctx.lineWidth = (isSelected ? 2.5 : 1.5) / state.zoom;
+      ctx.strokeRect(px, py, pw, ph);
+
+      ctx.fillStyle = col;
+      ctx.fillRect(px, py - fontSize - 2, textW + 6, fontSize + 4);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(labelText, px + 3, py - 2);
+    }
   });
 
-  // Draw in-progress box
-  if (state.isDrawing && state.currentDrawEnd) {
-    const x1 = Math.min(state.drawStartX, state.currentDrawEnd.x) * state.previewScale;
-    const y1 = Math.min(state.drawStartY, state.currentDrawEnd.y) * state.previewScale;
-    const w = Math.abs(state.currentDrawEnd.x - state.drawStartX) * state.previewScale;
-    const h = Math.abs(state.currentDrawEnd.y - state.drawStartY) * state.previewScale;
+  // Draw in-progress Polygon
+  if (state.activeTool === "polygon" && state.polygonPoints.length > 0) {
+    const col = CLASS_COLORS[state.activeClass] || "#4299e1";
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 2.0 / state.zoom;
 
+    // Draw lines between placed vertices
+    ctx.beginPath();
+    const p0 = { x: state.polygonPoints[0].x * state.previewScale, y: state.polygonPoints[0].y * state.previewScale };
+    ctx.moveTo(p0.x, p0.y);
+    for (let i = 1; i < state.polygonPoints.length; i++) {
+      ctx.lineTo(state.polygonPoints[i].x * state.previewScale, state.polygonPoints[i].y * state.previewScale);
+    }
+
+    // Dashed line to current mouse position
+    if (state.cursorPt) {
+      ctx.stroke();
+      ctx.beginPath();
+      const lastP = state.polygonPoints[state.polygonPoints.length - 1];
+      ctx.moveTo(lastP.x * state.previewScale, lastP.y * state.previewScale);
+      ctx.lineTo(state.cursorPt.x * state.previewScale, state.cursorPt.y * state.previewScale);
+      ctx.setLineDash([4 / state.zoom, 4 / state.zoom]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    } else {
+      ctx.stroke();
+    }
+
+    // Draw placed vertices
+    const vr = 4.0 / state.zoom;
+    for (let i = 0; i < state.polygonPoints.length; i++) {
+      ctx.fillStyle = i === 0 ? "#48bb78" : col; // First point highlighted in green
+      ctx.beginPath();
+      ctx.arc(state.polygonPoints[i].x * state.previewScale, state.polygonPoints[i].y * state.previewScale, vr, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 1 / state.zoom;
+      ctx.stroke();
+    }
+
+    // Check if cursor is close to start point (indicating close action)
+    if (state.polygonPoints.length >= 3 && state.cursorPt) {
+      const dStart = Math.hypot(
+        (state.cursorPt.x - state.polygonPoints[0].x) * state.previewScale,
+        (state.cursorPt.y - state.polygonPoints[0].y) * state.previewScale
+      );
+      if (dStart < 15) {
+        ctx.strokeStyle = "#48bb78";
+        ctx.lineWidth = 2.5 / state.zoom;
+        ctx.beginPath();
+        ctx.arc(p0.x, p0.y, 8 / state.zoom, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Draw in-progress Box or Line
+  if (state.isDrawing && state.currentDrawEnd) {
     ctx.strokeStyle = CLASS_COLORS[state.activeClass] || "#ffffff";
     ctx.lineWidth = 1.5 / state.zoom;
     ctx.setLineDash([4 / state.zoom, 4 / state.zoom]);
-    ctx.strokeRect(x1, y1, w, h);
+
+    if (state.activeTool === "line") {
+      const lx1 = state.drawStartX * state.previewScale;
+      const ly1 = state.drawStartY * state.previewScale;
+      const lx2 = state.currentDrawEnd.x * state.previewScale;
+      const ly2 = state.currentDrawEnd.y * state.previewScale;
+      ctx.beginPath();
+      ctx.moveTo(lx1, ly1);
+      ctx.lineTo(lx2, ly2);
+      ctx.stroke();
+    } else if (state.activeTool === "box") {
+      const x1 = Math.min(state.drawStartX, state.currentDrawEnd.x) * state.previewScale;
+      const y1 = Math.min(state.drawStartY, state.currentDrawEnd.y) * state.previewScale;
+      const w = Math.abs(state.currentDrawEnd.x - state.drawStartX) * state.previewScale;
+      const h = Math.abs(state.currentDrawEnd.y - state.drawStartY) * state.previewScale;
+      ctx.strokeRect(x1, y1, w, h);
+    }
+
     ctx.setLineDash([]);
   }
 

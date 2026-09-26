@@ -1,0 +1,28 @@
+# Virtual environments
+.venv/
+env/
+env
+
+# FITS and heavy astronomical raw image files (do not commit to git)
+*.fits
+*.fit
+*.FITS
+*.FIT
+*.info.txt
+*.cal.info.txt
+
+# Training data, sliced datasets, checkpoints, and models
+TRAINING_FILES/
+training/checkpoints/
+training/dataset*/
+training/verification_output/
+*.onnx
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Rust build targets
+target/
+**/target/

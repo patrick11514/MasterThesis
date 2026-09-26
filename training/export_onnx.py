@@ -19,7 +19,7 @@ from models.cnn_zoo import build_model, NUM_CLASSES
 def export_to_onnx(
     model_path: Path,
     output_path: Path,
-    opset_version: int = 17,
+    opset_version: int = 18,
 ):
     model_path = Path(model_path).resolve()
     output_path = Path(output_path).resolve()
@@ -87,7 +87,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Export PyTorch model to ONNX")
     parser.add_argument("--model-path", type=str, required=True, help="Path to best_model.pt")
     parser.add_argument("--output", type=str, default="astro_model.onnx", help="Output .onnx path")
-    parser.add_argument("--opset", type=int, default=17, help="ONNX opset version")
+    parser.add_argument("--opset", type=int, default=18, help="ONNX opset version")
 
     args = parser.parse_args()
     export_to_onnx(

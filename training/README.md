@@ -74,9 +74,35 @@ python3 -m venv .venv
 # Activate environment
 source .venv/bin/activate
 
-# Install dependencies
+# Install base dependencies (CPU / General)
 pip install -r requirements.txt
 ```
+
+#### AMD ROCm GPU Acceleration (e.g., RX 9060 XT / RDNA GPUs)
+
+If training on an AMD discrete GPU (such as Radeon RX 7000/8000/9000 series with ROCm):
+
+1. **Install PyTorch with ROCm support**:
+   ```bash
+   # PyTorch official ROCm wheel:
+   pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm6.2
+   ```
+   *(Or on Arch Linux: `sudo pacman -S python-pytorch-opt-rocm`)*
+
+2. **Verify GPU Detection**:
+   ```bash
+   python -c "import torch; print('CUDA/ROCm Available:', torch.cuda.is_available(), 'Device:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'None')"
+   ```
+
+3. **Target Architecture Override (if needed for consumer RDNA cards)**:
+   For newer or consumer Radeon GPUs not enabled in ROCm by default, set the architecture override before running training:
+   ```bash
+   # Example override (e.g. gfx1100 / gfx1102 / gfx1200 depending on generation):
+   export HSA_OVERRIDE_GFX_VERSION=11.0.0
+   ```
+
+4. **Run Training on GPU**:
+   The training script automatically detects ROCm via `torch.device("cuda" if torch.cuda.is_available() else "cpu")`. Pin memory and GPU tensor transfers are enabled automatically.
 
 ---
 
@@ -91,7 +117,15 @@ python annotator/app.py
 Open **`http://127.0.0.1:8000`** in your browser.
 
 - **Load Directory**: Enter the directory path containing your `.fits` files (e.g., `../test_fits`) and click **Load**.
-- **Draw Bounding Boxes**: Click and drag on the canvas to draw a defect rectangle.
+- **Tool Selector (Hotkeys)**:
+  - `▢ Box` (`[B]`): For rectangular defect patches. Click and drag on canvas.
+  - `⬡ Shape (N-pts)` (`[P]`): For arbitrary freeform defect shapes (e.g. irregular clouds, trees, obstructions). Click $N$ points on the canvas to outline the defect. Double-click, press `Enter`, or click the first green anchor point to close and commit the shape. Press `Esc` to cancel.
+  - `╱ Streak Line` (`[L]`): For straight diagonal satellite streaks and airplane trails. Click and drag along the streak line. When tiling into $512 \times 512$ patches, the Cohen-Sutherland algorithm only tags the tiles the streak line actually crosses, preventing clean sky from being falsely labeled!
+  - `⛶ Full Frame` (`[F]`): Instantly marks the entire frame with the currently active class (e.g. for complete cloud cover or heavy fog).
+- **View & Zoom Controls (Hotkeys)**:
+  - `[+]` / `[−]`: Zoom in and zoom out (or use mouse scroll wheel). Hotkeys: `+` and `-`.
+  - `[1:1]`: View image at 100% pixel-to-pixel resolution.
+  - `[Fit]`: Fit and center image within the viewport. Hotkey: `0`.
 - **Select Defect Classes (Hotkeys)**:
   - `[1]`: Satellite Streak
   - `[2]`: Airplane
@@ -99,9 +133,15 @@ Open **`http://127.0.0.1:8000`** in your browser.
   - `[4]`: Obstruction
   - `[5]`: Star Trail
 - **Frame-Level Controls**:
-  - `Global Star Trailing`: Check this if tracking was lost and **all** stars across the frame are trailed.
-  - `Clean Sky`: Automatically checked if no boxes are present.
-- **Interactive STF Stretch**: Adjust the stretch slider to reveal faint streaks or deep shadow trees.
+  - `Global Cloud`: Check this if the entire frame has 100% cloud cover, dense fog, or overcast. All tiles will be labeled as cloud.
+  - `Global Star Trailing`: Check this if tracking or guiding failed and **all** stars across the entire sensor frame are trailed. Do not draw individual boxes on hundreds of stars—checking this globally will automatically label all tiles extracted from this frame.
+  - `Clean Sky`: Automatically checked if no boxes, polygons, or streaks are present.
+- **Stretch Controls**:
+  - **Stretch Modes**: Switch between `AutoSTF` (standard MTF curve), `Asinh` (astronomical ArcSinh stretch, never blows out stars or background), or `Linear`.
+  - **Linked RGB Toggle**: Unchecked by default (`Unlinked STF`). Unlinked mode stretches R, G, and B independently, completely eliminating the strong green/yellow tint common to OSC Bayer sensors! Check `Linked RGB` if you prefer the raw sensor color balance.
+  - **Brightness Slider**: Directly controls target background brightness (5% to 50%, default 25%).
+  - **Shadows Slider**: Controls black point clipping (-6.0 to 0.0, default -2.8).
+  - **Reset STF**: Instantly restores default neutral stretch.
 - **Navigation & Saving**:
   - `[A]` / `Prev`: Go to previous file (auto-saves current).
   - `[D]` / `Next`: Go to next file (auto-saves current).
@@ -115,7 +155,7 @@ Open **`http://127.0.0.1:8000`** in your browser.
 Slice high-resolution FITS frames into 512×512 tiles with multi-label ground truth:
 
 ```bash
-python prep_dataset.py --data-dir ../test_fits --out-dir dataset --norm-mode asinh
+python prep_dataset.py --data-dir ../TRAINING_FILES --out-dir dataset --norm-mode asinh
 ```
 
 Options:
@@ -161,18 +201,22 @@ The best checkpoint is automatically saved to `checkpoints/<model_name>_<input_m
 
 ### Step 4: Verification & Diagnostic Visual Reports
 
-Run inference on an unannotated or test FITS frame:
+Run inference on test FITS frames using PyTorch (`.pt`) or ONNX (`.onnx`):
 
 ```bash
-python verify.py \
-  --fits ../test_fits/2025-07-03_00-56-59_H_-20.00_180.00s_0013.fits \
-  --model-path checkpoints/astronet_f32/best_model.pt \
-  --out-dir verification_output
+# Single file
+python verify.py --fits image.fits --model-path checkpoints/astronet_f32/best_model.pt
+
+# Wildcard / glob pattern (e.g. all FITS in a directory)
+python verify.py --fits *.fits --model-path checkpoints/astronet_f32/best_model.pt
+
+# Whole folder or multiple files
+python verify.py --fits ../test_fits/ --model-path checkpoints/astronet_f32/astronet.onnx
 ```
 
 This outputs:
-- **Terminal report**: Inference latency, tile throughput, and quality verdict (`CLEAN SKY` or `DEFECT FLAGGED`).
-- **Visual PNG report**: `verification_output/<filename>_inspection.png` with colored bounding boxes and confidence scores rendered over the stretched frame.
+- **Terminal report**: Individual frame verdicts (`CLEAN SKY` or `DEFECT FLAGGED`), per-tile defect counts, latency, and a batch summary report.
+- **Visual PNG reports**: `verification_output/<filename>_inspection.png` with colored bounding boxes and confidence scores rendered over each frame.
 
 ---
 

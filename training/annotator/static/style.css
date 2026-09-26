@@ -198,6 +198,54 @@ button:active {
   gap: 4px;
 }
 
+.btn-tool {
+  padding: 5px 9px;
+  font-size: 11px;
+  border-radius: 3px;
+  background-color: #262626;
+  border: 1px solid #444444;
+  color: #cccccc;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-tool:hover {
+  background-color: #333333;
+  color: #ffffff;
+}
+
+.btn-tool.active {
+  background-color: #2b6cb0 !important;
+  border-color: #63b3ed !important;
+  color: #ffffff !important;
+  font-weight: bold;
+  box-shadow: 0 0 8px rgba(66, 153, 225, 0.6);
+}
+
+.btn-tool-action {
+  padding: 5px 9px;
+  font-size: 11px;
+  background-color: #27272a;
+  border: 1px solid #52525b;
+  color: #e4e4e7;
+  border-radius: 3px;
+  cursor: pointer;
+  margin-left: 4px;
+  transition: background-color 0.15s ease;
+}
+
+.btn-tool-action:hover {
+  background-color: #3f3f46;
+  color: #ffffff;
+}
+
+.zoom-controls .btn-group button {
+  padding: 5px 8px;
+  min-width: 28px;
+  font-size: 12px;
+  font-weight: bold;
+}
+
 .btn-class {
   padding: 5px 8px;
   font-size: 11px;
@@ -249,15 +297,40 @@ button:active {
   color: #cccccc;
 }
 
+.btn-mode {
+  padding: 4px 7px;
+  font-size: 11px;
+  border-radius: 2px;
+}
+
+.btn-mode.active {
+  background-color: #2b6cb0;
+  border-color: #4299e1;
+  color: #ffffff;
+  font-weight: bold;
+}
+
 .stretch-controls {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   margin-left: auto;
 }
 
+.stretch-controls label {
+  color: #aaaaaa;
+  font-size: 11px;
+}
+
 .stretch-controls input[type="range"] {
-  width: 100px;
+  width: 75px;
+}
+
+.stretch-controls span {
+  font-family: monospace;
+  font-size: 11px;
+  color: #63b3ed;
+  min-width: 28px;
 }
 
 /* Canvas Container */

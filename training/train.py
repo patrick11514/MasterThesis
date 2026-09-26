@@ -50,12 +50,18 @@ class AstroPatchDataset(Dataset):
         labels = torch.tensor(rec["labels"], dtype=torch.float32)
 
         if self.input_mode == "f32":
-            npy_path = self.base_dir / rec["f32_path"]
+            p = Path(rec["f32_path"])
+            npy_path = self.base_dir / p
+            if not npy_path.exists():
+                npy_path = p
             # Load float32 [3, 512, 512]
             data = np.load(npy_path).astype(np.float32)
             tensor = torch.from_numpy(data)
         else:
-            png_path = self.base_dir / rec["img_path"]
+            p = Path(rec["img_path"])
+            png_path = self.base_dir / p
+            if not png_path.exists():
+                png_path = p
             img = Image.open(png_path).convert("RGB")
             # Convert to [3, 512, 512] float in [0, 1]
             tensor = transforms.ToTensor()(img)
@@ -219,7 +225,8 @@ def main():
 
     print(f"Train samples: {len(train_ds)} | Val samples: {len(val_ds)}")
 
-    train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=2, pin_memory=True)
+    pin_mem = (device.type == "cuda")
+    train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=2, pin_memory=pin_mem)
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False, num_workers=2)
 
     # Positive class weighting for imbalanced defect frequencies
