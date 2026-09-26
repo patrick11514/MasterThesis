@@ -1,0 +1,41 @@
+{
+  "file_name": "2025-05-10_00-54-09__-20.00_120.00s_0481.fits",
+  "width": 3840,
+  "height": 2160,
+  "global_star_trailing": false,
+  "global_cloud": false,
+  "is_clean": false,
+  "boxes": [
+    {
+      "id": "poly_1790409734479",
+      "label": "obstruction",
+      "type": "polygon",
+      "x": -74.0,
+      "y": -74.0,
+      "width": 760.0,
+      "height": 1708.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": [
+        [
+          686.0,
+          -11.0
+        ],
+        [
+          404.0,
+          1023.0
+        ],
+        [
+          -74.0,
+          1634.0
+        ],
+        [
+          -66.0,
+          -74.0
+        ]
+      ]
+    }
+  ]
+}

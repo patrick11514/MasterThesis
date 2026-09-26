@@ -88,6 +88,17 @@ button:active {
   background-color: #267747 !important;
 }
 
+.btn-danger {
+  background-color: #5c1d1d !important;
+  border-color: #8c2a2a !important;
+  color: #ffffff !important;
+  font-weight: 500;
+}
+
+.btn-danger:hover {
+  background-color: #782424 !important;
+}
+
 .file-list-container {
   flex: 1;
   overflow-y: auto;
@@ -100,6 +111,39 @@ button:active {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: #888888;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.filter-untagged-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  text-transform: none;
+  font-size: 11px;
+  color: #a0aec0;
+  user-select: none;
+}
+
+.filter-untagged-label input {
+  cursor: pointer;
+}
+
+.filter-untagged-label:hover {
+  color: #ffffff;
+}
+
+.btn-action {
+  background-color: #2b4365 !important;
+  border-color: #3182ce !important;
+  color: #ffffff !important;
+  font-weight: 500;
+}
+
+.btn-action:hover {
+  background-color: #3182ce !important;
 }
 
 #file-list {

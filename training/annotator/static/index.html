@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>AstroGrader - FITS Tagging Tool</title>
-  <link rel="stylesheet" href="/static/style.css?v=4">
+  <link rel="stylesheet" href="/static/style.css?v=5">
 </head>
 <body>
   <div id="app">
@@ -17,7 +17,12 @@
         </div>
       </div>
       <div class="file-list-container">
-        <div class="file-list-header">Files (<span id="file-count">0</span>)</div>
+        <div class="file-list-header">
+          <span>Files (<span id="file-count">0</span>)</span>
+          <label class="filter-untagged-label" title="Show only untagged files in the list and when navigating with A/D">
+            <input type="checkbox" id="chk-filter-untagged" /> Untagged Only
+          </label>
+        </div>
         <ul id="file-list"></ul>
       </div>
       <div class="sidebar-footer">
@@ -25,7 +30,9 @@
           <button id="btn-prev">&lt; Prev (A)</button>
           <button id="btn-next">Next (D) &gt;</button>
         </div>
+        <button id="btn-next-untagged" class="btn-action" title="Jump directly to next untagged image (W)">Next Untagged (W)</button>
         <button id="btn-save" class="btn-primary">Save Annotations (S)</button>
+        <button id="btn-clear-labels" class="btn-danger" title="Clear all annotations and global tags for this image">Clear All Labels</button>
       </div>
     </div>
 
@@ -129,6 +136,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=4"></script>
+  <script src="/static/app.js?v=6"></script>
 </body>
 </html>

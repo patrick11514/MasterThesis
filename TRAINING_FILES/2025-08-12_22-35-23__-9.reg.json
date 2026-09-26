@@ -1,0 +1,24 @@
+{
+  "file_name": "2025-08-12_22-35-23__-9.reg.fits",
+  "width": 3840,
+  "height": 2160,
+  "global_star_trailing": false,
+  "global_cloud": false,
+  "is_clean": false,
+  "boxes": [
+    {
+      "id": "l_1790420634482",
+      "label": "satellite_streak",
+      "type": "line",
+      "x": 4.0,
+      "y": 1446.0,
+      "width": 2578.0,
+      "height": 2663.0,
+      "x1": 4.0,
+      "y1": 1446.0,
+      "x2": 2582.0,
+      "y2": 4109.0,
+      "points": null
+    }
+  ]
+}

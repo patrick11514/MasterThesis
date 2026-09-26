@@ -226,6 +226,21 @@ def save_annotations(path: str = Query(...), annot: FrameAnnotation = ...):
     return {"status": "ok", "boxes_count": len(annot.boxes), "is_clean": annot.is_clean}
 
 
+@app.delete("/api/annotations")
+def delete_annotations(path: str = Query(...)):
+    fits_path = Path(path).resolve()
+    json_path = fits_path.with_suffix(".json")
+    txt_path = fits_path.with_suffix(".txt")
+
+    if json_path.exists():
+        json_path.unlink()
+    if txt_path.exists():
+        txt_path.unlink()
+
+    return {"status": "ok", "deleted": True}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app:app", host="127.0.0.1", port=8000, reload=True)
+

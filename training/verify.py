@@ -175,6 +175,7 @@ def verify_fits_batch(
     out_dir: Path,
     threshold: float = 0.5,
     device: str = "cpu",
+    rgb_linked: bool = False,
 ):
     fits_files = collect_fits_files(fits_patterns)
     if not fits_files:
@@ -231,7 +232,8 @@ def verify_fits_batch(
             else:
                 norm_f32 = to_auto_stf_f32(rgb_f32)
 
-            stf_u8 = to_stf_u8(rgb_f32)
+            # Generate diagnostic visual output with unlinked STF by default for maximum contrast
+            stf_u8 = to_stf_u8(rgb_f32, rgb_linked=rgb_linked)
 
             # Run tile inference
             detections, infer_time = run_tile_inference(
@@ -305,6 +307,7 @@ if __name__ == "__main__":
     parser.add_argument("--out-dir", type=str, default="verification_output", help="Directory for inspection PNGs")
     parser.add_argument("--threshold", type=float, default=0.5, help="Detection threshold [0.0 - 1.0]")
     parser.add_argument("--device", type=str, default="cpu", help="Device (cpu or cuda)")
+    parser.add_argument("--linked-rgb", action="store_true", help="Use linked RGB STF (default is unlinked for enhanced visibility)")
 
     args = parser.parse_args()
     verify_fits_batch(
@@ -313,4 +316,5 @@ if __name__ == "__main__":
         out_dir=Path(args.out_dir),
         threshold=args.threshold,
         device=args.device,
+        rgb_linked=args.linked_rgb,
     )

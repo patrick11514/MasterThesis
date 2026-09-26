@@ -4,7 +4,10 @@ __pycache__/
 .venv/
 env/
 env
-checkpoints/
+checkpoints/*.pt
+checkpoints/**/*.pt
+checkpoints/*.onnx*
+checkpoints/**/*.onnx*
 dataset*/
 verification_output/
 *.onnx
@@ -14,5 +17,9 @@ verification_output/
 *.fit
 *.FITS
 *.FIT
+*.tif
+*.tiff
+*.TIF
+*.TIFF
 *.info.txt
 *.cal.info.txt

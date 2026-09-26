@@ -8,12 +8,26 @@ env
 *.fit
 *.FITS
 *.FIT
+*.tif
+*.tiff
+*.TIF
+*.TIFF
 *.info.txt
 *.cal.info.txt
 
 # Training data, sliced datasets, checkpoints, and models
-TRAINING_FILES/
-training/checkpoints/
+TRAINING_FILES/*.fits
+TRAINING_FILES/*.fit
+TRAINING_FILES/*.FITS
+TRAINING_FILES/*.FIT
+TRAINING_FILES/*.tif
+TRAINING_FILES/*.tiff
+TRAINING_FILES/*.TIF
+TRAINING_FILES/*.TIFF
+training/checkpoints/*.pt
+training/checkpoints/**/*.pt
+training/checkpoints/*.onnx*
+training/checkpoints/**/*.onnx*
 training/dataset*/
 training/verification_output/
 *.onnx

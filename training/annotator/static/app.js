@@ -29,11 +29,17 @@ const state = {
   activeClass: "satellite_streak",
   boxes: [],
   selectedBoxId: null,
+  isDraggingHandle: false,
+  dragHandleType: null, // "p1", "p2", "move"
+  dragBoxId: null,
+  dragStartMouse: null,
+  dragOriginalBox: null,
   globalStarTrailing: false,
   globalCloud: false,
   isClean: true,
 
   // Settings
+  filterUntagged: false,
   showGrid: false,
   shadowsClipping: -2.8,
   targetBg: 0.25,
@@ -66,7 +72,29 @@ function init() {
   // Navigation
   document.getElementById("btn-prev").addEventListener("click", prevFile);
   document.getElementById("btn-next").addEventListener("click", nextFile);
+  const btnNextUntagged = document.getElementById("btn-next-untagged");
+  if (btnNextUntagged) {
+    btnNextUntagged.addEventListener("click", nextUntaggedFile);
+  }
   document.getElementById("btn-save").addEventListener("click", saveAnnotations);
+  const btnClearLabels = document.getElementById("btn-clear-labels");
+  if (btnClearLabels) {
+    btnClearLabels.addEventListener("click", clearAnnotations);
+  }
+
+  // Filter untagged toggle
+  const chkFilterUntagged = document.getElementById("chk-filter-untagged");
+  if (chkFilterUntagged) {
+    chkFilterUntagged.checked = state.filterUntagged;
+    chkFilterUntagged.addEventListener("change", (e) => {
+      state.filterUntagged = e.target.checked;
+      renderFileList();
+      // If current file is annotated and filter turned on, jump to next untagged
+      if (state.filterUntagged && state.currentFile && state.currentFile.annotated) {
+        nextUntaggedFile();
+      }
+    });
+  }
 
   // Tool buttons (Box, Polygon, Streak Line)
   document.querySelectorAll("#tool-buttons .btn-tool").forEach((btn) => {
@@ -317,10 +345,30 @@ async function loadDirectory() {
   }
 }
 
+function getVisibleFileIndices() {
+  const indices = [];
+  state.files.forEach((f, idx) => {
+    if (!state.filterUntagged || !f.annotated) {
+      indices.push(idx);
+    }
+  });
+  return indices;
+}
+
 function renderFileList() {
   const list = document.getElementById("file-list");
   list.innerHTML = "";
+
+  const untaggedCount = state.files.filter((f) => !f.annotated).length;
+  const countEl = document.getElementById("file-count");
+  if (countEl) {
+    countEl.innerText = state.filterUntagged ? `${untaggedCount} / ${state.files.length}` : `${state.files.length}`;
+  }
+
   state.files.forEach((f, idx) => {
+    if (state.filterUntagged && f.annotated) {
+      return;
+    }
     const li = document.createElement("li");
     li.innerText = f.name;
     if (f.annotated) li.classList.add("annotated");
@@ -418,18 +466,90 @@ async function saveAnnotations() {
   }
 }
 
+async function clearAnnotations() {
+  if (!state.currentFile) return;
+  if (!confirm(`Are you sure you want to clear all annotations for ${state.currentFile.name}?`)) {
+    return;
+  }
+  setStatus("Clearing annotations...");
+  try {
+    const res = await fetch(`/api/annotations?path=${encodeURIComponent(state.currentFile.path)}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) throw new Error("Failed to delete annotations");
+
+    state.boxes = [];
+    state.globalStarTrailing = false;
+    state.globalCloud = false;
+    state.isClean = true;
+    state.selectedBoxId = null;
+
+    const chkGlobalStar = document.getElementById("chk-global-star-trail");
+    if (chkGlobalStar) chkGlobalStar.checked = false;
+    const chkGlobalCloud = document.getElementById("chk-global-cloud");
+    if (chkGlobalCloud) chkGlobalCloud.checked = false;
+    const chkClean = document.getElementById("chk-clean-sky");
+    if (chkClean) chkClean.checked = true;
+
+    state.currentFile.annotated = false;
+    renderFileList();
+    render();
+    setStatus(`Cleared all annotations for ${state.currentFile.name}`);
+  } catch (err) {
+    setStatus("Error clearing annotations: " + err.message);
+  }
+}
+
 function prevFile() {
-  if (state.currentIndex > 0) {
+  const visible = getVisibleFileIndices();
+  if (visible.length === 0) return;
+  const currentPos = visible.indexOf(state.currentIndex);
+  if (currentPos > 0) {
     saveAnnotations();
-    loadFile(state.currentIndex - 1);
+    loadFile(visible[currentPos - 1]);
+  } else if (currentPos === -1 && visible.length > 0) {
+    const preceding = visible.filter((i) => i < state.currentIndex);
+    if (preceding.length > 0) {
+      saveAnnotations();
+      loadFile(preceding[preceding.length - 1]);
+    }
   }
 }
 
 function nextFile() {
-  if (state.currentIndex < state.files.length - 1) {
+  const visible = getVisibleFileIndices();
+  if (visible.length === 0) return;
+  const currentPos = visible.indexOf(state.currentIndex);
+  if (currentPos >= 0 && currentPos < visible.length - 1) {
     saveAnnotations();
-    loadFile(state.currentIndex + 1);
+    loadFile(visible[currentPos + 1]);
+  } else if (currentPos === -1) {
+    const following = visible.filter((i) => i > state.currentIndex);
+    if (following.length > 0) {
+      saveAnnotations();
+      loadFile(following[0]);
+    } else if (visible.length > 0) {
+      saveAnnotations();
+      loadFile(visible[0]);
+    }
   }
+}
+
+function nextUntaggedFile() {
+  saveAnnotations();
+  for (let i = state.currentIndex + 1; i < state.files.length; i++) {
+    if (!state.files[i].annotated) {
+      loadFile(i);
+      return;
+    }
+  }
+  for (let i = 0; i <= state.currentIndex; i++) {
+    if (!state.files[i].annotated) {
+      loadFile(i);
+      return;
+    }
+  }
+  setStatus("All files in directory are annotated!");
 }
 
 function resetView() {
@@ -505,6 +625,29 @@ function distToSegment(px, py, x1, y1, x2, y2) {
   return Math.hypot(px - (x1 + t * (x2 - x1)), py - (y1 + t * (y2 - y1)));
 }
 
+function findLineHandleAt(x, y, line) {
+  const x1 = line.x1 !== undefined ? line.x1 : line.x;
+  const y1 = line.y1 !== undefined ? line.y1 : line.y;
+  const x2 = line.x2 !== undefined ? line.x2 : line.x + line.width;
+  const y2 = line.y2 !== undefined ? line.y2 : line.y + line.height;
+
+  // Handle detection radius in image coordinates
+  const handleRadius = Math.max(12, 14 / (state.zoom * state.previewScale));
+
+  if (Math.hypot(x - x1, y - y1) <= handleRadius) {
+    return "p1";
+  }
+  if (Math.hypot(x - x2, y - y2) <= handleRadius) {
+    return "p2";
+  }
+  // Check if near the segment itself
+  const d = distToSegment(x, y, x1, y1, x2, y2);
+  if (d <= Math.max(8, 12 / (state.zoom * state.previewScale))) {
+    return "move";
+  }
+  return null;
+}
+
 function findBoxAt(x, y) {
   for (let i = state.boxes.length - 1; i >= 0; i--) {
     const b = state.boxes[i];
@@ -576,6 +719,22 @@ function onMouseDown(e) {
   if (e.button === 0) {
     const pt = screenToImage(mouseX, mouseY);
 
+    // If an item is already selected and it's a line, check if user is grabbing a handle or body
+    if (state.selectedBoxId && !e.altKey) {
+      const selBox = state.boxes.find((b) => b.id === state.selectedBoxId);
+      if (selBox && selBox.type === "line") {
+        const handleType = findLineHandleAt(pt.x, pt.y, selBox);
+        if (handleType) {
+          state.isDraggingHandle = true;
+          state.dragHandleType = handleType;
+          state.dragBoxId = selBox.id;
+          state.dragStartMouse = { x: pt.x, y: pt.y };
+          state.dragOriginalBox = { ...selBox };
+          return;
+        }
+      }
+    }
+
     // --- POLYGON TOOL ---
     if (state.activeTool === "polygon") {
       // Check if clicking near first point to close
@@ -612,6 +771,19 @@ function onMouseDown(e) {
     if (clickedBox && !e.altKey) {
       state.selectedBoxId = clickedBox.id;
       setActiveClass(clickedBox.label);
+
+      // If clicked a line, immediately check if handle/body was grabbed
+      if (clickedBox.type === "line") {
+        const handleType = findLineHandleAt(pt.x, pt.y, clickedBox);
+        if (handleType) {
+          state.isDraggingHandle = true;
+          state.dragHandleType = handleType;
+          state.dragBoxId = clickedBox.id;
+          state.dragStartMouse = { x: pt.x, y: pt.y };
+          state.dragOriginalBox = { ...clickedBox };
+        }
+      }
+
       render();
       return;
     }
@@ -640,6 +812,46 @@ function onMouseMove(e) {
     return;
   }
 
+  // Handle line endpoint/move dragging
+  if (state.isDraggingHandle && state.dragBoxId) {
+    const box = state.boxes.find((b) => b.id === state.dragBoxId);
+    if (box && box.type === "line" && state.dragOriginalBox) {
+      const orig = state.dragOriginalBox;
+      const dx = pt.x - state.dragStartMouse.x;
+      const dy = pt.y - state.dragStartMouse.y;
+
+      let x1 = orig.x1 !== undefined ? orig.x1 : orig.x;
+      let y1 = orig.y1 !== undefined ? orig.y1 : orig.y;
+      let x2 = orig.x2 !== undefined ? orig.x2 : orig.x + orig.width;
+      let y2 = orig.y2 !== undefined ? orig.y2 : orig.y + orig.height;
+
+      if (state.dragHandleType === "p1") {
+        x1 = Math.round(orig.x1 + dx);
+        y1 = Math.round(orig.y1 + dy);
+      } else if (state.dragHandleType === "p2") {
+        x2 = Math.round(orig.x2 + dx);
+        y2 = Math.round(orig.y2 + dy);
+      } else if (state.dragHandleType === "move") {
+        x1 = Math.round(orig.x1 + dx);
+        y1 = Math.round(orig.y1 + dy);
+        x2 = Math.round(orig.x2 + dx);
+        y2 = Math.round(orig.y2 + dy);
+      }
+
+      box.x1 = x1;
+      box.y1 = y1;
+      box.x2 = x2;
+      box.y2 = y2;
+      box.x = Math.min(x1, x2);
+      box.y = Math.min(y1, y2);
+      box.width = Math.abs(x2 - x1);
+      box.height = Math.abs(y2 - y1);
+
+      render();
+      return;
+    }
+  }
+
   if (state.activeTool === "polygon" && state.polygonPoints.length > 0) {
     render();
     return;
@@ -654,6 +866,16 @@ function onMouseMove(e) {
 function onMouseUp(e) {
   if (state.isPanning) {
     state.isPanning = false;
+    return;
+  }
+
+  if (state.isDraggingHandle) {
+    state.isDraggingHandle = false;
+    state.dragHandleType = null;
+    state.dragBoxId = null;
+    state.dragStartMouse = null;
+    state.dragOriginalBox = null;
+    render();
     return;
   }
 
@@ -762,6 +984,16 @@ function onKeyDown(e) {
   // Navigation Hotkeys
   if (e.key === "a" || e.key === "A") prevFile();
   if (e.key === "d" || e.key === "D") nextFile();
+  if (e.key === "w" || e.key === "W") nextUntaggedFile();
+  if (e.key === "u" || e.key === "U") {
+    state.filterUntagged = !state.filterUntagged;
+    const chk = document.getElementById("chk-filter-untagged");
+    if (chk) chk.checked = state.filterUntagged;
+    renderFileList();
+    if (state.filterUntagged && state.currentFile && state.currentFile.annotated) {
+      nextUntaggedFile();
+    }
+  }
   if (e.key === "s" || e.key === "S") {
     e.preventDefault();
     saveAnnotations();
@@ -894,14 +1126,21 @@ function render() {
       ctx.lineTo(lx2, ly2);
       ctx.stroke();
 
-      const r = (isSelected ? 4.5 : 3.0) / state.zoom;
-      ctx.fillStyle = col;
+      // Draw endpoint circles (draggable handles)
+      const r = (isSelected ? 6.0 : 3.0) / state.zoom;
+      ctx.fillStyle = isSelected ? "#ffffff" : col;
+      ctx.strokeStyle = col;
+      ctx.lineWidth = (isSelected ? 2.0 : 1.0) / state.zoom;
+
       ctx.beginPath();
       ctx.arc(lx1, ly1, r, 0, 2 * Math.PI);
       ctx.fill();
+      if (isSelected) ctx.stroke();
+
       ctx.beginPath();
       ctx.arc(lx2, ly2, r, 0, 2 * Math.PI);
       ctx.fill();
+      if (isSelected) ctx.stroke();
 
       const midX = (lx1 + lx2) / 2;
       const midY = (ly1 + ly2) / 2;

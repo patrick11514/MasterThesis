@@ -1,0 +1,45 @@
+{
+  "file_name": "2025-03-22_04-03-27__-19.80_120.00s_0271.fits",
+  "width": 3840,
+  "height": 2160,
+  "global_star_trailing": false,
+  "global_cloud": false,
+  "is_clean": false,
+  "boxes": [
+    {
+      "id": "poly_1790434990092",
+      "label": "cloud",
+      "type": "polygon",
+      "x": 3357.0,
+      "y": -129.0,
+      "width": 4121.0,
+      "height": 4238.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": [
+        [
+          3420.0,
+          28.0
+        ],
+        [
+          5574.0,
+          4093.0
+        ],
+        [
+          7478.0,
+          4109.0
+        ],
+        [
+          7321.0,
+          -129.0
+        ],
+        [
+          3357.0,
+          -113.0
+        ]
+      ]
+    }
+  ]
+}
