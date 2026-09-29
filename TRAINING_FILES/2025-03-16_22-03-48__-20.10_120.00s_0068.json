@@ -7,18 +7,31 @@
   "is_clean": false,
   "boxes": [
     {
-      "id": "b_1790434963184",
+      "id": "poly_1790454515185",
       "label": "cloud",
-      "type": "box",
-      "x": 5355.0,
-      "y": -90.0,
-      "width": 1997.0,
-      "height": 2421.0,
+      "type": "polygon",
+      "x": 2925.0,
+      "y": -168.0,
+      "width": 1241.0,
+      "height": 1212.0,
       "x1": null,
       "y1": null,
       "x2": null,
       "y2": null,
-      "points": null
+      "points": [
+        [
+          2925.0,
+          -101.0
+        ],
+        [
+          4166.0,
+          1044.0
+        ],
+        [
+          4158.0,
+          -168.0
+        ]
+      ]
     }
   ]
 }

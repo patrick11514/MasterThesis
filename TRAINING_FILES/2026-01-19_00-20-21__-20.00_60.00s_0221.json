@@ -1,0 +1,52 @@
+{
+  "file_name": "2026-01-19_00-20-21__-20.00_60.00s_0221.fits",
+  "width": 3840,
+  "height": 2160,
+  "global_star_trailing": false,
+  "global_cloud": false,
+  "is_clean": false,
+  "boxes": [
+    {
+      "id": "l_1790457359697",
+      "label": "airplane",
+      "type": "line",
+      "x": 614.0,
+      "y": 9.0,
+      "width": 160.0,
+      "height": 2152.0,
+      "x1": 614.0,
+      "y1": 9.0,
+      "x2": 774.0,
+      "y2": 2161.0,
+      "points": null
+    },
+    {
+      "id": "l_1790457363712",
+      "label": "satellite_streak",
+      "type": "line",
+      "x": 900.0,
+      "y": 1.0,
+      "width": 130.0,
+      "height": 232.0,
+      "x1": 1030.0,
+      "y1": 1.0,
+      "x2": 900.0,
+      "y2": 233.0,
+      "points": null
+    },
+    {
+      "id": "l_1790457366904",
+      "label": "satellite_streak",
+      "type": "line",
+      "x": 881.0,
+      "y": 244.0,
+      "width": 14.0,
+      "height": 22.0,
+      "x1": 895.0,
+      "y1": 244.0,
+      "x2": 881.0,
+      "y2": 266.0,
+      "points": null
+    }
+  ]
+}

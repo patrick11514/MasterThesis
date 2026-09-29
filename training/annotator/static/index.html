@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>AstroGrader - FITS Tagging Tool</title>
-  <link rel="stylesheet" href="/static/style.css?v=5">
+  <link rel="stylesheet" href="/static/style.css?v=6">
 </head>
 <body>
   <div id="app">
@@ -54,6 +54,10 @@
             <button class="btn-tool" data-tool="line" id="tool-line" title="Streak line tool (click and drag line for satellite/airplane) [L]">╱ Streak Line</button>
           </div>
           <button class="btn-tool-action" id="btn-full-frame" title="Mark entire frame with selected class (e.g. 100% cloud cover) [F]">⛶ Full Frame</button>
+
+          <label for="slider-line-thickness" title="Line buffer thickness for intersection and drawing" style="margin-left: 8px;">Line Width:</label>
+          <input type="range" id="slider-line-thickness" min="2" max="60" step="2" value="16" title="Line buffer width in sensor pixels" style="width: 70px;" />
+          <span id="line-thickness-val" class="meta" style="min-width: 32px;">16px</span>
         </div>
 
         <div class="tool-group">
@@ -83,6 +87,10 @@
           <label class="checkbox-label">
             <input type="checkbox" id="chk-grid" />
             512x512 Grid
+          </label>
+          <label class="checkbox-label" title="Highlight exact 512x512 tiles that intersect defects (preview dataset cut) [C]">
+            <input type="checkbox" id="chk-cut-preview" />
+            ✂ Preview Cut [C]
           </label>
         </div>
 
@@ -125,6 +133,15 @@
       <!-- Canvas Viewport -->
       <div id="canvas-container">
         <canvas id="viewport"></canvas>
+
+        <!-- Floating Selection Cut Preview PIP Box -->
+        <div id="cut-preview-pip" class="hidden">
+          <div class="pip-header">
+            <span id="pip-title">Selection Preview (1:1)</span>
+            <span id="pip-info" class="pip-meta">0x0 px</span>
+          </div>
+          <canvas id="pip-canvas" width="200" height="200"></canvas>
+        </div>
       </div>
 
       <!-- Bottom Info Bar -->
@@ -136,6 +153,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=6"></script>
+  <script src="/static/app.js?v=9"></script>
 </body>
 </html>

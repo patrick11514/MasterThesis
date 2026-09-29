@@ -3,7 +3,39 @@
   "width": 3840,
   "height": 2160,
   "global_star_trailing": false,
-  "global_cloud": true,
+  "global_cloud": false,
   "is_clean": false,
-  "boxes": []
+  "boxes": [
+    {
+      "id": "poly_1790457106666",
+      "label": "cloud",
+      "type": "polygon",
+      "x": 2921.0,
+      "y": -238.0,
+      "width": 1412.0,
+      "height": 2919.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": [
+        [
+          4333.0,
+          -166.0
+        ],
+        [
+          3924.0,
+          2681.0
+        ],
+        [
+          3013.0,
+          2647.0
+        ],
+        [
+          2921.0,
+          -238.0
+        ]
+      ]
+    }
+  ]
 }

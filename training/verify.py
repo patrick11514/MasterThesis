@@ -68,6 +68,17 @@ def collect_fits_files(patterns: List[str]) -> List[Path]:
     return sorted(unique)
 
 
+def get_tile_offsets(dimension_size: int, tile_size: int = 512, stride: int = 384) -> List[int]:
+    """Generates coordinate offsets spanning 0 to dimension_size, guaranteeing the last tile snaps to dimension_size - tile_size."""
+    if dimension_size <= tile_size:
+        return [0]
+    offsets = list(range(0, dimension_size - tile_size + 1, stride))
+    last_offset = dimension_size - tile_size
+    if offsets[-1] != last_offset:
+        offsets.append(last_offset)
+    return offsets
+
+
 def run_tile_inference(
     model_or_session,
     full_f32: np.ndarray,
@@ -80,18 +91,20 @@ def run_tile_inference(
     """
     Slices normalized f32 full frame into overlapping tiles, batches them,
     and runs forward inference using PyTorch or ONNX Runtime.
+    Guarantees full edge coverage by snapping the final row and column to bottom/right edges.
     """
     h, w, _ = full_f32.shape
     planar_f32 = np.transpose(full_f32, (2, 0, 1))  # [3, H, W]
 
+    x_offsets = get_tile_offsets(w, tile_size, stride)
+    y_offsets = get_tile_offsets(h, tile_size, stride)
+
     tiles = []
     positions = []
-    for y in range(0, max(1, h - tile_size + 1), stride):
-        for x in range(0, max(1, w - tile_size + 1), stride):
-            x_end = min(x + tile_size, w)
-            y_end = min(y + tile_size, h)
-            x_start = max(0, x_end - tile_size)
-            y_start = max(0, y_end - tile_size)
+    for y_start in y_offsets:
+        for x_start in x_offsets:
+            y_end = y_start + tile_size
+            x_end = x_start + tile_size
 
             tile = planar_f32[:, y_start:y_end, x_start:x_end]
             tiles.append(tile)
@@ -176,6 +189,7 @@ def verify_fits_batch(
     threshold: float = 0.5,
     device: str = "cpu",
     rgb_linked: bool = False,
+    norm_mode: str = "asinh",
 ):
     fits_files = collect_fits_files(fits_patterns)
     if not fits_files:
@@ -187,13 +201,13 @@ def verify_fits_batch(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     is_onnx = model_path.suffix.lower() == ".onnx"
-    input_mode = "asinh"
 
     print(f"\n============================================================")
     print(f"             AstroGrader Verification Runner                ")
     print(f"============================================================")
     print(f"Target Model: {model_path.name} ({'ONNX Runtime' if is_onnx else 'PyTorch'})")
     print(f"Device:       {device}")
+    print(f"Normalization:{norm_mode.upper()}")
     print(f"Files Found:  {len(fits_files)}")
     print(f"Output Dir:   {out_dir}")
     print(f"Threshold:    {threshold:.2f}")
@@ -208,7 +222,6 @@ def verify_fits_batch(
     else:
         ckpt = torch.load(model_path, map_location=device)
         model_name = ckpt.get("model_name", "astronet")
-        input_mode = ckpt.get("input_mode", "f32")
         model = build_model(model_name, pretrained=False, num_classes=NUM_CLASSES)
         model.load_state_dict(ckpt["state_dict"])
         model.to(device)
@@ -226,11 +239,11 @@ def verify_fits_batch(
             rgb_f32, meta = load_fits_unified_rgb(fits_path)
             h, w, _ = rgb_f32.shape
 
-            # Pre-normalize
-            if "asinh" in input_mode:
-                norm_f32 = to_asinh_f32(rgb_f32)
+            # Pre-normalize matching dataset preparation
+            if norm_mode == "stf":
+                norm_f32 = to_auto_stf_f32(rgb_f32, rgb_linked=rgb_linked)
             else:
-                norm_f32 = to_auto_stf_f32(rgb_f32)
+                norm_f32 = to_asinh_f32(rgb_f32)
 
             # Generate diagnostic visual output with unlinked STF by default for maximum contrast
             stf_u8 = to_stf_u8(rgb_f32, rgb_linked=rgb_linked)
@@ -307,6 +320,7 @@ if __name__ == "__main__":
     parser.add_argument("--out-dir", type=str, default="verification_output", help="Directory for inspection PNGs")
     parser.add_argument("--threshold", type=float, default=0.5, help="Detection threshold [0.0 - 1.0]")
     parser.add_argument("--device", type=str, default="cpu", help="Device (cpu or cuda)")
+    parser.add_argument("--norm-mode", type=str, default="asinh", choices=["asinh", "stf"], help="Normalization mode (must match dataset prep)")
     parser.add_argument("--linked-rgb", action="store_true", help="Use linked RGB STF (default is unlinked for enhanced visibility)")
 
     args = parser.parse_args()
@@ -317,4 +331,5 @@ if __name__ == "__main__":
         threshold=args.threshold,
         device=args.device,
         rgb_linked=args.linked_rgb,
+        norm_mode=args.norm_mode,
     )

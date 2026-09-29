@@ -405,3 +405,48 @@ canvas#viewport {
   color: #888888;
   font-family: monospace;
 }
+
+/* Floating Selection Preview (PIP) */
+#cut-preview-pip {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  width: 200px;
+  background: rgba(18, 18, 18, 0.95);
+  border: 1px solid #4a5568;
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.7);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+#cut-preview-pip.hidden {
+  display: none !important;
+}
+
+.pip-header {
+  padding: 4px 8px;
+  background: #242424;
+  border-bottom: 1px solid #333333;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10px;
+  font-family: monospace;
+  color: #cbd5e0;
+}
+
+.pip-meta {
+  color: #63b3ed;
+}
+
+#pip-canvas {
+  width: 200px;
+  height: 200px;
+  background: #000000;
+  display: block;
+}

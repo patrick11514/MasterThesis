@@ -4,6 +4,21 @@
   "height": 2160,
   "global_star_trailing": false,
   "global_cloud": false,
-  "is_clean": true,
-  "boxes": []
+  "is_clean": false,
+  "boxes": [
+    {
+      "id": "l_1790453864451",
+      "label": "satellite_streak",
+      "type": "line",
+      "x": -2.0,
+      "y": 682.0,
+      "width": 1458.0,
+      "height": 1483.0,
+      "x1": 1456.0,
+      "y1": 2165.0,
+      "x2": -2.0,
+      "y2": 682.0,
+      "points": null
+    }
+  ]
 }

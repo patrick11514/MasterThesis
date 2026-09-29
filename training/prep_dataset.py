@@ -6,10 +6,12 @@ Zero active labels = Clean Astronomical Sky.
 """
 
 import argparse
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import json
+import os
 from pathlib import Path
 import random
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Union
 
 import cv2
 import numpy as np
@@ -154,8 +156,21 @@ def item_intersects_tile(item: dict, tile_x: int, tile_y: int, tile_size: int) -
         y1 = float(item.get("y1", item.get("y", 0)))
         x2 = float(item.get("x2", item.get("x", 0) + item.get("width", 0)))
         y2 = float(item.get("y2", item.get("y", 0) + item.get("height", 0)))
-        return line_intersects_tile(x1, y1, x2, y2, tile_x, tile_y, tile_size)
+        thick = float(item.get("thickness", 16.0))
+        buf = thick / 2.0
+        return line_intersects_tile(x1, y1, x2, y2, int(tile_x - buf), int(tile_y - buf), int(tile_size + buf * 2))
     return box_intersects_tile(item, tile_x, tile_y, tile_size)
+
+
+def get_tile_offsets(dimension_size: int, tile_size: int = 512, stride: int = 460) -> List[int]:
+    """Generates coordinate offsets spanning 0 to dimension_size, guaranteeing the last tile snaps to dimension_size - tile_size."""
+    if dimension_size <= tile_size:
+        return [0]
+    offsets = list(range(0, dimension_size - tile_size + 1, stride))
+    last_offset = dimension_size - tile_size
+    if offsets[-1] != last_offset:
+        offsets.append(last_offset)
+    return offsets
 
 
 def slice_fits_frame(
@@ -203,15 +218,15 @@ def slice_fits_frame(
     f32_dir.mkdir(parents=True, exist_ok=True)
     img_dir.mkdir(parents=True, exist_ok=True)
 
-    # Grid slicing across frame
+    # Grid slicing across frame - guarantees full edge coverage by snapping last tile
+    x_offsets = get_tile_offsets(w, tile_size, stride)
+    y_offsets = get_tile_offsets(h, tile_size, stride)
+
     tile_idx = 0
-    for y in range(0, max(1, h - tile_size + 1), stride):
-        for x in range(0, max(1, w - tile_size + 1), stride):
-            # Ensure crop stays within image boundaries
-            x_end = min(x + tile_size, w)
-            y_end = min(y + tile_size, h)
-            x_start = max(0, x_end - tile_size)
-            y_start = max(0, y_end - tile_size)
+    for y_start in y_offsets:
+        for x_start in x_offsets:
+            x_end = x_start + tile_size
+            y_end = y_start + tile_size
 
             tile_f32 = norm_f32[y_start:y_end, x_start:x_end]
             tile_u8 = preview_u8[y_start:y_end, x_start:x_end]
@@ -228,9 +243,15 @@ def slice_fits_frame(
                     matched_classes.append(lbl)
 
             if global_star_trailing:
-                st_idx = CLASSES.index("star_trail")
-                labels[st_idx] = 1
-                matched_classes.append("star_trail")
+                # Require stars/PSFs to actually be present in this tile to avoid labeling empty dark sky as star trails
+                bg_median = float(np.median(tile_f32))
+                bg_mad = float(np.median(np.abs(tile_f32 - bg_median)))
+                peak_val = float(np.percentile(tile_f32, 99.8))
+                # Star presence threshold (peak exceeds noise floor)
+                if (peak_val - bg_median) > max(0.015, 4.0 * bg_mad * 1.4826):
+                    st_idx = CLASSES.index("star_trail")
+                    labels[st_idx] = 1
+                    matched_classes.append("star_trail")
 
             if global_cloud:
                 c_idx = CLASSES.index("cloud")
@@ -277,6 +298,7 @@ def prepare_dataset(
     stride: int = 460,
     norm_mode: str = "asinh",
     seed: int = 42,
+    workers: int = None,
 ):
     """
     Prepares train and validation sets with frame-level isolation to prevent data leakage.
@@ -316,18 +338,42 @@ def prepare_dataset(
     train_records = []
     val_records = []
 
+    # Prepare jobs
+    jobs = []
     for f in fits_files:
         is_val = f in val_files
-        split_name = "val" if is_val else "train"
-        print(f"Slicing [{split_name}]: {f.name}...")
-        try:
-            records = slice_fits_frame(f, out_dir, tile_size=tile_size, stride=stride, norm_mode=norm_mode)
-            if is_val:
-                val_records.extend(records)
-            else:
-                train_records.extend(records)
-        except Exception as e:
-            print(f"  Error slicing {f.name}: {e}")
+        jobs.append((f, is_val))
+
+    max_workers = workers if workers is not None and workers > 0 else max(1, (os.cpu_count() or 4) - 1)
+    print(f"Parallel slicing across {len(fits_files)} frames using {max_workers} worker processes...")
+
+    completed = 0
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        future_to_job = {
+            executor.submit(
+                slice_fits_frame,
+                f,
+                out_dir,
+                tile_size=tile_size,
+                stride=stride,
+                norm_mode=norm_mode,
+            ): (f, is_val)
+            for f, is_val in jobs
+        }
+
+        for future in as_completed(future_to_job):
+            f, is_val = future_to_job[future]
+            split_name = "val" if is_val else "train"
+            completed += 1
+            try:
+                records = future.result()
+                if is_val:
+                    val_records.extend(records)
+                else:
+                    train_records.extend(records)
+                print(f"[{completed}/{len(fits_files)}] Done [{split_name}]: {f.name} ({len(records)} tiles)")
+            except Exception as e:
+                print(f"[{completed}/{len(fits_files)}] Error slicing {f.name}: {e}")
 
     # Write manifests
     with open(out_dir / "train_manifest.json", "w", encoding="utf-8") as fp:
@@ -361,6 +407,7 @@ if __name__ == "__main__":
     parser.add_argument("--stride", type=int, default=460, help="Stride between patches (smaller = overlap)")
     parser.add_argument("--norm-mode", type=str, default="asinh", choices=["asinh", "stf"])
     parser.add_argument("--val-split", type=float, default=0.2, help="Validation split ratio")
+    parser.add_argument("--workers", type=int, default=None, help="Number of worker processes for parallel slicing (defaults to CPU count - 1)")
 
     args = parser.parse_args()
     prepare_dataset(
@@ -370,4 +417,5 @@ if __name__ == "__main__":
         tile_size=args.tile_size,
         stride=args.stride,
         norm_mode=args.norm_mode,
+        workers=args.workers,
     )

@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+import cv2
 from PIL import Image
 
 import sys
@@ -28,6 +29,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Original-Width", "X-Original-Height", "X-Preview-Scale"],
 )
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -129,11 +131,11 @@ def get_fits_preview(
 
     # Downscale for interactive web canvas if image is massive (e.g. 6k x 4k)
     h, w, _ = rgb_f32.shape
-    scale = min(1.0, max_dim / max(h, w))
-    if scale < 1.0:
-        new_w, new_h = int(w * scale), int(h * scale)
-        # Fast nearest/area downscale
-        rgb_preview = rgb_f32[::int(1/scale), ::int(1/scale)]
+    raw_scale = min(1.0, max_dim / max(h, w))
+    if raw_scale < 1.0:
+        new_w, new_h = max(1, int(round(w * raw_scale))), max(1, int(round(h * raw_scale)))
+        rgb_preview = cv2.resize(rgb_f32, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        scale = new_w / float(w)
     else:
         rgb_preview = rgb_f32
         scale = 1.0

@@ -1,0 +1,99 @@
+{
+  "file_name": "2025-04-30_01-04-19__-19.80_120.00s_0260.fits",
+  "width": 3840,
+  "height": 2160,
+  "global_star_trailing": false,
+  "global_cloud": true,
+  "is_clean": false,
+  "boxes": [
+    {
+      "id": "poly_1790456615033",
+      "label": "cloud",
+      "type": "polygon",
+      "x": 2666.0,
+      "y": -15.0,
+      "width": 1224.0,
+      "height": 2206.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": [
+        [
+          3464.0,
+          -1.0
+        ],
+        [
+          2666.0,
+          2184.0
+        ],
+        [
+          3863.0,
+          2191.0
+        ],
+        [
+          3890.0,
+          -15.0
+        ]
+      ]
+    },
+    {
+      "id": "poly_1790456619239",
+      "label": "cloud",
+      "type": "polygon",
+      "x": -58.0,
+      "y": -32.0,
+      "width": 1048.0,
+      "height": 2164.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": [
+        [
+          990.0,
+          -3.0
+        ],
+        [
+          -39.0,
+          2132.0
+        ],
+        [
+          -58.0,
+          -32.0
+        ]
+      ]
+    },
+    {
+      "id": "poly_1790456629619",
+      "label": "obstruction",
+      "type": "polygon",
+      "x": 2352.0,
+      "y": 3.0,
+      "width": 968.0,
+      "height": 2173.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": [
+        [
+          3042.0,
+          8.0
+        ],
+        [
+          2352.0,
+          2176.0
+        ],
+        [
+          2588.0,
+          2176.0
+        ],
+        [
+          3320.0,
+          3.0
+        ]
+      ]
+    }
+  ]
+}

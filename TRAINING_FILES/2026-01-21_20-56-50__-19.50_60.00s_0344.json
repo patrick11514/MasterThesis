@@ -3,22 +3,53 @@
   "width": 3840,
   "height": 2160,
   "global_star_trailing": false,
-  "global_cloud": true,
+  "global_cloud": false,
   "is_clean": false,
   "boxes": [
     {
-      "id": "l_1790403920491",
+      "id": "l_1790457304573",
       "label": "satellite_streak",
       "type": "line",
-      "x": 1942.0,
-      "y": 3123.0,
-      "width": 320.0,
-      "height": 632.0,
-      "x1": 2262.0,
-      "y1": 3123.0,
-      "x2": 1942.0,
-      "y2": 3755.0,
+      "x": 1029.0,
+      "y": 1669.0,
+      "width": 179.0,
+      "height": 344.0,
+      "x1": 1208.0,
+      "y1": 1669.0,
+      "x2": 1029.0,
+      "y2": 2013.0,
       "points": null
+    },
+    {
+      "id": "poly_1790457337260",
+      "label": "cloud",
+      "type": "polygon",
+      "x": 1844.0,
+      "y": -579.0,
+      "width": 2440.0,
+      "height": 3223.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": [
+        [
+          4101.0,
+          -579.0
+        ],
+        [
+          1844.0,
+          -113.0
+        ],
+        [
+          2867.0,
+          2644.0
+        ],
+        [
+          4284.0,
+          2351.0
+        ]
+      ]
     }
   ]
 }

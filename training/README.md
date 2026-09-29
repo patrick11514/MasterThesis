@@ -78,31 +78,79 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-#### AMD ROCm GPU Acceleration (e.g., RX 9060 XT / RDNA GPUs)
+#### GPU Acceleration Setup
 
-If training on an AMD discrete GPU (such as Radeon RX 7000/8000/9000 series with ROCm):
+##### 1. NVIDIA GPUs (CUDA)
+For NVIDIA GeForce / RTX / Tesla GPUs, install the standard official CUDA-enabled PyTorch build:
 
-1. **Install PyTorch with ROCm support**:
+```bash
+# PyTorch with CUDA support (e.g., CUDA 12.4/12.6)
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+```
+
+Verify GPU Detection:
+```bash
+python -c "import torch; print('CUDA Available:', torch.cuda.is_available(), '| Device:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'None')"
+```
+
+---
+
+##### 2. Newer AMD Radeon GPUs (RX 90XX series / RDNA4, e.g., RX 9060 XT, RX 9070)
+Newer RDNA4 cards (architecture `gfx1200` / `gfx1201`) require AMD's nightly / alpha ROCm wheel builds (such as builds from "TheRock" project / AMD ROCm nightlies):
+
+1. **Install ROCm Nightly Wheels for `gfx120X`**:
    ```bash
-   # PyTorch official ROCm wheel:
-   pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm6.2
+   pip install --pre torch torchvision torchaudio \
+     --index-url https://rocm.nightlies.amd.com/v2/gfx120X-all/
    ```
-   *(Or on Arch Linux: `sudo pacman -S python-pytorch-opt-rocm`)*
 
-2. **Verify GPU Detection**:
+2. **Environment Variables for RDNA4**:
+   Export the architecture override before running training or ComfyUI:
    ```bash
-   python -c "import torch; print('CUDA/ROCm Available:', torch.cuda.is_available(), 'Device:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'None')"
+   # Target RDNA4 ISA
+   export HSA_OVERRIDE_GFX_VERSION=12.0.0
+
+   # Memory management tuning for clean HIP memory allocation
+   export PYTORCH_HIP_ALLOC_CONF="garbage_collection_threshold:0.8,max_split_size_mb:512"
    ```
 
-3. **Target Architecture Override (if needed for consumer RDNA cards)**:
-   For newer or consumer Radeon GPUs not enabled in ROCm by default, set the architecture override before running training:
+3. **Verify ROCm & Architecture Support**:
    ```bash
-   # Example override (e.g. gfx1100 / gfx1102 / gfx1200 depending on generation):
+   python -c "import torch; print('ROCm Available:', torch.cuda.is_available(), '| HIP:', getattr(torch.version, 'hip', None), '| Archs:', torch.cuda.get_arch_list())"
+   ```
+   *(Should report `Arch list: ['gfx1200', 'gfx1201']` and `CUDA/ROCm Available: True`)*
+
+---
+
+##### 3. Older AMD Radeon GPUs (RX 70XX / RX 60XX series / RDNA3 & RDNA2, e.g., RX 7900 XTX, RX 7800 XT)
+For RDNA3 (`gfx1100`, `gfx1101`, `gfx1102`) and RDNA2 (`gfx1030`), use the standard official ROCm builds from PyTorch:
+
+1. **Install PyTorch with Official ROCm**:
+   ```bash
+   # PyTorch official stable ROCm wheel (e.g., ROCm 6.2):
+   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm6.2
+   ```
+   *(On Arch Linux, you can alternatively use `sudo pacman -S python-pytorch-opt-rocm`)*
+
+2. **Architecture Override (if needed for consumer Radeon cards)**:
+   Some consumer desktop GPUs (e.g. RX 7800 XT / 7700 XT / 6700 XT) need an architecture override to match the closest officially supported enterprise target:
+   ```bash
+   # For RDNA3 (RX 7900 / 7800 / 7700 / 7600):
    export HSA_OVERRIDE_GFX_VERSION=11.0.0
+
+   # For RDNA2 (RX 6900 / 6800 / 6700):
+   export HSA_OVERRIDE_GFX_VERSION=10.3.0
    ```
 
-4. **Run Training on GPU**:
-   The training script automatically detects ROCm via `torch.device("cuda" if torch.cuda.is_available() else "cpu")`. Pin memory and GPU tensor transfers are enabled automatically.
+3. **Verify GPU Detection**:
+   ```bash
+   python -c "import torch; print('ROCm Available:', torch.cuda.is_available(), '| Device:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'None')"
+   ```
+
+---
+
+##### Run Training on GPU
+The training scripts in AstroGrader automatically select the device via `torch.device("cuda" if torch.cuda.is_available() else "cpu")`. Pin memory and GPU tensor transfers are handled automatically regardless of whether you are running CUDA or ROCm.
 
 ---
 
@@ -120,8 +168,9 @@ Open **`http://127.0.0.1:8000`** in your browser.
 - **Tool Selector (Hotkeys)**:
   - `▢ Box` (`[B]`): For rectangular defect patches. Click and drag on canvas.
   - `⬡ Shape (N-pts)` (`[P]`): For arbitrary freeform defect shapes (e.g. irregular clouds, trees, obstructions). Click $N$ points on the canvas to outline the defect. Double-click, press `Enter`, or click the first green anchor point to close and commit the shape. Press `Esc` to cancel.
-  - `╱ Streak Line` (`[L]`): For straight diagonal satellite streaks and airplane trails. Click and drag along the streak line. When tiling into $512 \times 512$ patches, the Cohen-Sutherland algorithm only tags the tiles the streak line actually crosses, preventing clean sky from being falsely labeled!
+  - `╱ Streak Line` (`[L]`): For straight diagonal satellite streaks, airplane trails, or star trails. Click and drag along the line. Includes a **Line Width** slider (2px to 60px) to control the thickness buffer around the streak.
   - `⛶ Full Frame` (`[F]`): Instantly marks the entire frame with the currently active class (e.g. for complete cloud cover or heavy fog).
+  - `✂ Preview Cut` (`[C]`): Instantly visualizes the exact $512 \times 512$ dataset tiles that will be sliced! Defective tiles are shaded in their class color, while clean sky tiles are outlined in subtle green.
 - **View & Zoom Controls (Hotkeys)**:
   - `[+]` / `[−]`: Zoom in and zoom out (or use mouse scroll wheel). Hotkeys: `+` and `-`.
   - `[1:1]`: View image at 100% pixel-to-pixel resolution.
@@ -136,6 +185,7 @@ Open **`http://127.0.0.1:8000`** in your browser.
   - `Global Cloud`: Check this if the entire frame has 100% cloud cover, dense fog, or overcast. All tiles will be labeled as cloud.
   - `Global Star Trailing`: Check this if tracking or guiding failed and **all** stars across the entire sensor frame are trailed. Do not draw individual boxes on hundreds of stars—checking this globally will automatically label all tiles extracted from this frame.
   - `Clean Sky`: Automatically checked if no boxes, polygons, or streaks are present.
+  - `✂ Preview Cut [C]`: Real-time interactive tile cut preview. Shows exactly what tiles `prep_dataset.py` will generate for any box, streak line, or polygon shape.
 - **Stretch Controls**:
   - **Stretch Modes**: Switch between `AutoSTF` (standard MTF curve), `Asinh` (astronomical ArcSinh stretch, never blows out stars or background), or `Linear`.
   - **Linked RGB Toggle**: Unchecked by default (`Unlinked STF`). Unlinked mode stretches R, G, and B independently, completely eliminating the strong green/yellow tint common to OSC Bayer sensors! Check `Linked RGB` if you prefer the raw sensor color balance.
@@ -164,6 +214,7 @@ Options:
 - `--tile-size 512`: Size of the patch in pixels.
 - `--stride 460`: Step between tiles (creates ~10% overlap to avoid missing boundary streaks).
 - `--val-split 0.2`: 20% validation split isolated by observation frame to prevent data leakage.
+- `--workers 12`: Number of parallel worker processes (defaults automatically to `CPU_COUNT - 1` for maximum throughput).
 
 This outputs:
 - `dataset/tiles_f32/`: Sliced tiles stored as `.npy` float32 arrays `[3, 512, 512]`.
@@ -208,11 +259,16 @@ Run inference on test FITS frames using PyTorch (`.pt`) or ONNX (`.onnx`):
 python verify.py --fits image.fits --model-path checkpoints/astronet_f32/best_model.pt
 
 # Wildcard / glob pattern (e.g. all FITS in a directory)
-python verify.py --fits *.fits --model-path checkpoints/astronet_f32/best_model.pt
+python verify.py --fits *.fits --model-path checkpoints/astronet_f32/best_model.pt --norm-mode asinh
 
 # Whole folder or multiple files
-python verify.py --fits ../test_fits/ --model-path checkpoints/astronet_f32/astronet.onnx
+python verify.py --fits ../test_fits/ --model-path checkpoints/astronet_f32/astronet.onnx --norm-mode asinh
 ```
+
+Options:
+- `--norm-mode asinh` (default): Uses astronomical ArcSinh normalization (matches `--norm-mode asinh` in dataset prep).
+- `--norm-mode stf`: Uses continuous AutoSTF normalization (for models trained on STF tiles).
+- `--threshold 0.85`: Detection confidence cutoff (default `0.5`). Higher thresholds suppress false positives from subtle background gradients.
 
 This outputs:
 - **Terminal report**: Individual frame verdicts (`CLEAN SKY` or `DEFECT FLAGGED`), per-tile defect counts, latency, and a batch summary report.
