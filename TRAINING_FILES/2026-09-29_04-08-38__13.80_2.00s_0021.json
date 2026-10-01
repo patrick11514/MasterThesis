@@ -1,0 +1,80 @@
+{
+  "file_name": "2026-09-29_04-08-38__13.80_2.00s_0021.fits",
+  "width": 3840,
+  "height": 2160,
+  "global_star_trailing": false,
+  "global_cloud": false,
+  "is_clean": false,
+  "boxes": [
+    {
+      "id": "b_1790847775097",
+      "label": "star_trail",
+      "type": "box",
+      "x": 929.0,
+      "y": 285.0,
+      "width": 81.0,
+      "height": 62.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": null
+    },
+    {
+      "id": "b_1790847776993",
+      "label": "star_trail",
+      "type": "box",
+      "x": 1920.0,
+      "y": 865.0,
+      "width": 71.0,
+      "height": 76.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": null
+    },
+    {
+      "id": "b_1790847779256",
+      "label": "star_trail",
+      "type": "box",
+      "x": 3625.0,
+      "y": 923.0,
+      "width": 67.0,
+      "height": 71.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": null
+    },
+    {
+      "id": "b_1790847782013",
+      "label": "star_trail",
+      "type": "box",
+      "x": 3781.0,
+      "y": 133.0,
+      "width": 62.0,
+      "height": 53.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": null
+    },
+    {
+      "id": "b_1790847784096",
+      "label": "star_trail",
+      "type": "box",
+      "x": 2996.0,
+      "y": 1570.0,
+      "width": 44.0,
+      "height": 62.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": null
+    }
+  ]
+}

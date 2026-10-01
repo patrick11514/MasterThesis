@@ -1,0 +1,52 @@
+{
+  "file_name": "2026-06-26_02-34-05__-19.80_120.00s_0196.fits",
+  "width": 3840,
+  "height": 2160,
+  "global_star_trailing": false,
+  "global_cloud": false,
+  "is_clean": false,
+  "boxes": [
+    {
+      "id": "l_1790848909586",
+      "label": "satellite_streak",
+      "type": "line",
+      "x": 1639.0,
+      "y": -1.0,
+      "width": 2356.0,
+      "height": 1263.0,
+      "x1": 1639.0,
+      "y1": -1.0,
+      "x2": 3995.0,
+      "y2": 1262.0,
+      "points": null
+    },
+    {
+      "id": "l_1790848912328",
+      "label": "satellite_streak",
+      "type": "line",
+      "x": 3522.0,
+      "y": -1.0,
+      "width": 357.0,
+      "height": 183.0,
+      "x1": 3522.0,
+      "y1": -1.0,
+      "x2": 3879.0,
+      "y2": 182.0,
+      "points": null
+    },
+    {
+      "id": "l_1790848917576",
+      "label": "satellite_streak",
+      "type": "line",
+      "x": 157.0,
+      "y": 3.0,
+      "width": 3624.0,
+      "height": 1933.0,
+      "x1": 157.0,
+      "y1": 3.0,
+      "x2": 3781.0,
+      "y2": 1936.0,
+      "points": null
+    }
+  ]
+}

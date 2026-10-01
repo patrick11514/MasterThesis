@@ -4,6 +4,21 @@
   "height": 2160,
   "global_star_trailing": false,
   "global_cloud": false,
-  "is_clean": true,
-  "boxes": []
+  "is_clean": false,
+  "boxes": [
+    {
+      "id": "b_1790847470994",
+      "label": "cloud",
+      "type": "box",
+      "x": -102.0,
+      "y": -19.0,
+      "width": 1375.0,
+      "height": 2245.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": null
+    }
+  ]
 }

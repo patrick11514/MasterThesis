@@ -1,0 +1,24 @@
+{
+  "file_name": "2025-08-11_22-34-29__-9.cosmetic.fits",
+  "width": 3840,
+  "height": 2160,
+  "global_star_trailing": false,
+  "global_cloud": false,
+  "is_clean": false,
+  "boxes": [
+    {
+      "id": "l_1790848541977",
+      "label": "satellite_streak",
+      "type": "line",
+      "x": 4196.0,
+      "y": 566.0,
+      "width": 9.0,
+      "height": 13.0,
+      "x1": 4196.0,
+      "y1": 566.0,
+      "x2": 4205.0,
+      "y2": 579.0,
+      "points": null
+    }
+  ]
+}

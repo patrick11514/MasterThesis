@@ -1,0 +1,24 @@
+{
+  "file_name": "2026-03-08_08-38-06__3.90_0.00s_0012.fits",
+  "width": 3840,
+  "height": 2160,
+  "global_star_trailing": false,
+  "global_cloud": true,
+  "is_clean": false,
+  "boxes": [
+    {
+      "id": "b_1790848765384",
+      "label": "obstruction",
+      "type": "box",
+      "x": -48.0,
+      "y": 12.0,
+      "width": 379.0,
+      "height": 2165.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": null
+    }
+  ]
+}
