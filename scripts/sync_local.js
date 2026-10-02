@@ -404,10 +404,11 @@ async function run() {
 
     console.log(`${colors.cyan}[Batch ${batchNum}/${totalBatches}] Downloading ${batch.length} files...${colors.reset}`);
 
-    // Each remote file as a separate remote argument
-    const remoteArgs = batch.map(p => `${remoteHost}:"${p}"`);
+    // Each remote file as a separate remote argument (without extra literal quotes, using -s for safe spaces)
+    const remoteArgs = batch.map(p => `${remoteHost}:${p}`);
     const rsyncArgs = [
       '-avP',
+      '-s',
       '-e', `ssh -o ControlPath=${controlSocketPath}`,
       ...remoteArgs,
       `${targetDir}/`,
