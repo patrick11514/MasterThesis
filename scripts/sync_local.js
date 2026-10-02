@@ -216,7 +216,7 @@ const sshControlArgs = [
   '-o', 'ControlMaster=auto',
   '-o', `ControlPath=${controlSocketPath}`,
   '-o', 'ControlPersist=10m',
-  '-o', 'ConnectTimeout=10',
+  '-o', 'ConnectTimeout=15',
 ];
 
 // Clean up socket on process exit
@@ -251,18 +251,25 @@ for line in sys.stdin:
 if not targets:
     sys.exit(0)
 
+total_targets = len(targets)
 root_dir = sys.argv[1] if len(sys.argv) > 1 else "/mnt/HDD/ASTRO"
 if not os.path.isdir(root_dir):
-    sys.stderr.write(f"ERROR: Directory not found: {root_dir}\\n")
+    sys.stderr.write(f"ERROR: Directory not found on remote: {root_dir}\\n")
     sys.exit(1)
 
 found = {}
+scanned_dirs = 0
 
 for root, dirs, files in os.walk(root_dir, followlinks=True):
+    scanned_dirs += 1
+    if scanned_dirs % 50 == 0:
+        sys.stderr.write(f"\rSearching Proxmox storage... found {len(found)}/{total_targets} files (scanned {scanned_dirs} directories)")
+        sys.stderr.flush()
+
     for f in files:
         if f in targets:
             found[f] = os.path.join(root, f)
-            targets.remove(f)
+            targets.discard(f)
             if not targets:
                 break
         else:
@@ -270,11 +277,14 @@ for root, dirs, files in os.walk(root_dir, followlinks=True):
             if stem in stems and stems[stem] in targets:
                 orig = stems[stem]
                 found[orig] = os.path.join(root, f)
-                targets.remove(orig)
+                targets.discard(orig)
                 if not targets:
                     break
     if not targets:
         break
+
+sys.stderr.write(f"\rSearch completed! Found {len(found)}/{total_targets} files in {scanned_dirs} directories.\n")
+sys.stderr.flush()
 
 for target, full_path in found.items():
     print(f"{target}\\t{full_path}")
@@ -288,11 +298,14 @@ async function searchRemoteFiles() {
   return new Promise((resolve, reject) => {
     const inputLines = missingImages.map(m => m.targetName).join('\n') + '\n';
 
-    // Call python3 on remote host via ssh
+    // Check if remote has find_astro_files.py installed in PATH or ~/find_astro_files.py, else use inline base64 python
+    const b64Script = Buffer.from(remoteFinderScript).toString('base64');
+    const remotePyCommand = `if command -v find_astro_files.py >/dev/null 2>&1; then find_astro_files.py --dir ${JSON.stringify(remoteDir)}; elif [ -f ~/find_astro_files.py ]; then python3 ~/find_astro_files.py --dir ${JSON.stringify(remoteDir)}; else python3 -c "import base64; exec(base64.b64decode('${b64Script}').decode('utf-8'))" ${JSON.stringify(remoteDir)}; fi`;
+
     const sshCmdArgs = [
       ...sshControlArgs,
       remoteHost,
-      `python3 -c ${JSON.stringify(remoteFinderScript)} ${JSON.stringify(remoteDir)}`,
+      remotePyCommand,
     ];
 
     const child = spawn('ssh', sshCmdArgs, {
@@ -377,11 +390,11 @@ async function run() {
 
   // Batch transfer using rsync
   // Since files might come from different subdirectories in /mnt/HDD/ASTRO,
-  // we can transfer them cleanly. To ensure maximum speed and progress, we invoke rsync in chunks or with list.
+  // we can transfer each batch cleanly.
   const remotePaths = foundList.map(f => f.remotePath);
 
-  // Group into batches of 25 files to avoid shell command line length limits
-  const BATCH_SIZE = 25;
+  // Group into batches of 20 files to avoid command length limits
+  const BATCH_SIZE = 20;
   let completed = 0;
 
   for (let i = 0; i < remotePaths.length; i += BATCH_SIZE) {
@@ -391,12 +404,12 @@ async function run() {
 
     console.log(`${colors.cyan}[Batch ${batchNum}/${totalBatches}] Downloading ${batch.length} files...${colors.reset}`);
 
-    // Remote argument formatted for rsync
-    // Using single-quoted paths inside double quotes for remote shell expansion safety
+    // Each remote file as a separate remote argument
+    const remoteArgs = batch.map(p => `${remoteHost}:"${p}"`);
     const rsyncArgs = [
       '-avP',
       '-e', `ssh -o ControlPath=${controlSocketPath}`,
-      `${remoteHost}:"${batch.map(p => `'${p}'`).join(' ')}"`,
+      ...remoteArgs,
       `${targetDir}/`,
     ];
 
