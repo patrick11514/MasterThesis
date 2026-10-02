@@ -261,8 +261,11 @@ python prep_dataset.py --data-dir ../TRAINING_FILES --out-dir dataset --export-y
 # Train YOLO11-seg (nano backbone, fast & lightweight)
 python train_yolo.py --model yolo11n-seg.pt --data dataset_yolo/dataset.yaml --epochs 30 --batch 16 --imgsz 512
 
+# For AMD Radeon RX 9060 XT / RDNA4 (gfx1200), disable AMP to prevent MIOpen/CK GPU hangs:
+python train_yolo.py --model yolo11n-seg.pt --data dataset_yolo/dataset.yaml --epochs 30 --batch 16 --imgsz 512 --no-amp
+
 # Train YOLO11-seg small backbone (higher mask accuracy)
-python train_yolo.py --model yolo11s-seg.pt --data dataset_yolo/dataset.yaml --epochs 40 --batch 16 --imgsz 512
+python train_yolo.py --model yolo11s-seg.pt --data dataset_yolo/dataset.yaml --epochs 40 --batch 16 --imgsz 512 --no-amp
 ```
 
 Results, checkpoints, and auto-exported ONNX weights are saved under `runs/segment/yolo11_astro/weights/best.pt` and `best.onnx`.

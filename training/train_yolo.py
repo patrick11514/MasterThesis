@@ -7,6 +7,13 @@ Evaluates Mask/Box mAP and exports to ONNX for the AstroGrader Rust engine.
 
 import argparse
 import os
+# Configure ROCm / MIOpen stability defaults for AMD Radeon GPUs (RDNA4 gfx1200, RDNA3 gfx1100)
+# Setting MIOPEN_FIND_MODE=1 prevents MIOpen from executing uncompiled/broken CK dynamic benchmarking sweeps
+os.environ.setdefault("HSA_OVERRIDE_GFX_VERSION", "12.0.0")
+os.environ.setdefault("MIOPEN_FIND_MODE", "1")
+os.environ.setdefault("PYTORCH_HIP_ALLOC_CONF", "garbage_collection_threshold:0.8,max_split_size_mb:512")
+os.environ.setdefault("TORCH_BLAS_PREFER_HIPBLASLT", "0")
+
 from pathlib import Path
 import sys
 
@@ -33,15 +40,17 @@ def train_yolo(
     batch: int = 16,
     imgsz: int = 512,
     device: str = None,
-    workers: int = 8,
+    workers: int = 4,
     project: str = "runs/segment",
     name: str = "yolo11_astro",
     lr0: float = 0.001,
+    amp: bool = True,
     export_onnx: bool = True,
 ):
     yaml_path = check_dataset_yaml(Path(data_yaml))
 
     # Auto-detect device
+    is_hip = hasattr(torch.version, "hip") and torch.version.hip is not None
     if device is None or device == "":
         if torch.cuda.is_available():
             device = "0"
@@ -52,6 +61,15 @@ def train_yolo(
     else:
         device_name = device
 
+    # For AMD ROCm GPUs (especially RDNA4 gfx1200 / RX 9060 XT), benchmark profiling hangs MIOpen
+    if is_hip:
+        torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.deterministic = True
+        print(f"[ROCm / HIP Mode Detected] Device: {device_name}")
+        print("  - Disabled dynamic kernel benchmarking to avoid gfx1200 MIOpen hangs.")
+        if not amp:
+            print("  - Running in pure FP32 mode (AMP disabled) for maximum ROCm numerical stability.")
+
     print("=" * 60)
     print("      AstroGrader: YOLO11-seg Instance Segmentation Training")
     print("=" * 60)
@@ -60,6 +78,7 @@ def train_yolo(
     print(f"Image Size:     {imgsz}x{imgsz}")
     print(f"Batch Size:     {batch}")
     print(f"Epochs:         {epochs}")
+    print(f"AMP (FP16):     {amp}")
     print(f"Device:         {device} ({device_name})")
     print(f"Save Run:       {project}/{name}")
     print("=" * 60 + "\n")
@@ -80,6 +99,7 @@ def train_yolo(
         name=name,
         exist_ok=True,
         lr0=lr0,
+        amp=amp,
         fliplr=0.5,
         flipud=0.5,
         mosaic=0.5,
@@ -139,10 +159,15 @@ if __name__ == "__main__":
     parser.add_argument("--batch", type=int, default=16, help="Batch size")
     parser.add_argument("--imgsz", type=int, default=512, help="Image size in pixels (default: 512)")
     parser.add_argument("--device", type=str, default=None, help="Device (0, cpu, or auto)")
-    parser.add_argument("--workers", type=int, default=8, help="Dataloader worker threads")
+    parser.add_argument("--workers", type=int, default=4, help="Dataloader worker threads (default: 4)")
     parser.add_argument("--project", type=str, default="runs/segment", help="Project save directory")
     parser.add_argument("--name", type=str, default="yolo11_astro", help="Experiment name")
     parser.add_argument("--lr", type=float, default=0.001, help="Initial learning rate")
+    parser.add_argument(
+        "--no-amp",
+        action="store_true",
+        help="Disable Automatic Mixed Precision (forces FP32). Highly recommended for AMD ROCm / RDNA4 to prevent GPU hangs.",
+    )
     parser.add_argument(
         "--no-onnx",
         action="store_true",
@@ -161,5 +186,6 @@ if __name__ == "__main__":
         project=args.project,
         name=args.name,
         lr0=args.lr,
+        amp=not args.no_amp,
         export_onnx=not args.no_onnx,
     )
