@@ -162,6 +162,65 @@ def item_intersects_tile(item: dict, tile_x: int, tile_y: int, tile_size: int) -
     return box_intersects_tile(item, tile_x, tile_y, tile_size)
 
 
+def extract_tile_yolo_segments(
+    items: List[dict],
+    tx: int,
+    ty: int,
+    tile_size: int = 512,
+) -> List[str]:
+    """
+    Extracts normalized polygon strings for YOLO instance segmentation:
+    <class_id> <x1> <y1> <x2> <y2> ... <xn> <yn>
+    Converts polygons, thick line ribbons (for streaks/planes), and boxes to valid polygon masks.
+    """
+    yolo_lines = []
+    for item in items:
+        lbl = item.get("label")
+        if lbl not in CLASSES:
+            continue
+        cid = CLASSES.index(lbl)
+        itype = item.get("type", "box")
+
+        mask = np.zeros((tile_size, tile_size), dtype=np.uint8)
+
+        if itype == "polygon" and "points" in item and len(item["points"]) >= 3:
+            pts = np.array([[(p[0] - tx), (p[1] - ty)] for p in item["points"]], dtype=np.int32)
+            cv2.fillPoly(mask, [pts], 255)
+        elif itype == "line":
+            x1 = float(item.get("x1", item.get("x", 0)))
+            y1 = float(item.get("y1", item.get("y", 0)))
+            x2 = float(item.get("x2", item.get("x", 0) + item.get("width", 0)))
+            y2 = float(item.get("y2", item.get("y", 0) + item.get("height", 0)))
+            thickness = max(10.0, float(item.get("thickness", 16.0)))
+            pt1 = (int(round(x1 - tx)), int(round(y1 - ty)))
+            pt2 = (int(round(x2 - tx)), int(round(y2 - ty)))
+            cv2.line(mask, pt1, pt2, 255, thickness=int(round(thickness)))
+        else:  # box
+            bx = int(round(float(item.get("x", 0)) - tx))
+            by = int(round(float(item.get("y", 0)) - ty))
+            bw = int(round(float(item.get("width", 0))))
+            bh = int(round(float(item.get("height", 0))))
+            cv2.rectangle(mask, (bx, by), (bx + bw, by + bh), 255, -1)
+
+        # Extract external contours
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for c in contours:
+            if cv2.contourArea(c) < 15.0:
+                continue
+            approx = cv2.approxPolyDP(c, epsilon=1.0, closed=True)
+            pts = approx.reshape(-1, 2)
+            if len(pts) < 3:
+                continue
+            norm_coords = []
+            for px, py in pts:
+                nx = min(1.0, max(0.0, float(px) / tile_size))
+                ny = min(1.0, max(0.0, float(py) / tile_size))
+                norm_coords.append(f"{nx:.6f} {ny:.6f}")
+            yolo_lines.append(f"{cid} " + " ".join(norm_coords))
+
+    return yolo_lines
+
+
 def get_tile_offsets(dimension_size: int, tile_size: int = 512, stride: int = 460) -> List[int]:
     """Generates coordinate offsets spanning 0 to dimension_size, guaranteeing the last tile snaps to dimension_size - tile_size."""
     if dimension_size <= tile_size:
@@ -198,6 +257,17 @@ def slice_fits_frame(
 
     # Load annotations if available
     json_path = fits_path.with_suffix(".json")
+    if not json_path.exists():
+        # Search fallback locations (e.g. TRAINING_FILES)
+        for fb in [
+            fits_path.parent / "TRAINING_FILES" / f"{fits_path.stem}.json",
+            fits_path.parent.parent / "TRAINING_FILES" / f"{fits_path.stem}.json",
+            Path("TRAINING_FILES") / f"{fits_path.stem}.json",
+        ]:
+            if fb.exists():
+                json_path = fb
+                break
+
     annotations = {"boxes": [], "global_star_trailing": False, "global_cloud": False}
     if json_path.exists():
         try:
@@ -260,6 +330,9 @@ def slice_fits_frame(
 
             is_clean = (sum(labels) == 0)
 
+            # Generate YOLO instance segmentation polygons for this tile
+            yolo_segments = extract_tile_yolo_segments(boxes, x_start, y_start, tile_size)
+
             tile_id = f"{base_name}_x{x_start}_y{y_start}"
             npy_path = f32_dir / f"{tile_id}.npy"
             png_path = img_dir / f"{tile_id}.png"
@@ -284,6 +357,7 @@ def slice_fits_frame(
                 "labels": labels,  # multi-hot vector [0, 0, 1, 0, 0]
                 "classes": list(set(matched_classes)),
                 "is_clean": is_clean,
+                "yolo_segments": yolo_segments,
             })
             tile_idx += 1
 
@@ -299,9 +373,13 @@ def prepare_dataset(
     norm_mode: str = "asinh",
     seed: int = 42,
     workers: int = None,
+    export_yolo: bool = True,
+    yolo_dir: Union[Path, str] = "dataset_yolo",
+    bg_ratio: float = 0.15,
 ):
     """
     Prepares train and validation sets with frame-level isolation to prevent data leakage.
+    Supports both AstroGrader CNN manifests (f32/png) and YOLO11 instance segmentation format.
     """
     random.seed(seed)
     if isinstance(data_dir, (str, Path)):
@@ -397,6 +475,78 @@ def prepare_dataset(
             c_count = sum(1 for r in recs if r["labels"][i] == 1)
             print(f"    - {cls_name}: {c_count}")
 
+    # Export YOLO instance segmentation dataset
+    if export_yolo:
+        yolo_path = Path(yolo_dir).resolve() if yolo_dir else (out_dir / "dataset_yolo")
+        yolo_img_train = yolo_path / "images" / "train"
+        yolo_img_val = yolo_path / "images" / "val"
+        yolo_lbl_train = yolo_path / "labels" / "train"
+        yolo_lbl_val = yolo_path / "labels" / "val"
+
+        for p in [yolo_img_train, yolo_img_val, yolo_lbl_train, yolo_lbl_val]:
+            p.mkdir(parents=True, exist_ok=True)
+
+        print(f"\nExporting YOLO11-seg dataset to: {yolo_path}")
+        yolo_counts = {"train_defect": 0, "train_bg": 0, "val_defect": 0, "val_bg": 0}
+
+        import shutil
+
+        for split_name, recs in [("train", train_records), ("val", val_records)]:
+            dest_img_dir = yolo_img_val if split_name == "val" else yolo_img_train
+            dest_lbl_dir = yolo_lbl_val if split_name == "val" else yolo_lbl_train
+
+            for r in recs:
+                segments = r.get("yolo_segments", [])
+                has_defect = len(segments) > 0
+                is_selected_bg = False
+
+                if not has_defect:
+                    # Clean sky background sample (negative)
+                    if random.random() < bg_ratio:
+                        is_selected_bg = True
+
+                if has_defect or is_selected_bg:
+                    src_png = out_dir / "tiles_img" / f"{r['tile_id']}.png"
+                    dst_png = dest_img_dir / f"{r['tile_id']}.png"
+                    dst_txt = dest_lbl_dir / f"{r['tile_id']}.txt"
+
+                    # Link or copy PNG
+                    if not dst_png.exists() and src_png.exists():
+                        try:
+                            os.link(src_png, dst_png)
+                        except OSError:
+                            shutil.copyfile(src_png, dst_png)
+
+                    # Write YOLO label TXT (empty file if clean background)
+                    with open(dst_txt, "w", encoding="utf-8") as tf:
+                        if has_defect:
+                            tf.write("\n".join(segments) + "\n")
+
+                    if has_defect:
+                        yolo_counts[f"{split_name}_defect"] += 1
+                    else:
+                        yolo_counts[f"{split_name}_bg"] += 1
+
+        # Write dataset.yaml
+        yaml_content = f"""# AstroGrader YOLO11 Instance Segmentation Dataset
+path: {yolo_path}
+train: images/train
+val: images/val
+
+names:
+  0: satellite_streak
+  1: airplane
+  2: cloud
+  3: obstruction
+  4: star_trail
+"""
+        with open(yolo_path / "dataset.yaml", "w", encoding="utf-8") as yf:
+            yf.write(yaml_content)
+
+        print(f"  YOLO Train: {yolo_counts['train_defect']} defect tiles, {yolo_counts['train_bg']} background tiles")
+        print(f"  YOLO Val:   {yolo_counts['val_defect']} defect tiles, {yolo_counts['val_bg']} background tiles")
+        print(f"  Configuration written: {yolo_path / 'dataset.yaml'}")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Astronomical FITS dataset slicer")
@@ -408,6 +558,9 @@ if __name__ == "__main__":
     parser.add_argument("--norm-mode", type=str, default="asinh", choices=["asinh", "stf"])
     parser.add_argument("--val-split", type=float, default=0.2, help="Validation split ratio")
     parser.add_argument("--workers", type=int, default=None, help="Number of worker processes for parallel slicing (defaults to CPU count - 1)")
+    parser.add_argument("--export-yolo", action="store_true", default=True, help="Also export YOLO instance segmentation dataset")
+    parser.add_argument("--yolo-dir", type=str, default="dataset_yolo", help="Output directory for YOLO segmentation dataset")
+    parser.add_argument("--bg-ratio", type=float, default=0.15, help="Ratio of clean background sky tiles to include in YOLO dataset (default: 0.15)")
 
     args = parser.parse_args()
     prepare_dataset(
@@ -418,4 +571,7 @@ if __name__ == "__main__":
         stride=args.stride,
         norm_mode=args.norm_mode,
         workers=args.workers,
+        export_yolo=args.export_yolo,
+        yolo_dir=args.yolo_dir,
+        bg_ratio=args.bg_ratio,
     )

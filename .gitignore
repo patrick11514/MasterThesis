@@ -31,6 +31,9 @@ training/checkpoints/**/*.onnx*
 training/dataset*/
 training/verification_output/
 *.onnx
+*.pt
+runs/
+training/runs/
 
 # Python cache
 __pycache__/

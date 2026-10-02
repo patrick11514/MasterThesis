@@ -11,6 +11,8 @@ checkpoints/**/*.onnx*
 dataset*/
 verification_output/
 *.onnx
+*.pt
+runs/
 
 # Do not commit raw FITS images or metadata info files inside training directory
 *.fits

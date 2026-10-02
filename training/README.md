@@ -30,6 +30,7 @@ An end-to-end Machine Learning pipeline for detecting, classifying, and localizi
 4. **Comparative Benchmark Matrix (Master's Thesis Research Track)**:
    - **Track A (Pure CNN from scratch)**: `AstroNet` / pure residual ConvNet initialized from scratch with random weights, trained **exclusively** on raw astronomical `f32` patches.
    - **Track B (Transfer Learning)**: `ResNet18/34`, `MobileNetV3`, and `EfficientNet-B0` with ImageNet pre-trained weights.
+   - **Track C (Instance Segmentation)**: `YOLO11-seg` (`yolo11n-seg`, `yolo11s-seg`, `yolo11m-seg`) predicting exact polygon defect masks for localized cosmetic rejection in stacking.
 
 ---
 
@@ -46,11 +47,13 @@ training/
 │       ├── index.html
 │       ├── style.css
 │       └── app.js
-├── prep_dataset.py         # Slices full FITS into 512x512 tiles & builds manifests
+├── prep_dataset.py         # Slices full FITS into 512x512 tiles (supports CNN & YOLO-seg)
 ├── models/
 │   └── cnn_zoo.py          # AstroNet, ResNet18/34, MobileNetV3, EfficientNet-B0
-├── train.py                # Multi-model training script with BCE loss & metrics
-├── verify.py               # Evaluation, throughput benchmark & diagnostic overlays
+├── train.py                # Multi-model CNN training script with BCE loss & metrics
+├── train_yolo.py           # YOLO11-seg instance segmentation training runner
+├── verify.py               # Evaluation & tile-level diagnostic overlays for CNNs
+├── verify_yolo.py          # Full-frame FITS verification with polygon segmentation masks
 ├── export_onnx.py          # ONNX model exporter with numerical parity check
 └── rust_example/           # Standalone Rust engine integration example
     ├── Cargo.toml
@@ -248,10 +251,27 @@ python train.py --model efficientnet_b0 --input-mode f32 --epochs 15 --batch-siz
 
 The best checkpoint is automatically saved to `checkpoints/<model_name>_<input_mode>/best_model.pt`.
 
+#### Track C: YOLO11 Instance Segmentation (Pixel-Accurate Masks)
+Trains Ultralytics YOLO11-seg on sliced defect tiles with polygon ground truth:
+
+```bash
+# Prepare dataset with YOLO segmentation labels
+python prep_dataset.py --data-dir ../TRAINING_FILES --out-dir dataset --export-yolo --yolo-dir dataset_yolo
+
+# Train YOLO11-seg (nano backbone, fast & lightweight)
+python train_yolo.py --model yolo11n-seg.pt --data dataset_yolo/dataset.yaml --epochs 30 --batch 16 --imgsz 512
+
+# Train YOLO11-seg small backbone (higher mask accuracy)
+python train_yolo.py --model yolo11s-seg.pt --data dataset_yolo/dataset.yaml --epochs 40 --batch 16 --imgsz 512
+```
+
+Results, checkpoints, and auto-exported ONNX weights are saved under `runs/segment/yolo11_astro/weights/best.pt` and `best.onnx`.
+
 ---
 
 ### Step 4: Verification & Diagnostic Visual Reports
 
+#### Option 1: CNN Patch Classification Diagnostic Overlays
 Run inference on test FITS frames using PyTorch (`.pt`) or ONNX (`.onnx`):
 
 ```bash
@@ -265,14 +285,20 @@ python verify.py --fits *.fits --model-path checkpoints/astronet_f32/best_model.
 python verify.py --fits ../test_fits/ --model-path checkpoints/astronet_f32/astronet.onnx --norm-mode asinh
 ```
 
-Options:
-- `--norm-mode asinh` (default): Uses astronomical ArcSinh normalization (matches `--norm-mode asinh` in dataset prep).
-- `--norm-mode stf`: Uses continuous AutoSTF normalization (for models trained on STF tiles).
-- `--threshold 0.85`: Detection confidence cutoff (default `0.5`). Higher thresholds suppress false positives from subtle background gradients.
+#### Option 2: YOLO11-seg Pixel-Accurate Mask Overlays
+Run full-frame YOLO11-seg inference to inspect semi-transparent defect masks overlaid directly onto the astronomical frame:
+
+```bash
+# Verify test frames with trained YOLO11-seg checkpoint
+python verify_yolo.py --fits ../test_fits/ --model runs/segment/yolo11_astro/weights/best.pt --conf 0.25
+
+# Single file inspection with custom threshold
+python verify_yolo.py --fits image.fits --model runs/segment/yolo11_astro/weights/best.pt --conf 0.3
+```
 
 This outputs:
-- **Terminal report**: Individual frame verdicts (`CLEAN SKY` or `DEFECT FLAGGED`), per-tile defect counts, latency, and a batch summary report.
-- **Visual PNG reports**: `verification_output/<filename>_inspection.png` with colored bounding boxes and confidence scores rendered over each frame.
+- **Terminal report**: Individual frame verdicts (`CLEAN SKY` or `DEFECT FLAGGED`), defect counts per class, and inference latency.
+- **Visual PNG reports**: `verification_output/<filename>_yolo_inspection.png` with color-filled polygon masks and confidence badges rendered over every defect.
 
 ---
 
