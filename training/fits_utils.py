@@ -18,7 +18,26 @@ CLASSES = [
     "cloud",
     "obstruction",
     "star_trail",
+    "unfocused_star"
 ]
+
+CLASS_HEX_COLORS = {
+    "satellite_streak": "#e53e3e",
+    "airplane": "#ed8936",
+    "cloud": "#4299e1",
+    "obstruction": "#9f7aea",
+    "star_trail": "#ecc94b",
+    "unfocused_star": "#38b2ac",
+}
+
+CLASS_RGB_COLORS = {
+    "satellite_streak": (229, 62, 62),
+    "airplane": (237, 137, 54),
+    "cloud": (66, 153, 225),
+    "obstruction": (159, 122, 234),
+    "star_trail": (236, 201, 75),
+    "unfocused_star": (56, 178, 172),
+}
 
 
 def mtf_scalar(m: float, x: float) -> float:

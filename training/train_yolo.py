@@ -44,6 +44,7 @@ def train_yolo(
     project: str = "runs/segment",
     name: str = "yolo11_astro",
     lr0: float = 0.001,
+    patience: int = 10,
     amp: bool = True,
     export_onnx: bool = True,
 ):
@@ -78,6 +79,7 @@ def train_yolo(
     print(f"Image Size:     {imgsz}x{imgsz}")
     print(f"Batch Size:     {batch}")
     print(f"Epochs:         {epochs}")
+    print(f"Patience:       {patience}")
     print(f"AMP (FP16):     {amp}")
     print(f"Device:         {device} ({device_name})")
     print(f"Save Run:       {project}/{name}")
@@ -99,6 +101,7 @@ def train_yolo(
         name=name,
         exist_ok=True,
         lr0=lr0,
+        patience=patience,
         amp=amp,
         fliplr=0.5,
         flipud=0.5,
@@ -156,6 +159,7 @@ if __name__ == "__main__":
         help="Path to YOLO dataset.yaml file",
     )
     parser.add_argument("--epochs", type=int, default=30, help="Number of epochs to train")
+    parser.add_argument("--patience", type=int, default=10, help="Early stopping patience in epochs (default: 10)")
     parser.add_argument("--batch", type=int, default=16, help="Batch size")
     parser.add_argument("--imgsz", type=int, default=512, help="Image size in pixels (default: 512)")
     parser.add_argument("--device", type=str, default=None, help="Device (0, cpu, or auto)")
@@ -186,6 +190,7 @@ if __name__ == "__main__":
         project=args.project,
         name=args.name,
         lr0=args.lr,
+        patience=args.patience,
         amp=not args.no_amp,
         export_onnx=not args.no_onnx,
     )

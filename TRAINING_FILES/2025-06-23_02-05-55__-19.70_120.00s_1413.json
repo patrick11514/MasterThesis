@@ -1,0 +1,79 @@
+{
+  "file_name": "2025-06-23_02-05-55__-19.70_120.00s_1413.fits",
+  "width": 3840,
+  "height": 2160,
+  "global_star_trailing": false,
+  "global_cloud": false,
+  "is_clean": false,
+  "favorite": false,
+  "boxes": [
+    {
+      "id": "poly_1791547434696",
+      "label": "cloud",
+      "type": "polygon",
+      "x": 2762.0,
+      "y": -275.0,
+      "width": 1198.0,
+      "height": 2464.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": [
+        [
+          2762.0,
+          -93.0
+        ],
+        [
+          3276.0,
+          2189.0
+        ],
+        [
+          3960.0,
+          2176.0
+        ],
+        [
+          3952.0,
+          -275.0
+        ]
+      ],
+      "confidence": null
+    },
+    {
+      "id": "poly_1791547437902",
+      "label": "cloud",
+      "type": "polygon",
+      "x": -35.0,
+      "y": -27.0,
+      "width": 918.0,
+      "height": 762.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": [
+        [
+          883.0,
+          -22.0
+        ],
+        [
+          -35.0,
+          735.0
+        ],
+        [
+          13.0,
+          -27.0
+        ],
+        [
+          15.0,
+          -25.0
+        ],
+        [
+          5.0,
+          -25.0
+        ]
+      ],
+      "confidence": null
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "file_name": "2024-12-28_20-31-42__-19.60_120.00s_0074.fits",
+  "width": 3840,
+  "height": 2160,
+  "global_star_trailing": false,
+  "global_cloud": false,
+  "is_clean": false,
+  "favorite": false,
+  "boxes": [
+    {
+      "id": "b_1791547073950",
+      "label": "cloud",
+      "type": "box",
+      "x": -35.0,
+      "y": -27.0,
+      "width": 1814.0,
+      "height": 2257.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": null,
+      "confidence": null
+    },
+    {
+      "id": "b_1791547076378",
+      "label": "cloud",
+      "type": "box",
+      "x": 2881.0,
+      "y": -39.0,
+      "width": 984.0,
+      "height": 2295.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": null,
+      "confidence": null
+    },
+    {
+      "id": "b_1791547077675",
+      "label": "cloud",
+      "type": "box",
+      "x": 2472.0,
+      "y": -41.0,
+      "width": 483.0,
+      "height": 1160.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": null,
+      "confidence": null
+    },
+    {
+      "id": "b_1791547079038",
+      "label": "cloud",
+      "type": "box",
+      "x": 1763.0,
+      "y": -32.0,
+      "width": 416.0,
+      "height": 758.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": null,
+      "confidence": null
+    }
+  ]
+}

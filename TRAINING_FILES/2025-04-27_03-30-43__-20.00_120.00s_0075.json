@@ -18,7 +18,9 @@
       "y1": 3.0,
       "x2": 72.0,
       "y2": 2158.0,
-      "points": null
+      "points": null,
+      "confidence": null
     }
-  ]
+  ],
+  "favorite": true
 }

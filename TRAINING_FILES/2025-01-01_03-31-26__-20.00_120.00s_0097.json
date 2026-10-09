@@ -10,15 +10,16 @@
       "id": "l_1790456550830",
       "label": "satellite_streak",
       "type": "line",
-      "x": 11.0,
-      "y": 4.0,
-      "width": 1996.0,
-      "height": 704.0,
-      "x1": 11.0,
+      "x": -14.0,
+      "y": -4.0,
+      "width": 2042.0,
+      "height": 712.0,
+      "x1": -14.0,
       "y1": 708.0,
-      "x2": 2007.0,
-      "y2": 4.0,
-      "points": null
+      "x2": 2028.0,
+      "y2": -4.0,
+      "points": null,
+      "confidence": null
     }
   ]
 }

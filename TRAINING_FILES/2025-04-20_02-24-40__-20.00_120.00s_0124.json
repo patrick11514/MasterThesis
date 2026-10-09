@@ -12,13 +12,14 @@
       "type": "box",
       "x": -84.0,
       "y": -37.0,
-      "width": 795.0,
+      "width": 1149.0,
       "height": 2218.0,
       "x1": null,
       "y1": null,
       "x2": null,
       "y2": null,
-      "points": null
+      "points": null,
+      "confidence": null
     }
   ]
 }

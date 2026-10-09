@@ -23,6 +23,48 @@ from models.cnn_zoo import build_model, NUM_CLASSES
 from fits_utils import CLASSES
 
 
+class EarlyStopping:
+    """
+    Early stops training if monitored metric doesn't improve after `patience` epochs.
+    Tracks best metric and best epoch, preventing overfitting.
+    """
+    def __init__(self, patience: int = 5, min_delta: float = 0.001, mode: str = "max"):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.mode = mode
+        self.counter = 0
+        self.best_score = None
+        self.early_stop = False
+        self.best_epoch = 0
+
+    def step(self, current: float, epoch: int) -> bool:
+        """Returns True if training should terminate early."""
+        if self.patience <= 0:
+            return False
+
+        if self.best_score is None:
+            self.best_score = current
+            self.best_epoch = epoch
+            return False
+
+        if self.mode == "max":
+            improved = (current - self.best_score) > self.min_delta
+        else:
+            improved = (self.best_score - current) > self.min_delta
+
+        if improved:
+            self.best_score = current
+            self.best_epoch = epoch
+            self.counter = 0
+        else:
+            self.counter += 1
+            if self.counter >= self.patience:
+                self.early_stop = True
+                return True
+
+        return False
+
+
 class AstroPatchDataset(Dataset):
     """
     Dataset loader for 512x512 astronomical patches.
@@ -102,8 +144,10 @@ def compute_metrics(
 
     metrics = {}
     f1_list = []
+    num_classes = min(binary_preds.shape[1], len(CLASSES))
 
-    for i, cls_name in enumerate(CLASSES):
+    for i in range(num_classes):
+        cls_name = CLASSES[i]
         tp = int(np.sum((binary_preds[:, i] == 1) & (targets[:, i] == 1)))
         fp = int(np.sum((binary_preds[:, i] == 1) & (targets[:, i] == 0)))
         fn = int(np.sum((binary_preds[:, i] == 0) & (targets[:, i] == 1)))
@@ -201,6 +245,7 @@ def main():
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--out-dir", type=str, default="checkpoints")
+    parser.add_argument("--patience", type=int, default=5, help="Early stopping patience (epochs without improvement, 0 to disable)")
     parser.add_argument("--dry-run", action="store_true", help="Run 1 quick batch for testing")
 
     args = parser.parse_args()
@@ -218,7 +263,7 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
-    print(f"Training Model: {args.model} | Input Mode: {args.input_mode} | From Scratch: {args.from_scratch}")
+    print(f"Training Model: {args.model} | Input Mode: {args.input_mode} | From Scratch: {args.from_scratch} | Patience: {args.patience}")
 
     train_ds = AstroPatchDataset(train_manifest, dataset_dir.parent, input_mode=args.input_mode, augment=True)
     val_ds = AstroPatchDataset(val_manifest, dataset_dir.parent, input_mode=args.input_mode, augment=False)
@@ -251,6 +296,7 @@ def main():
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
 
+    early_stopper = EarlyStopping(patience=args.patience, min_delta=1e-3, mode="max")
     best_f1 = -1.0
     history = []
 
@@ -289,6 +335,14 @@ def main():
                 "input_mode": args.input_mode,
             }, out_dir / "best_model.pt")
             print(f"  --> Saved new best checkpoint (Macro F1: {best_f1:.4f})")
+
+        if early_stopper.step(macro_f1, epoch):
+            print(
+                f"\n[Early Stopping Triggered] No improvement for {early_stopper.patience} consecutive epochs.\n"
+                f"Peak Macro F1: {early_stopper.best_score:.4f} achieved at epoch {early_stopper.best_epoch}.\n"
+                f"Halting training early and preserving best checkpoint."
+            )
+            break
 
         if args.dry_run:
             print("Dry run completed successfully.")

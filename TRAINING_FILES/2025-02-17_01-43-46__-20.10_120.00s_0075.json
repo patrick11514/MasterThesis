@@ -1,0 +1,25 @@
+{
+  "file_name": "2025-02-17_01-43-46__-20.10_120.00s_0075.fits",
+  "width": 3840,
+  "height": 2160,
+  "global_star_trailing": false,
+  "global_cloud": false,
+  "is_clean": false,
+  "boxes": [
+    {
+      "id": "b_1791541058072",
+      "label": "cloud",
+      "type": "box",
+      "x": -457.0,
+      "y": -294.0,
+      "width": 1831.0,
+      "height": 2855.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": null,
+      "confidence": null
+    }
+  ]
+}

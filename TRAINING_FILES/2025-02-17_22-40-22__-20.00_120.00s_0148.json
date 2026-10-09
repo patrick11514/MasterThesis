@@ -7,18 +7,34 @@
   "is_clean": false,
   "boxes": [
     {
-      "id": "b_1790846889561",
+      "id": "b_1791541073525",
       "label": "cloud",
       "type": "box",
-      "x": -106.0,
-      "y": -55.0,
-      "width": 718.0,
-      "height": 2268.0,
+      "x": -551.0,
+      "y": -510.0,
+      "width": 2944.0,
+      "height": 3170.0,
       "x1": null,
       "y1": null,
       "x2": null,
       "y2": null,
-      "points": null
+      "points": null,
+      "confidence": null
+    },
+    {
+      "id": "b_1791541074696",
+      "label": "cloud",
+      "type": "box",
+      "x": 3167.0,
+      "y": -369.0,
+      "width": 1097.0,
+      "height": 2787.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": null,
+      "confidence": null
     }
   ]
 }

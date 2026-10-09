@@ -19,9 +19,23 @@
       <div class="file-list-container">
         <div class="file-list-header">
           <span>Files (<span id="file-count">0</span>)</span>
-          <label class="filter-untagged-label" title="Show only untagged files in the list and when navigating with A/D">
-            <input type="checkbox" id="chk-filter-untagged" /> Untagged Only
-          </label>
+          <div class="filter-checkboxes">
+            <label class="filter-label" title="Show only untagged files in the list and when navigating with A/D [U]">
+              <input type="checkbox" id="chk-filter-untagged" /> Untagged
+            </label>
+            <label class="filter-label" title="Show only favorited / marked frames">
+              <input type="checkbox" id="chk-filter-favorites" /> ⭐ Marked
+            </label>
+          </div>
+        </div>
+        <div class="file-sort-row">
+          <label for="select-file-sort">Sort:</label>
+          <select id="select-file-sort" title="Sort file list order">
+            <option value="name_asc">Name (A → Z)</option>
+            <option value="name_desc">Name (Z → A)</option>
+            <option value="time_asc">Last Classified (Oldest first)</option>
+            <option value="time_desc">Last Classified (Newest first)</option>
+          </select>
         </div>
         <ul id="file-list"></ul>
       </div>
@@ -44,6 +58,7 @@
           <span class="label">File:</span>
           <span id="current-filename" class="value">No file loaded</span>
           <span id="image-dimensions" class="meta"></span>
+          <button id="btn-toggle-favorite" class="btn-favorite" title="Star / Mark this frame for later review [K]">⭐ Mark Frame</button>
         </div>
 
         <div class="tool-group">
@@ -53,7 +68,7 @@
             <button class="btn-tool" data-tool="polygon" id="tool-polygon" title="Polygon shape tool (click N points to draw freeform shape, double-click or Enter to close) [P]">⬡ Shape (N-pts)</button>
             <button class="btn-tool" data-tool="line" id="tool-line" title="Streak line tool (click and drag line for satellite/airplane) [L]">╱ Streak Line</button>
           </div>
-          <button class="btn-tool-action" id="btn-full-frame" title="Mark entire frame with selected class (e.g. 100% cloud cover) [F]">⛶ Full Frame</button>
+          <button id="btn-full-frame" class="btn-tool-action" title="Mark entire frame with selected class (e.g. 100% cloud cover or full sensor trail) [F]">⛶ Full Frame</button>
 
           <label for="slider-line-thickness" title="Line buffer thickness for intersection and drawing" style="margin-left: 8px;">Line Width:</label>
           <input type="range" id="slider-line-thickness" min="2" max="60" step="2" value="16" title="Line buffer width in sensor pixels" style="width: 70px;" />
@@ -72,14 +87,6 @@
         </div>
 
         <div class="tool-group">
-          <label class="checkbox-label" title="Entire frame has 100% cloud/overcast/fog coverage">
-            <input type="checkbox" id="chk-global-cloud" />
-            Global Cloud
-          </label>
-          <label class="checkbox-label" title="Mount tracking error deformed all stars across sensor">
-            <input type="checkbox" id="chk-global-star-trail" />
-            Global Star Trailing
-          </label>
           <label class="checkbox-label">
             <input type="checkbox" id="chk-clean-sky" checked />
             Clean Sky
@@ -146,13 +153,104 @@
 
       <!-- Bottom Info Bar -->
       <div id="statusbar">
-        <span id="status-text">Ready. Drag to draw bounding box. Press Delete to remove selected.</span>
+        <span id="status-text">Ready. Drag to draw bounding box. Ctrl+Click to multi-select.</span>
         <span id="cursor-pos">X: 0, Y: 0</span>
         <span id="box-count">Annotations: 0</span>
       </div>
     </div>
+
+    <!-- Right Sidebar: AI Auto-Label & Current Image Annotations -->
+    <div id="right-sidebar">
+      <!-- AI Auto-Label Panel -->
+      <div class="sidebar-section ai-panel">
+        <div class="section-header">
+          <span>⚡ AI Auto-Label (YOLO)</span>
+          <button id="btn-refresh-models" class="btn-icon" title="Refresh available models">↻</button>
+        </div>
+        <div class="ai-controls">
+          <div class="field-row">
+            <label for="select-ai-model">Model:</label>
+            <select id="select-ai-model" class="full-width">
+              <option value="">Loading models...</option>
+            </select>
+          </div>
+          <div class="field-row">
+            <label for="slider-ai-conf">Confidence:</label>
+            <input type="range" id="slider-ai-conf" min="0.05" max="0.90" step="0.05" value="0.25" />
+            <span id="ai-conf-val" class="meta">25%</span>
+          </div>
+          <div class="field-row checkbox-field">
+            <label title="Keep existing annotations and append AI detections">
+              <input type="checkbox" id="chk-ai-append" checked /> Append to existing
+            </label>
+          </div>
+          <button id="btn-run-ai" class="btn-action full-width" title="Run YOLO segmentation on current frame [Y]">
+            ⚡ Predict with YOLO (Y)
+          </button>
+          <div id="ai-status" class="status-msg"></div>
+        </div>
+      </div>
+
+      <!-- Current Frame Annotations List & Batch Operations -->
+      <div class="sidebar-section annotations-panel">
+        <div class="section-header">
+          <span>Annotations (<span id="annotation-count-badge">0</span>)</span>
+          <span id="selection-count-badge" class="selection-pill">0 selected</span>
+        </div>
+
+        <!-- Batch Toolbar -->
+        <div class="batch-toolbar">
+          <button id="btn-select-all" class="btn-sm" title="Select All Annotations (Ctrl+A)">Select All</button>
+          <button id="btn-deselect-all" class="btn-sm" title="Deselect All (Esc)">Deselect</button>
+          <button id="btn-delete-selected" class="btn-sm btn-danger" title="Delete Selected (Del)">Delete</button>
+        </div>
+
+        <div class="batch-select-row">
+          <label for="select-by-class">Filter/Select Class:</label>
+          <select id="select-by-class">
+            <option value="">-- Select by Class --</option>
+          </select>
+        </div>
+
+        <!-- Batch Relabel Buttons -->
+        <div id="batch-relabel-container" class="batch-relabel-box hidden">
+          <div class="batch-relabel-title">Change Selected Class [1-6]:</div>
+          <div id="batch-relabel-buttons" class="btn-pill-group"></div>
+        </div>
+
+        <!-- Annotation Cards List -->
+        <div class="annotation-list-scroll">
+          <div id="annotation-list-empty" class="empty-state">No annotations in this frame.</div>
+          <ul id="annotation-cards"></ul>
+        </div>
+      </div>
+
+      <!-- Dataset Health Footer -->
+      <div class="sidebar-footer">
+        <button id="btn-open-analyzer" class="btn-secondary" title="Analyze Dataset Health & Deficits">
+          📊 Dataset Health & Deficits
+        </button>
+      </div>
+    </div>
   </div>
 
-  <script src="/static/app.js?v=9"></script>
+  <!-- Dataset Health Modal -->
+  <div id="analyzer-modal" class="modal-overlay hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>📊 Dataset Health & Class Balance Report</h2>
+        <button id="btn-close-modal" class="btn-icon">✕</button>
+      </div>
+      <div class="modal-body" id="analyzer-modal-body">
+        <div class="loading-spinner">Analyzing directory...</div>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-refresh-stats" class="btn-action">↻ Re-analyze</button>
+        <button id="btn-modal-close-footer">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js?v=10"></script>
 </body>
 </html>

@@ -7,35 +7,19 @@
   "is_clean": false,
   "boxes": [
     {
-      "id": "poly_1790454664980",
+      "id": "full_1791541310078",
       "label": "cloud",
-      "type": "polygon",
-      "x": 2003.0,
-      "y": -258.0,
-      "width": 2123.0,
-      "height": 2865.0,
+      "type": "box",
+      "x": 0.0,
+      "y": 0.0,
+      "width": 3840.0,
+      "height": 2160.0,
       "x1": null,
       "y1": null,
       "x2": null,
       "y2": null,
-      "points": [
-        [
-          4126.0,
-          -258.0
-        ],
-        [
-          4126.0,
-          2607.0
-        ],
-        [
-          2003.0,
-          2289.0
-        ],
-        [
-          2111.0,
-          -174.0
-        ]
-      ]
+      "points": null,
+      "confidence": null
     }
   ]
 }

@@ -7,11 +7,18 @@ Outputs 5 multi-label logits corresponding to:
 """
 
 from typing import Optional
+from pathlib import Path
+import sys
 import torch
 import torch.nn as nn
 import torchvision.models as models
 
-NUM_CLASSES = 5
+parent_dir = str(Path(__file__).resolve().parent.parent)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+from fits_utils import CLASSES
+
+NUM_CLASSES = len(CLASSES)
 
 
 class AstroResBlock(nn.Module):

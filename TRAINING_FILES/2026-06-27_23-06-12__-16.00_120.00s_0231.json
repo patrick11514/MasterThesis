@@ -5,6 +5,7 @@
   "global_star_trailing": false,
   "global_cloud": false,
   "is_clean": false,
+  "favorite": false,
   "boxes": [
     {
       "id": "l_1790457184086",
@@ -18,7 +19,23 @@
       "y1": 179.0,
       "x2": 1029.0,
       "y2": 0.0,
-      "points": null
+      "points": null,
+      "confidence": null
+    },
+    {
+      "id": "l_1791550012540",
+      "label": "satellite_streak",
+      "type": "line",
+      "x": -18.0,
+      "y": 1146.0,
+      "width": 3862.0,
+      "height": 686.0,
+      "x1": 3844.0,
+      "y1": 1146.0,
+      "x2": -18.0,
+      "y2": 1832.0,
+      "points": null,
+      "confidence": null
     }
   ]
 }

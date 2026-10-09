@@ -5,20 +5,22 @@
   "global_star_trailing": false,
   "global_cloud": true,
   "is_clean": false,
+  "favorite": false,
   "boxes": [
     {
-      "id": "b_1790848765384",
+      "id": "full_1791550579113",
       "label": "obstruction",
       "type": "box",
-      "x": -48.0,
-      "y": 12.0,
-      "width": 379.0,
-      "height": 2165.0,
+      "x": 0.0,
+      "y": 0.0,
+      "width": 3840.0,
+      "height": 2160.0,
       "x1": null,
       "y1": null,
       "x2": null,
       "y2": null,
-      "points": null
+      "points": null,
+      "confidence": null
     }
   ]
 }

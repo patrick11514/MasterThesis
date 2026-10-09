@@ -1,0 +1,42 @@
+{
+  "file_name": "2025-03-22_02-55-56__-20.00_120.00s_0240.fits",
+  "width": 3840,
+  "height": 2160,
+  "global_star_trailing": false,
+  "global_cloud": false,
+  "is_clean": false,
+  "boxes": [
+    {
+      "id": "box_ai_1791541246028_2",
+      "label": "cloud",
+      "type": "polygon",
+      "x": 2374.0,
+      "y": -102.0,
+      "width": 1655.0,
+      "height": 2604.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": [
+        [
+          2419.0,
+          -102.0
+        ],
+        [
+          2374.0,
+          2502.0
+        ],
+        [
+          4016.0,
+          2414.0
+        ],
+        [
+          4029.0,
+          -39.0
+        ]
+      ],
+      "confidence": 0.269
+    }
+  ]
+}

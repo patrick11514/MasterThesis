@@ -1,0 +1,59 @@
+{
+  "file_name": "2024-12-28_20-47-05__-19.90_120.00s_0081.fits",
+  "width": 3840,
+  "height": 2160,
+  "global_star_trailing": false,
+  "global_cloud": false,
+  "is_clean": false,
+  "favorite": false,
+  "boxes": [
+    {
+      "id": "poly_1791547242369",
+      "label": "cloud",
+      "type": "polygon",
+      "x": -37.0,
+      "y": -62.0,
+      "width": 1814.0,
+      "height": 2285.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": [
+        [
+          1777.0,
+          2177.0
+        ],
+        [
+          1280.0,
+          1549.0
+        ],
+        [
+          615.0,
+          1230.0
+        ],
+        [
+          363.0,
+          1036.0
+        ],
+        [
+          790.0,
+          377.0
+        ],
+        [
+          1218.0,
+          -62.0
+        ],
+        [
+          -37.0,
+          -32.0
+        ],
+        [
+          -28.0,
+          2223.0
+        ]
+      ],
+      "confidence": null
+    }
+  ]
+}

@@ -1,0 +1,94 @@
+{
+  "file_name": "2024-12-28_20-13-56__-19.60_120.00s_0067.fits",
+  "width": 3840,
+  "height": 2160,
+  "global_star_trailing": false,
+  "global_cloud": false,
+  "is_clean": false,
+  "favorite": false,
+  "boxes": [
+    {
+      "id": "b_1791547000007",
+      "label": "cloud",
+      "type": "box",
+      "x": -32.0,
+      "y": -32.0,
+      "width": 2347.0,
+      "height": 2244.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": null,
+      "confidence": null
+    },
+    {
+      "id": "poly_1791547006224",
+      "label": "cloud",
+      "type": "polygon",
+      "x": 2109.0,
+      "y": -59.0,
+      "width": 985.0,
+      "height": 2308.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": [
+        [
+          3094.0,
+          -9.0
+        ],
+        [
+          2604.0,
+          2249.0
+        ],
+        [
+          2174.0,
+          2239.0
+        ],
+        [
+          2109.0,
+          -59.0
+        ]
+      ],
+      "confidence": null
+    },
+    {
+      "id": "poly_1791547009310",
+      "label": "cloud",
+      "type": "polygon",
+      "x": 3068.0,
+      "y": -41.0,
+      "width": 650.0,
+      "height": 2267.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": [
+        [
+          3387.0,
+          21.0
+        ],
+        [
+          3068.0,
+          2223.0
+        ],
+        [
+          3177.0,
+          2226.0
+        ],
+        [
+          3718.0,
+          -36.0
+        ],
+        [
+          3392.0,
+          -41.0
+        ]
+      ],
+      "confidence": null
+    }
+  ]
+}

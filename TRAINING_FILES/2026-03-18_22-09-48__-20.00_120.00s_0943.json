@@ -1,0 +1,26 @@
+{
+  "file_name": "2026-03-18_22-09-48__-20.00_120.00s_0943.fits",
+  "width": 3840,
+  "height": 2160,
+  "global_star_trailing": false,
+  "global_cloud": false,
+  "is_clean": false,
+  "favorite": false,
+  "boxes": [
+    {
+      "id": "b_1791548006278",
+      "label": "cloud",
+      "type": "box",
+      "x": -99.0,
+      "y": -170.0,
+      "width": 1303.0,
+      "height": 2494.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": null,
+      "confidence": null
+    }
+  ]
+}

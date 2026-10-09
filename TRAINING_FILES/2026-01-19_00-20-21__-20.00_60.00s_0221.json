@@ -5,21 +5,8 @@
   "global_star_trailing": false,
   "global_cloud": false,
   "is_clean": false,
+  "favorite": false,
   "boxes": [
-    {
-      "id": "l_1790457359697",
-      "label": "airplane",
-      "type": "line",
-      "x": 614.0,
-      "y": 9.0,
-      "width": 142.0,
-      "height": 2143.0,
-      "x1": 614.0,
-      "y1": 9.0,
-      "x2": 756.0,
-      "y2": 2152.0,
-      "points": null
-    },
     {
       "id": "l_1790457363712",
       "label": "satellite_streak",
@@ -32,7 +19,8 @@
       "y1": 1.0,
       "x2": 900.0,
       "y2": 233.0,
-      "points": null
+      "points": null,
+      "confidence": null
     },
     {
       "id": "l_1790457366904",
@@ -46,7 +34,44 @@
       "y1": 244.0,
       "x2": 881.0,
       "y2": 266.0,
-      "points": null
+      "points": null,
+      "confidence": null
+    },
+    {
+      "id": "poly_1791550518582",
+      "label": "airplane",
+      "type": "polygon",
+      "x": 573.0,
+      "y": -36.0,
+      "width": 233.0,
+      "height": 2248.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": [
+        [
+          573.0,
+          -10.0
+        ],
+        [
+          725.0,
+          2212.0
+        ],
+        [
+          806.0,
+          2195.0
+        ],
+        [
+          707.0,
+          748.0
+        ],
+        [
+          642.0,
+          -36.0
+        ]
+      ],
+      "confidence": null
     }
   ]
 }

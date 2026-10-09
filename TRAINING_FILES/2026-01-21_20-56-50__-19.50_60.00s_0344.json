@@ -5,6 +5,7 @@
   "global_star_trailing": false,
   "global_cloud": false,
   "is_clean": false,
+  "favorite": false,
   "boxes": [
     {
       "id": "l_1790457304573",
@@ -18,14 +19,15 @@
       "y1": 1669.0,
       "x2": 1029.0,
       "y2": 2013.0,
-      "points": null
+      "points": null,
+      "confidence": null
     },
     {
       "id": "poly_1790457337260",
       "label": "cloud",
       "type": "polygon",
-      "x": 1844.0,
-      "y": -579.0,
+      "x": 1566.0,
+      "y": -537.0,
       "width": 2440.0,
       "height": 3223.0,
       "x1": null,
@@ -34,22 +36,23 @@
       "y2": null,
       "points": [
         [
-          4101.0,
-          -579.0
+          3823.0,
+          -537.0
         ],
         [
-          1844.0,
-          -113.0
+          1566.0,
+          -71.0
         ],
         [
-          2867.0,
-          2644.0
+          2589.0,
+          2686.0
         ],
         [
-          4284.0,
-          2351.0
+          4006.0,
+          2393.0
         ]
-      ]
+      ],
+      "confidence": null
     }
   ]
 }

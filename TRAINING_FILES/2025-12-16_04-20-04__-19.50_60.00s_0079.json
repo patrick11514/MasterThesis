@@ -5,64 +5,22 @@
   "global_star_trailing": false,
   "global_cloud": false,
   "is_clean": false,
+  "favorite": false,
   "boxes": [
     {
-      "id": "poly_1790847332216",
-      "label": "cloud",
-      "type": "polygon",
-      "x": 751.0,
-      "y": -68.0,
-      "width": 3530.0,
-      "height": 866.0,
-      "x1": null,
-      "y1": null,
-      "x2": null,
-      "y2": null,
-      "points": [
-        [
-          751.0,
-          -32.0
-        ],
-        [
-          4281.0,
-          798.0
-        ],
-        [
-          4134.0,
-          -68.0
-        ]
-      ]
-    },
-    {
-      "id": "poly_1790847345313",
+      "id": "full_1791550489611",
       "label": "obstruction",
-      "type": "polygon",
-      "x": -253.0,
-      "y": 137.0,
-      "width": 4516.0,
-      "height": 2102.0,
+      "type": "box",
+      "x": 0.0,
+      "y": 0.0,
+      "width": 3840.0,
+      "height": 2160.0,
       "x1": null,
       "y1": null,
       "x2": null,
       "y2": null,
-      "points": [
-        [
-          -253.0,
-          137.0
-        ],
-        [
-          4227.0,
-          1485.0
-        ],
-        [
-          4263.0,
-          2239.0
-        ],
-        [
-          -244.0,
-          2239.0
-        ]
-      ]
+      "points": null,
+      "confidence": null
     }
   ]
 }

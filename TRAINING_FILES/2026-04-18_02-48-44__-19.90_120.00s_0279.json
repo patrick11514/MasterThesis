@@ -5,48 +5,52 @@
   "global_star_trailing": false,
   "global_cloud": false,
   "is_clean": false,
+  "favorite": false,
   "boxes": [
     {
       "id": "l_1790848801351",
       "label": "satellite_streak",
       "type": "line",
-      "x": 5.0,
-      "y": 1802.0,
-      "width": 634.0,
-      "height": 393.0,
-      "x1": 5.0,
-      "y1": 1802.0,
-      "x2": 639.0,
-      "y2": 2195.0,
-      "points": null
+      "x": -2.0,
+      "y": 1798.0,
+      "width": 591.0,
+      "height": 366.0,
+      "x1": -2.0,
+      "y1": 1798.0,
+      "x2": 589.0,
+      "y2": 2164.0,
+      "points": null,
+      "confidence": null
     },
     {
       "id": "l_1790848804521",
       "label": "satellite_streak",
       "type": "line",
-      "x": 1902.0,
-      "y": 1030.0,
-      "width": 1982.0,
-      "height": 1169.0,
-      "x1": 1902.0,
-      "y1": 2199.0,
-      "x2": 3884.0,
-      "y2": 1030.0,
-      "points": null
+      "x": 1916.0,
+      "y": 1031.0,
+      "width": 1959.0,
+      "height": 1147.0,
+      "x1": 1916.0,
+      "y1": 2178.0,
+      "x2": 3875.0,
+      "y2": 1031.0,
+      "points": null,
+      "confidence": null
     },
     {
       "id": "l_1790848808666",
       "label": "satellite_streak",
       "type": "line",
-      "x": 3138.0,
-      "y": 1632.0,
-      "width": 808.0,
-      "height": 554.0,
-      "x1": 3138.0,
-      "y1": 2186.0,
-      "x2": 3946.0,
-      "y2": 1632.0,
-      "points": null
+      "x": 3134.0,
+      "y": 1696.0,
+      "width": 719.0,
+      "height": 481.0,
+      "x1": 3134.0,
+      "y1": 2177.0,
+      "x2": 3853.0,
+      "y2": 1696.0,
+      "points": null,
+      "confidence": null
     },
     {
       "id": "poly_1790848821999",
@@ -105,7 +109,8 @@
           3187.0,
           2230.0
         ]
-      ]
+      ],
+      "confidence": null
     },
     {
       "id": "poly_1790848828838",
@@ -136,7 +141,8 @@
           3884.0,
           2217.0
         ]
-      ]
+      ],
+      "confidence": null
     }
   ]
 }

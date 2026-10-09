@@ -29,11 +29,14 @@ const state = {
   activeClass: "satellite_streak",
   boxes: [],
   selectedBoxId: null,
+  selectedBoxIds: new Set(),
+  hoverBoxId: null,
   isDraggingHandle: false,
   dragHandleType: null, // "p1", "p2", "move"
   dragBoxId: null,
   dragStartMouse: null,
   dragOriginalBox: null,
+  dragOriginalBoxes: new Map(),
   globalStarTrailing: false,
   globalCloud: false,
   isClean: true,
@@ -43,8 +46,18 @@ const state = {
   loadSequenceId: 0,
   activeAbortController: null,
 
-  // Settings
+  // AI & Class State
+  classes: ["satellite_streak", "airplane", "cloud", "obstruction", "star_trail", "unfocused_stars"],
+  availableModels: [],
+  selectedModel: "",
+  aiConfidence: 0.25,
+  aiAppend: true,
+
+  // Settings & Mark
+  isFavorite: false,
+  filterFavorites: false,
   filterUntagged: false,
+  fileSortMode: "name_asc",
   showGrid: false,
   showCutPreview: false,
   lineThickness: 16,
@@ -60,6 +73,7 @@ const CLASS_COLORS = {
   cloud: "#4299e1",
   obstruction: "#9f7aea",
   star_trail: "#ecc94b",
+  unfocused_stars: "#38b2ac",
 };
 
 const canvas = document.getElementById("viewport");
@@ -100,6 +114,38 @@ function init() {
       if (state.filterUntagged && state.currentFile && state.currentFile.annotated) {
         nextUntaggedFile();
       }
+    });
+  }
+
+  // Filter marked / favorites toggle
+  const chkFilterFav = document.getElementById("chk-filter-favorites");
+  if (chkFilterFav) {
+    chkFilterFav.checked = state.filterFavorites;
+    chkFilterFav.addEventListener("change", (e) => {
+      state.filterFavorites = e.target.checked;
+      renderFileList();
+      if (state.filterFavorites && state.currentFile && !state.currentFile.favorite) {
+        const visible = getVisibleFileIndices();
+        if (visible.length > 0 && !visible.includes(state.currentIndex)) {
+          loadFile(visible[0]);
+        }
+      }
+    });
+  }
+
+  // Toggle favorite / mark frame button
+  const btnToggleFav = document.getElementById("btn-toggle-favorite");
+  if (btnToggleFav) {
+    btnToggleFav.addEventListener("click", toggleFavoriteCurrentFile);
+  }
+
+  // File sorting dropdown
+  const selFileSort = document.getElementById("select-file-sort");
+  if (selFileSort) {
+    selFileSort.value = state.fileSortMode;
+    selFileSort.addEventListener("change", (e) => {
+      state.fileSortMode = e.target.value;
+      renderFileList();
     });
   }
 
@@ -144,25 +190,32 @@ function init() {
   }
 
   const chkGlobal = document.getElementById("chk-global-star-trail");
-  chkGlobal.addEventListener("change", (e) => {
-    state.globalStarTrailing = e.target.checked;
-    state.isDirty = true;
-    updateCleanStatus();
-  });
+  if (chkGlobal) {
+    chkGlobal.addEventListener("change", (e) => {
+      state.globalStarTrailing = e.target.checked;
+      state.isDirty = true;
+      updateCleanStatus();
+    });
+  }
 
   const chkClean = document.getElementById("chk-clean-sky");
-  chkClean.addEventListener("change", (e) => {
-    state.isClean = e.target.checked;
-    state.isDirty = true;
-    if (state.isClean) {
-      state.boxes = [];
-      state.globalStarTrailing = false;
-      state.globalCloud = false;
-      chkGlobal.checked = false;
-      if (chkGlobalCloud) chkGlobalCloud.checked = false;
-      render();
-    }
-  });
+  if (chkClean) {
+    chkClean.addEventListener("change", (e) => {
+      state.isClean = e.target.checked;
+      state.isDirty = true;
+      if (state.isClean) {
+        state.boxes = [];
+        state.selectedBoxIds.clear();
+        state.selectedBoxId = null;
+        state.globalStarTrailing = false;
+        state.globalCloud = false;
+        if (chkGlobal) chkGlobal.checked = false;
+        if (chkGlobalCloud) chkGlobalCloud.checked = false;
+        render();
+        renderAnnotationCards();
+      }
+    });
+  }
 
   const chkGrid = document.getElementById("chk-grid");
   if (chkGrid) {
@@ -187,8 +240,8 @@ function init() {
       const v = parseInt(e.target.value, 10) || 16;
       state.lineThickness = v;
       if (valLineThick) valLineThick.innerText = `${v}px`;
-      if (state.selectedBoxId) {
-        const b = state.boxes.find((x) => x.id === state.selectedBoxId);
+      for (const id of state.selectedBoxIds) {
+        const b = state.boxes.find((x) => x.id === id);
         if (b && b.type === "line") {
           b.thickness = v;
           state.isDirty = true;
@@ -252,6 +305,67 @@ function init() {
     if (state.currentFile) loadFilePreview(state.currentFile);
   });
 
+  // Batch Selection Toolbar
+  const btnSelectAll = document.getElementById("btn-select-all");
+  if (btnSelectAll) btnSelectAll.addEventListener("click", selectAll);
+
+  const btnDeselectAll = document.getElementById("btn-deselect-all");
+  if (btnDeselectAll) btnDeselectAll.addEventListener("click", deselectAll);
+
+  const btnDelSelected = document.getElementById("btn-delete-selected");
+  if (btnDelSelected) btnDelSelected.addEventListener("click", deleteSelected);
+
+  const selByClass = document.getElementById("select-by-class");
+  if (selByClass) {
+    selByClass.addEventListener("change", (e) => {
+      selectByClass(e.target.value);
+    });
+  }
+
+  // AI Auto-Label Controls
+  const selAiModel = document.getElementById("select-ai-model");
+  if (selAiModel) {
+    selAiModel.addEventListener("change", (e) => {
+      state.selectedModel = e.target.value;
+    });
+  }
+
+  const sliderAiConf = document.getElementById("slider-ai-conf");
+  const valAiConf = document.getElementById("ai-conf-val");
+  if (sliderAiConf) {
+    sliderAiConf.addEventListener("input", (e) => {
+      const v = parseFloat(e.target.value);
+      state.aiConfidence = v;
+      if (valAiConf) valAiConf.innerText = `${Math.round(v * 100)}%`;
+    });
+  }
+
+  const chkAiAppend = document.getElementById("chk-ai-append");
+  if (chkAiAppend) {
+    chkAiAppend.addEventListener("change", (e) => {
+      state.aiAppend = e.target.checked;
+    });
+  }
+
+  const btnRefreshModels = document.getElementById("btn-refresh-models");
+  if (btnRefreshModels) btnRefreshModels.addEventListener("click", loadAvailableModels);
+
+  const btnRunAi = document.getElementById("btn-run-ai");
+  if (btnRunAi) btnRunAi.addEventListener("click", predictCurrentImage);
+
+  // Dataset Health Modal Controls
+  const btnOpenAnalyzer = document.getElementById("btn-open-analyzer");
+  if (btnOpenAnalyzer) btnOpenAnalyzer.addEventListener("click", openAnalyzerModal);
+
+  const btnCloseModal = document.getElementById("btn-close-modal");
+  if (btnCloseModal) btnCloseModal.addEventListener("click", closeAnalyzerModal);
+
+  const btnCloseFooter = document.getElementById("btn-modal-close-footer");
+  if (btnCloseFooter) btnCloseFooter.addEventListener("click", closeAnalyzerModal);
+
+  const btnRefreshStats = document.getElementById("btn-refresh-stats");
+  if (btnRefreshStats) btnRefreshStats.addEventListener("click", loadDatasetStats);
+
   // Canvas Mouse Events
   canvas.addEventListener("mousedown", onMouseDown);
   canvas.addEventListener("mousemove", onMouseMove);
@@ -264,6 +378,20 @@ function init() {
 
   // Set initial tool
   setTool("box");
+
+  // Load dynamic classes and models
+  loadClassesConfig();
+  loadAvailableModels();
+
+  // URL Hash navigation
+  window.addEventListener("hashchange", () => {
+    if (!window.location.hash || !state.files || state.files.length === 0) return;
+    const hashName = decodeURIComponent(window.location.hash.replace(/^#/, "").trim());
+    const found = state.files.findIndex((f) => f.name === hashName);
+    if (found !== -1 && found !== state.currentIndex) {
+      loadFile(found);
+    }
+  });
 
   // Initial load
   loadDirectory();
@@ -300,12 +428,8 @@ function setActiveClass(cls) {
   document.querySelectorAll(".btn-class").forEach((b) => {
     b.classList.toggle("active", b.dataset.class === cls);
   });
-  if (state.selectedBoxId) {
-    const b = state.boxes.find((x) => x.id === state.selectedBoxId);
-    if (b) {
-      b.label = cls;
-      render();
-    }
+  if (state.selectedBoxIds && state.selectedBoxIds.size > 0) {
+    batchChangeClass(cls);
   }
 }
 
@@ -321,11 +445,506 @@ function selectFullFrame() {
     height: state.origHeight,
   };
   state.boxes.push(newBox);
+  state.selectedBoxIds = new Set([newBox.id]);
   state.selectedBoxId = newBox.id;
   state.isDirty = true;
   updateCleanStatus();
   setStatus(`Marked entire frame as ${state.activeClass.replace("_", " ")}`);
   render();
+  renderAnnotationCards();
+}
+
+// ----------------------------------------------------
+// Multi-Selection and Batch Operations
+// ----------------------------------------------------
+function selectBox(id, multi = false) {
+  if (multi) {
+    if (state.selectedBoxIds.has(id)) {
+      state.selectedBoxIds.delete(id);
+    } else {
+      state.selectedBoxIds.add(id);
+    }
+  } else {
+    state.selectedBoxIds = new Set([id]);
+  }
+
+  state.selectedBoxId = state.selectedBoxIds.size === 1 ? [...state.selectedBoxIds][0] : null;
+
+  if (state.selectedBoxId) {
+    const b = state.boxes.find((x) => x.id === state.selectedBoxId);
+    if (b) {
+      state.activeClass = b.label;
+      document.querySelectorAll(".btn-class").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.class === b.label);
+      });
+      if (b.type === "line" && b.thickness) {
+        state.lineThickness = b.thickness;
+        const sl = document.getElementById("slider-line-thickness");
+        const lv = document.getElementById("line-thickness-val");
+        if (sl) sl.value = b.thickness;
+        if (lv) lv.innerText = `${b.thickness}px`;
+      }
+    }
+  }
+
+  render();
+  renderAnnotationCards();
+}
+
+function selectAll() {
+  state.selectedBoxIds = new Set(state.boxes.map((b) => b.id));
+  state.selectedBoxId = state.selectedBoxIds.size === 1 ? [...state.selectedBoxIds][0] : null;
+  render();
+  renderAnnotationCards();
+  setStatus(`Selected all ${state.boxes.length} annotations.`);
+}
+
+function deselectAll() {
+  state.selectedBoxIds.clear();
+  state.selectedBoxId = null;
+  state.hoverBoxId = null;
+  render();
+  renderAnnotationCards();
+}
+
+function selectByClass(cls) {
+  if (!cls) return;
+  state.selectedBoxIds = new Set(state.boxes.filter((b) => b.label === cls).map((b) => b.id));
+  state.selectedBoxId = state.selectedBoxIds.size === 1 ? [...state.selectedBoxIds][0] : null;
+  render();
+  renderAnnotationCards();
+  setStatus(`Selected ${state.selectedBoxIds.size} annotation(s) of class '${cls}'.`);
+}
+
+function batchChangeClass(newClass) {
+  if (!state.selectedBoxIds || state.selectedBoxIds.size === 0) return;
+  let count = 0;
+  for (const b of state.boxes) {
+    if (state.selectedBoxIds.has(b.id)) {
+      b.label = newClass;
+      count++;
+    }
+  }
+  state.activeClass = newClass;
+  state.isDirty = true;
+  document.querySelectorAll(".btn-class").forEach((b) => {
+    b.classList.toggle("active", b.dataset.class === newClass);
+  });
+  render();
+  renderAnnotationCards();
+  setStatus(`Batch updated ${count} annotation(s) to '${newClass}'.`);
+}
+
+function deleteSelected() {
+  if (!state.selectedBoxIds || state.selectedBoxIds.size === 0) return;
+  const count = state.selectedBoxIds.size;
+  state.boxes = state.boxes.filter((b) => !state.selectedBoxIds.has(b.id));
+  state.selectedBoxIds.clear();
+  state.selectedBoxId = null;
+  state.hoverBoxId = null;
+  state.isDirty = true;
+  updateCleanStatus();
+  render();
+  renderAnnotationCards();
+  setStatus(`Deleted ${count} annotation(s).`);
+}
+
+function renderAnnotationCards() {
+  const badge = document.getElementById("annotation-count-badge");
+  if (badge) badge.innerText = state.boxes.length;
+
+  const selPill = document.getElementById("selection-count-badge");
+  if (selPill) {
+    const selCount = state.selectedBoxIds.size;
+    selPill.innerText = `${selCount} selected`;
+    selPill.style.display = selCount > 0 ? "inline-block" : "none";
+  }
+
+  const relabelBox = document.getElementById("batch-relabel-container");
+  if (relabelBox) {
+    relabelBox.classList.toggle("hidden", state.selectedBoxIds.size === 0);
+  }
+
+  const emptyEl = document.getElementById("annotation-list-empty");
+  if (emptyEl) {
+    emptyEl.style.display = state.boxes.length === 0 ? "block" : "none";
+  }
+
+  const list = document.getElementById("annotation-cards");
+  if (!list) return;
+  list.innerHTML = "";
+
+  state.boxes.forEach((b, idx) => {
+    const li = document.createElement("li");
+    li.className = "annotation-card";
+    li.dataset.id = b.id;
+    if (state.selectedBoxIds.has(b.id)) li.classList.add("selected");
+    if (state.hoverBoxId === b.id) li.classList.add("hovered");
+
+    const col = CLASS_COLORS[b.label] || "#4299e1";
+    li.style.borderLeftColor = col;
+
+    const left = document.createElement("div");
+    left.className = "card-left";
+
+    const labelRow = document.createElement("div");
+    labelRow.className = "card-label-row";
+
+    const labelSpan = document.createElement("span");
+    labelSpan.className = "card-label";
+    labelSpan.style.color = col;
+    labelSpan.innerText = `${idx + 1}. ${b.label.replace(/_/g, " ")}`;
+    labelRow.appendChild(labelSpan);
+
+    if (b.confidence !== undefined && b.confidence !== null) {
+      const confSpan = document.createElement("span");
+      confSpan.className = "card-conf";
+      confSpan.innerText = `${Math.round(b.confidence * 100)}% AI`;
+      labelRow.appendChild(confSpan);
+    }
+    left.appendChild(labelRow);
+
+    const metaSpan = document.createElement("span");
+    metaSpan.className = "card-meta";
+    if (b.type === "polygon" && b.points) {
+      metaSpan.innerText = `⬡ Poly (${b.points.length} pts)`;
+    } else if (b.type === "line") {
+      const len = Math.round(Math.hypot((b.x2 || 0) - (b.x1 || 0), (b.y2 || 0) - (b.y1 || 0)));
+      metaSpan.innerText = `╱ Streak (${len}px, w:${b.thickness || 16})`;
+    } else {
+      metaSpan.innerText = `▢ Box (${Math.round(b.width)}×${Math.round(b.height)})`;
+    }
+    left.appendChild(metaSpan);
+    li.appendChild(left);
+
+    const btnDel = document.createElement("button");
+    btnDel.className = "btn-card-del";
+    btnDel.innerHTML = "✕";
+    btnDel.title = "Delete annotation";
+    btnDel.addEventListener("click", (e) => {
+      e.stopPropagation();
+      state.boxes = state.boxes.filter((x) => x.id !== b.id);
+      state.selectedBoxIds.delete(b.id);
+      if (state.selectedBoxId === b.id) state.selectedBoxId = null;
+      state.isDirty = true;
+      updateCleanStatus();
+      render();
+      renderAnnotationCards();
+    });
+    li.appendChild(btnDel);
+
+    li.addEventListener("click", (e) => {
+      const isMulti = e.ctrlKey || e.metaKey || e.shiftKey;
+      selectBox(b.id, isMulti);
+    });
+
+    li.addEventListener("mouseenter", () => {
+      state.hoverBoxId = b.id;
+      render();
+    });
+
+    li.addEventListener("mouseleave", () => {
+      if (state.hoverBoxId === b.id) {
+        state.hoverBoxId = null;
+        render();
+      }
+    });
+
+    list.appendChild(li);
+  });
+}
+
+// ----------------------------------------------------
+// Dynamic Classes & Models Configuration
+// ----------------------------------------------------
+async function loadClassesConfig() {
+  try {
+    const res = await fetch("/api/classes");
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.classes && data.classes.length > 0) {
+      state.classes = data.classes;
+      if (data.colors) {
+        Object.assign(CLASS_COLORS, data.colors);
+      }
+      renderClassButtons();
+      renderBatchRelabelButtons();
+      renderSelectByClassDropdown();
+    }
+  } catch (err) {
+    console.warn("Failed to load /api/classes:", err);
+  }
+}
+
+function renderClassButtons() {
+  const container = document.getElementById("class-buttons");
+  if (!container) return;
+  container.innerHTML = "";
+  state.classes.forEach((cls, idx) => {
+    const key = idx + 1;
+    const btn = document.createElement("button");
+    btn.className = "btn-class" + (cls === state.activeClass ? " active" : "");
+    btn.dataset.class = cls;
+    btn.dataset.key = key <= 9 ? String(key) : "";
+    const prettyName = cls.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    btn.innerText = key <= 9 ? `[${key}] ${prettyName}` : prettyName;
+    btn.style.borderBottomColor = CLASS_COLORS[cls] || "#555";
+    btn.addEventListener("click", () => setActiveClass(cls));
+    container.appendChild(btn);
+  });
+}
+
+function renderBatchRelabelButtons() {
+  const container = document.getElementById("batch-relabel-buttons");
+  if (!container) return;
+  container.innerHTML = "";
+  state.classes.forEach((cls, idx) => {
+    const key = idx + 1;
+    const btn = document.createElement("button");
+    btn.className = "btn-pill";
+    btn.title = `Change selected to ${cls} [${key}]`;
+    const dot = document.createElement("span");
+    dot.className = "dot";
+    dot.style.backgroundColor = CLASS_COLORS[cls] || "#555";
+    btn.appendChild(dot);
+    const prettyName = cls.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    btn.appendChild(document.createTextNode(key <= 9 ? `[${key}] ${prettyName}` : prettyName));
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      batchChangeClass(cls);
+    });
+    container.appendChild(btn);
+  });
+}
+
+function renderSelectByClassDropdown() {
+  const sel = document.getElementById("select-by-class");
+  if (!sel) return;
+  sel.innerHTML = '<option value="">-- Filter/Select Class --</option>';
+  state.classes.forEach((cls) => {
+    const opt = document.createElement("option");
+    opt.value = cls;
+    const prettyName = cls.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    opt.textContent = prettyName;
+    sel.appendChild(opt);
+  });
+}
+
+async function loadAvailableModels() {
+  const sel = document.getElementById("select-ai-model");
+  if (!sel) return;
+  sel.innerHTML = '<option value="">Loading models...</option>';
+  try {
+    const res = await fetch("/api/models");
+    if (!res.ok) throw new Error("Failed to fetch models");
+    const data = await res.json();
+    state.availableModels = data.models || [];
+    sel.innerHTML = "";
+    if (state.availableModels.length === 0) {
+      sel.innerHTML = '<option value="">No .pt models found</option>';
+      return;
+    }
+    state.availableModels.forEach((m, idx) => {
+      const opt = document.createElement("option");
+      opt.value = m.full_path;
+      const tag = m.type === "yolo-seg" ? "[YOLO-Seg]" : "[CNN]";
+      opt.textContent = `${tag} ${m.name} (${m.size_mb} MB)`;
+      if (idx === 0) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    state.selectedModel = sel.value;
+  } catch (err) {
+    sel.innerHTML = `<option value="">Error loading models: ${err.message}</option>`;
+  }
+}
+
+async function predictCurrentImage() {
+  if (!state.currentFile) {
+    alert("Please select and load a FITS image first.");
+    return;
+  }
+  const sel = document.getElementById("select-ai-model");
+  const modelPath = sel ? sel.value : state.selectedModel;
+  if (!modelPath) {
+    alert("Please select a trained model checkpoint (.pt) first.");
+    return;
+  }
+
+  const statusEl = document.getElementById("ai-status");
+  const btnRun = document.getElementById("btn-run-ai");
+  if (statusEl) statusEl.innerText = "Running YOLO segmentation...";
+  if (btnRun) {
+    btnRun.disabled = true;
+    btnRun.innerText = "⏳ Predicting...";
+  }
+
+  try {
+    const payload = {
+      path: state.currentFile.path,
+      model_path: modelPath,
+      conf: state.aiConfidence || 0.25,
+      iou: 0.45,
+      tile_size: 512,
+      stride: 460,
+      device: "auto",
+    };
+    const res = await fetch("/api/models/predict", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || "Prediction request failed");
+    }
+    const data = await res.json();
+    const newBoxes = data.boxes || [];
+
+    if (!state.aiAppend) {
+      state.boxes = newBoxes;
+    } else {
+      state.boxes.push(...newBoxes);
+    }
+
+    state.selectedBoxIds = new Set(newBoxes.map((b) => b.id));
+    if (newBoxes.length > 0) {
+      state.isClean = false;
+      const chkClean = document.getElementById("chk-clean-sky");
+      if (chkClean) chkClean.checked = false;
+    }
+    state.isDirty = true;
+
+    if (statusEl) {
+      statusEl.innerText = `Found ${data.count} defect(s) in ${data.elapsed_sec}s`;
+    }
+    setStatus(`AI Auto-Label: ${data.count} polygons generated using ${data.model} in ${data.elapsed_sec}s.`);
+    render();
+    renderAnnotationCards();
+  } catch (err) {
+    if (statusEl) statusEl.innerText = `Error: ${err.message}`;
+    setStatus(`AI Prediction Error: ${err.message}`);
+  } finally {
+    if (btnRun) {
+      btnRun.disabled = false;
+      btnRun.innerText = "⚡ Predict with YOLO (Y)";
+    }
+  }
+}
+
+// ----------------------------------------------------
+// Dataset Health & Pre-Analyzer Modal
+// ----------------------------------------------------
+function openAnalyzerModal() {
+  const modal = document.getElementById("analyzer-modal");
+  if (!modal) return;
+  modal.classList.remove("hidden");
+  loadDatasetStats();
+}
+
+function closeAnalyzerModal() {
+  const modal = document.getElementById("analyzer-modal");
+  if (modal) modal.classList.add("hidden");
+}
+
+async function loadDatasetStats() {
+  const body = document.getElementById("analyzer-modal-body");
+  if (!body) return;
+  body.innerHTML = '<div class="loading-spinner">Analyzing directory...</div>';
+
+  try {
+    const res = await fetch(`/api/dataset/stats?dir_path=${encodeURIComponent(state.currentDir)}`);
+    if (!res.ok) throw new Error("Failed to analyze dataset");
+    const data = await res.json();
+    renderAnalyzerStats(data);
+  } catch (err) {
+    body.innerHTML = `<div style="color: #fc8181; padding: 20px;">Error analyzing dataset: ${err.message}</div>`;
+  }
+}
+
+function renderAnalyzerStats(data) {
+  const body = document.getElementById("analyzer-modal-body");
+  if (!body) return;
+
+  const s = data.summary;
+  const ch = data.class_health;
+  const recs = data.recommendations;
+
+  let html = `
+    <div class="stats-summary-grid">
+      <div class="stat-box">
+        <div class="stat-val">${s.total_fits}</div>
+        <div class="stat-label">Total Frames</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-val" style="color: #48bb78;">${s.annotated_frames}</div>
+        <div class="stat-label">Annotated (${Math.round((s.annotated_frames / Math.max(1, s.total_fits)) * 100)}%)</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-val" style="color: #ed8936;">${s.unannotated_frames}</div>
+        <div class="stat-label">Unannotated</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-val">${s.total_annotations}</div>
+        <div class="stat-label">Total Annotations</div>
+      </div>
+    </div>
+
+    <h3 style="margin-top: 14px; margin-bottom: 6px; font-size: 13px;">Class Balance & Shape Distributions:</h3>
+    <table class="stats-table">
+      <thead>
+        <tr>
+          <th>Class</th>
+          <th>Samples</th>
+          <th>Share</th>
+          <th>Frames</th>
+          <th>Box</th>
+          <th>Line</th>
+          <th>Poly</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+
+  for (const [cls, info] of Object.entries(ch)) {
+    const col = CLASS_COLORS[cls] || "#cbd5e0";
+    const badgeClass = info.status === "healthy" ? "badge-healthy" : (info.status === "critical" ? "badge-critical" : "badge-low");
+    const shapes = info.shapes || {};
+    html += `
+      <tr>
+        <td style="font-weight: bold; color: ${col};">${cls}</td>
+        <td>${info.count}</td>
+        <td>${info.percent}%</td>
+        <td>${info.frames}</td>
+        <td>${shapes.box || 0}</td>
+        <td>${shapes.line || 0}</td>
+        <td>${shapes.polygon || 0}</td>
+        <td><span class="${badgeClass}">${info.status.toUpperCase()}</span></td>
+      </tr>
+    `;
+  }
+
+  html += `
+      </tbody>
+    </table>
+  `;
+
+  if (recs && recs.length > 0) {
+    html += `
+      <div class="recs-box">
+        <h3>⚠️ Recommendations & Deficits Detected:</h3>
+        <ul>
+    `;
+    for (const r of recs) {
+      html += `<li><strong>[${r.priority} Priority]</strong> ${r.message}</li>`;
+    }
+    html += `
+        </ul>
+      </div>
+    `;
+  }
+
+  body.innerHTML = html;
 }
 
 function zoomIn() {
@@ -375,7 +994,13 @@ async function loadDirectory() {
 
     renderFileList();
     if (state.files.length > 0) {
-      loadFile(0);
+      let initialIdx = 0;
+      if (window.location.hash) {
+        const hashName = decodeURIComponent(window.location.hash.replace(/^#/, "").trim());
+        const found = state.files.findIndex((f) => f.name === hashName);
+        if (found !== -1) initialIdx = found;
+      }
+      loadFile(initialIdx);
     } else {
       setStatus("No FITS files found in directory.");
     }
@@ -387,10 +1012,50 @@ async function loadDirectory() {
 function getVisibleFileIndices() {
   const indices = [];
   state.files.forEach((f, idx) => {
-    if (!state.filterUntagged || !f.annotated) {
-      indices.push(idx);
-    }
+    if (state.filterUntagged && f.annotated) return;
+    if (state.filterFavorites && !f.favorite) return;
+    indices.push(idx);
   });
+
+  const mode = state.fileSortMode || "name_asc";
+  indices.sort((a, b) => {
+    const fa = state.files[a];
+    const fb = state.files[b];
+
+    if (mode === "name_desc") {
+      return fb.name.localeCompare(fa.name);
+    }
+    if (mode === "time_asc") {
+      // Oldest classified first
+      const ta = fa.annot_mtime || 0;
+      const tb = fb.annot_mtime || 0;
+      if (ta > 0 && tb > 0) {
+        if (ta !== tb) return ta - tb;
+      } else if (ta > 0) {
+        return -1; // annotated files before unannotated
+      } else if (tb > 0) {
+        return 1;
+      }
+      return fa.name.localeCompare(fb.name);
+    }
+    if (mode === "time_desc") {
+      // Newest classified first
+      const ta = fa.annot_mtime || 0;
+      const tb = fb.annot_mtime || 0;
+      if (ta > 0 && tb > 0) {
+        if (ta !== tb) return tb - ta;
+      } else if (ta > 0) {
+        return -1; // annotated files before unannotated
+      } else if (tb > 0) {
+        return 1;
+      }
+      return fa.name.localeCompare(fb.name);
+    }
+
+    // Default: name_asc
+    return fa.name.localeCompare(fb.name);
+  });
+
   return indices;
 }
 
@@ -398,23 +1063,75 @@ function renderFileList() {
   const list = document.getElementById("file-list");
   list.innerHTML = "";
 
-  const untaggedCount = state.files.filter((f) => !f.annotated).length;
+  const visibleIndices = getVisibleFileIndices();
   const countEl = document.getElementById("file-count");
   if (countEl) {
-    countEl.innerText = state.filterUntagged ? `${untaggedCount} / ${state.files.length}` : `${state.files.length}`;
+    const isFiltered = state.filterUntagged || state.filterFavorites;
+    countEl.innerText = isFiltered ? `${visibleIndices.length} / ${state.files.length}` : `${state.files.length}`;
   }
 
-  state.files.forEach((f, idx) => {
-    if (state.filterUntagged && f.annotated) {
-      return;
-    }
+  visibleIndices.forEach((idx) => {
+    const f = state.files[idx];
     const li = document.createElement("li");
-    li.innerText = f.name;
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "file-name";
+    nameSpan.innerText = f.name;
+    li.appendChild(nameSpan);
+
+    const badges = document.createElement("span");
+    badges.className = "file-badges";
+    if (f.favorite) {
+      const favBadge = document.createElement("span");
+      favBadge.className = "badge-fav";
+      favBadge.title = "Marked frame";
+      favBadge.innerText = "⭐";
+      badges.appendChild(favBadge);
+    }
+    if (f.annotated) {
+      const annotBadge = document.createElement("span");
+      annotBadge.className = "badge-annot";
+      if (f.annot_mtime) {
+        const d = new Date(f.annot_mtime * 1000);
+        annotBadge.title = `Classified: ${d.toLocaleDateString()} ${d.toLocaleTimeString()}`;
+      } else {
+        annotBadge.title = "Annotated";
+      }
+      annotBadge.innerText = "✓";
+      badges.appendChild(annotBadge);
+    }
+    li.appendChild(badges);
+
     if (f.annotated) li.classList.add("annotated");
     if (idx === state.currentIndex) li.classList.add("active");
     li.addEventListener("click", () => loadFile(idx));
     list.appendChild(li);
   });
+}
+
+async function toggleFavoriteCurrentFile() {
+  if (!state.currentFile) return;
+  state.isFavorite = !state.isFavorite;
+  state.currentFile.favorite = state.isFavorite;
+
+  updateFavoriteButtonUI();
+  renderFileList();
+
+  try {
+    await fetch(`/api/favorite?path=${encodeURIComponent(state.currentFile.path)}&favorite=${state.isFavorite}`, {
+      method: "POST"
+    });
+    setStatus(state.isFavorite ? `Marked ${state.currentFile.name} as favorite frame ⭐` : `Unmarked ${state.currentFile.name}`);
+  } catch (err) {
+    console.error("Failed to update favorite status:", err);
+  }
+}
+
+function updateFavoriteButtonUI() {
+  const btn = document.getElementById("btn-toggle-favorite");
+  if (!btn) return;
+  btn.classList.toggle("active", Boolean(state.isFavorite));
+  btn.innerText = state.isFavorite ? "⭐ Marked Frame" : "☆ Mark Frame";
+  btn.title = state.isFavorite ? "Unmark frame [K]" : "Star / Mark this frame for later review [K]";
 }
 
 async function loadFile(index) {
@@ -439,14 +1156,22 @@ async function loadFile(index) {
   // 4. Update file pointers & immediately clear old annotations
   state.currentIndex = index;
   state.currentFile = state.files[index];
+
+  // Sync with URL Hash
+  history.replaceState(null, "", "#" + encodeURIComponent(state.currentFile.name));
+
   state.isLoading = true;
   state.isDirty = false;
+  state.selectedBoxIds.clear();
   state.selectedBoxId = null;
+  state.hoverBoxId = null;
   state.polygonPoints = [];
   state.boxes = []; // Wipe immediately so previous file boxes never bleed over
   state.globalStarTrailing = false;
   state.globalCloud = false;
   state.isClean = true;
+  state.isFavorite = Boolean(state.currentFile.favorite);
+  updateFavoriteButtonUI();
 
   // Clear checkboxes in UI
   const chkGlobalStar = document.getElementById("chk-global-star-trail");
@@ -457,6 +1182,7 @@ async function loadFile(index) {
   if (chkClean) chkClean.checked = true;
 
   renderFileList();
+  renderAnnotationCards(); // Clean sidebar cards immediately upon switching files
   document.getElementById("current-filename").innerText = state.currentFile.name;
   setStatus(`Loading ${state.currentFile.name}...`);
   render();
@@ -472,9 +1198,13 @@ async function loadFile(index) {
     if (seq === state.loadSequenceId) {
       state.isLoading = false;
       state.isDirty = false;
+      state.selectedBoxIds.clear();
+      state.selectedBoxId = null;
+      state.hoverBoxId = null;
       resetView();
       setStatus(`Loaded ${targetFile.name}`);
       render();
+      renderAnnotationCards(); // Render loaded cards in sidebar
     }
   } catch (err) {
     if (err.name === "AbortError" || seq !== state.loadSequenceId) {
@@ -543,6 +1273,9 @@ async function loadAnnotations(file, seq, signal) {
     state.globalStarTrailing = data.global_star_trailing || false;
     state.globalCloud = data.global_cloud || false;
     state.isClean = data.is_clean !== undefined ? data.is_clean : (state.boxes.length === 0 && !state.globalStarTrailing && !state.globalCloud);
+    state.isFavorite = Boolean(data.favorite !== undefined ? data.favorite : file.favorite);
+    file.favorite = state.isFavorite;
+    updateFavoriteButtonUI();
 
     const chkGlobalStar = document.getElementById("chk-global-star-trail");
     if (chkGlobalStar) chkGlobalStar.checked = state.globalStarTrailing;
@@ -577,6 +1310,7 @@ async function saveAnnotations(explicitFile = null) {
     global_star_trailing: state.globalStarTrailing,
     global_cloud: state.globalCloud,
     is_clean: state.isClean,
+    favorite: state.isFavorite,
     boxes: JSON.parse(JSON.stringify(state.boxes)),
   };
 
@@ -590,7 +1324,9 @@ async function saveAnnotations(explicitFile = null) {
     });
     if (!res.ok) throw new Error("Failed to save");
 
+    const resData = await res.json().catch(() => ({}));
     fileToSave.annotated = true;
+    fileToSave.annot_mtime = resData.annot_mtime || (Date.now() / 1000);
     renderFileList();
 
     if (state.currentFile && state.currentFile.path === filePath) {
@@ -620,10 +1356,12 @@ async function clearAnnotations() {
     if (!res.ok) throw new Error("Failed to delete annotations");
 
     state.boxes = [];
+    state.selectedBoxIds.clear();
+    state.selectedBoxId = null;
+    state.hoverBoxId = null;
     state.globalStarTrailing = false;
     state.globalCloud = false;
     state.isClean = true;
-    state.selectedBoxId = null;
     state.isDirty = false;
 
     const chkGlobalStar = document.getElementById("chk-global-star-trail");
@@ -634,8 +1372,10 @@ async function clearAnnotations() {
     if (chkClean) chkClean.checked = true;
 
     fileToClear.annotated = false;
+    fileToClear.annot_mtime = 0;
     renderFileList();
     render();
+    renderAnnotationCards();
     setStatus(`Cleared all annotations for ${fileToClear.name}`);
   } catch (err) {
     setStatus("Error clearing annotations: " + err.message);
@@ -851,16 +1591,18 @@ function findLineHandleAt(x, y, line) {
   const x2 = line.x2 !== undefined ? line.x2 : line.x + line.width;
   const y2 = line.y2 !== undefined ? line.y2 : line.y + line.height;
 
-  // Handle detection radius in image coordinates
-  const handleRadius = Math.max(12, 14 / (state.zoom * state.previewScale));
+  // Handle detection radius in image coordinates (at least 15px on screen or 14 image px)
+  const handleRadius = Math.max(14, 16 / (state.zoom * state.previewScale));
 
-  if (Math.hypot(x - x1, y - y1) <= handleRadius) {
-    return "p1";
+  const d1 = Math.hypot(x - x1, y - y1);
+  const d2 = Math.hypot(x - x2, y - y2);
+
+  // Endpoint handles take absolute priority over segment body
+  if (d1 <= handleRadius || d2 <= handleRadius) {
+    return d1 <= d2 ? "p1" : "p2";
   }
-  if (Math.hypot(x - x2, y - y2) <= handleRadius) {
-    return "p2";
-  }
-  // Check if near the segment itself
+
+  // Check if near the segment itself for body move
   const thick = line.thickness || state.lineThickness || 16;
   const segThreshold = Math.max(handleRadius, thick / 2 + 6);
   const d = distToSegment(x, y, x1, y1, x2, y2);
@@ -952,8 +1694,13 @@ function updateCursor(x, y) {
     return;
   }
 
-  if (state.selectedBoxId) {
-    const selBox = state.boxes.find((b) => b.id === state.selectedBoxId);
+  // 1. Check selected shape handles first
+  const targetId = state.selectedBoxIds && state.selectedBoxIds.size === 1
+    ? [...state.selectedBoxIds][0]
+    : state.selectedBoxId;
+
+  if (targetId) {
+    const selBox = state.boxes.find((b) => b.id === targetId);
     if (selBox) {
       let handle = null;
       if (selBox.type === "line") {
@@ -984,19 +1731,44 @@ function updateCursor(x, y) {
             return;
           case "p1":
           case "p2":
-            canvas.style.cursor = "pointer";
+            canvas.style.cursor = "grab";
             return;
           case "move":
             canvas.style.cursor = "move";
             return;
           default:
             if (handle.startsWith("vertex_")) {
-              canvas.style.cursor = "pointer";
+              canvas.style.cursor = "grab";
               return;
             }
         }
       }
     }
+  }
+
+  // 2. Check if hovering over endpoints of any line
+  for (let i = state.boxes.length - 1; i >= 0; i--) {
+    const b = state.boxes[i];
+    if (b.type === "line") {
+      const lh = findLineHandleAt(x, y, b);
+      if (lh === "p1" || lh === "p2") {
+        canvas.style.cursor = "grab";
+        return;
+      }
+    } else if (b.type === "polygon") {
+      const ph = findPolygonHandleAt(x, y, b, false);
+      if (ph && ph.startsWith("vertex_")) {
+        canvas.style.cursor = "grab";
+        return;
+      }
+    }
+  }
+
+  // 3. Hovering over any shape body
+  const hoverBox = findBoxAt(x, y);
+  if (hoverBox) {
+    canvas.style.cursor = "pointer";
+    return;
   }
 
   canvas.style.cursor = "crosshair";
@@ -1049,12 +1821,14 @@ function closeAndCommitPolygon() {
   };
 
   state.boxes.push(newPoly);
+  state.selectedBoxIds = new Set([newPoly.id]);
   state.selectedBoxId = newPoly.id;
   state.polygonPoints = [];
   state.isDirty = true;
   updateCleanStatus();
   setStatus(`Created ${state.activeClass.replace("_", " ")} polygon (${newPoly.points.length} vertices)`);
   render();
+  renderAnnotationCards();
 }
 
 function onMouseDown(e) {
@@ -1062,8 +1836,8 @@ function onMouseDown(e) {
   const mouseX = e.clientX - rect.left;
   const mouseY = e.clientY - rect.top;
 
-  // Middle click, space key, or shift+click = Pan
-  if (e.button === 1 || e.spaceKey || (e.button === 0 && e.shiftKey)) {
+  // Middle click, space key, or shift+click (without Alt/Ctrl) = Pan
+  if (e.button === 1 || e.spaceKey || (e.button === 0 && e.shiftKey && !e.ctrlKey)) {
     state.isPanning = true;
     state.panStartX = mouseX - state.panX;
     state.panStartY = mouseY - state.panY;
@@ -1073,10 +1847,12 @@ function onMouseDown(e) {
   // Left click
   if (e.button === 0) {
     const pt = screenToImage(mouseX, mouseY);
+    const isCtrl = e.ctrlKey || e.metaKey;
 
-    // 1. If an item is already selected, check if user is grabbing a handle or edge
-    if (state.selectedBoxId) {
-      const selBox = state.boxes.find((b) => b.id === state.selectedBoxId);
+    // 1. If a single item is selected and not Ctrl-clicking, check its handles/endpoints FIRST!
+    if (state.selectedBoxIds && state.selectedBoxIds.size === 1 && !isCtrl) {
+      const singleId = [...state.selectedBoxIds][0];
+      const selBox = state.boxes.find((b) => b.id === singleId);
       if (selBox) {
         let handleType = null;
         if (selBox.type === "line") {
@@ -1093,12 +1869,66 @@ function onMouseDown(e) {
           state.dragBoxId = selBox.id;
           state.dragStartMouse = { x: pt.x, y: pt.y };
           state.dragOriginalBox = JSON.parse(JSON.stringify(selBox));
+          if (handleType === "move") {
+            state.dragOriginalBoxes = new Map([[selBox.id, JSON.parse(JSON.stringify(selBox))]]);
+          } else {
+            state.dragOriginalBoxes = null;
+          }
           return;
         }
       }
     }
 
-    // 2. POLYGON TOOL
+    // 2. Check if clicking directly on an endpoint of ANY line or vertex of ANY polygon (even unselected)
+    if (!isCtrl) {
+      for (let i = state.boxes.length - 1; i >= 0; i--) {
+        const b = state.boxes[i];
+        if (b.type === "line") {
+          const lh = findLineHandleAt(pt.x, pt.y, b);
+          if (lh === "p1" || lh === "p2") {
+            selectBox(b.id, false);
+            state.isDraggingHandle = true;
+            state.dragHandleType = lh;
+            state.dragBoxId = b.id;
+            state.dragStartMouse = { x: pt.x, y: pt.y };
+            state.dragOriginalBox = JSON.parse(JSON.stringify(b));
+            state.dragOriginalBoxes = null;
+            return;
+          }
+        } else if (b.type === "polygon") {
+          const ph = findPolygonHandleAt(pt.x, pt.y, b, false);
+          if (ph && ph.startsWith("vertex_")) {
+            selectBox(b.id, false);
+            state.isDraggingHandle = true;
+            state.dragHandleType = ph;
+            state.dragBoxId = b.id;
+            state.dragStartMouse = { x: pt.x, y: pt.y };
+            state.dragOriginalBox = JSON.parse(JSON.stringify(b));
+            state.dragOriginalBoxes = null;
+            return;
+          }
+        }
+      }
+    }
+
+    // 3. Check if clicking on an already-selected shape to drag-move ALL selected shapes (batch move)
+    const clickedBox = findBoxAt(pt.x, pt.y);
+    if (clickedBox && state.selectedBoxIds && state.selectedBoxIds.has(clickedBox.id) && !isCtrl) {
+      state.isDraggingHandle = true;
+      state.dragHandleType = "move";
+      state.dragBoxId = clickedBox.id;
+      state.dragStartMouse = { x: pt.x, y: pt.y };
+      state.dragOriginalBoxes = new Map();
+      for (const id of state.selectedBoxIds) {
+        const b = state.boxes.find((x) => x.id === id);
+        if (b) {
+          state.dragOriginalBoxes.set(id, JSON.parse(JSON.stringify(b)));
+        }
+      }
+      return;
+    }
+
+    // 4. POLYGON TOOL
     if (state.activeTool === "polygon") {
       // Check if clicking near first point to close
       if (state.polygonPoints.length >= 3) {
@@ -1110,27 +1940,26 @@ function onMouseDown(e) {
         }
       }
 
-      // If no points in progress yet and Alt is held or clicking existing shape to select
-      if (state.polygonPoints.length === 0 && e.altKey) {
+      // If no points in progress yet and Alt/Ctrl is held, clicking shape selects it
+      if (state.polygonPoints.length === 0 && (e.altKey || isCtrl)) {
         const clicked = findBoxAt(pt.x, pt.y);
         if (clicked) {
-          state.selectedBoxId = clicked.id;
-          setActiveClass(clicked.label);
-          render();
+          selectBox(clicked.id, isCtrl);
           return;
         }
       }
 
       // Add vertex to polygon
       state.polygonPoints.push(pt);
+      state.selectedBoxIds.clear();
       state.selectedBoxId = null;
       setStatus(`Polygon: ${state.polygonPoints.length} points placed. Click more, double-click or click first point to close.`);
       render();
+      renderAnnotationCards();
       return;
     }
 
-    // 3. BOX OR LINE TOOL
-    // Start drawing new shape or preparing to select on mouseUp if drag is small
+    // 5. BOX OR LINE TOOL
     state.isDrawing = true;
     state.drawStartX = pt.x;
     state.drawStartY = pt.y;
@@ -1150,6 +1979,38 @@ function onMouseMove(e) {
   if (state.isPanning) {
     state.panX = mouseX - state.panStartX;
     state.panY = mouseY - state.panStartY;
+    render();
+    return;
+  }
+
+  // Batch Move Handling
+  if (state.isDraggingHandle && state.dragHandleType === "move" && state.dragOriginalBoxes && state.dragOriginalBoxes.size > 0) {
+    const dx = Math.round(pt.x - state.dragStartMouse.x);
+    const dy = Math.round(pt.y - state.dragStartMouse.y);
+    for (const [id, orig] of state.dragOriginalBoxes.entries()) {
+      const b = state.boxes.find((x) => x.id === id);
+      if (!b) continue;
+      if (b.type === "polygon" && orig.points) {
+        b.points = orig.points.map((p) => [Math.round(p[0] + dx), Math.round(p[1] + dy)]);
+        const xs = b.points.map((p) => p[0]);
+        const ys = b.points.map((p) => p[1]);
+        b.x = Math.min(...xs);
+        b.y = Math.min(...ys);
+        b.width = Math.max(...xs) - b.x;
+        b.height = Math.max(...ys) - b.y;
+      } else if (b.type === "line") {
+        b.x1 = Math.round(orig.x1 + dx);
+        b.y1 = Math.round(orig.y1 + dy);
+        b.x2 = Math.round(orig.x2 + dx);
+        b.y2 = Math.round(orig.y2 + dy);
+        b.x = Math.min(b.x1, b.x2);
+        b.y = Math.min(b.y1, b.y2);
+      } else {
+        b.x = Math.round(orig.x + dx);
+        b.y = Math.round(orig.y + dy);
+      }
+    }
+    state.isDirty = true;
     render();
     return;
   }
@@ -1238,22 +2099,27 @@ function onMouseMove(e) {
         box.width = Math.max(Math.max(...xs) - minX, 4);
         box.height = Math.max(Math.max(...ys) - minY, 4);
       } else if (box.type === "line") {
-        let x1 = orig.x1 !== undefined ? orig.x1 : orig.x;
-        let y1 = orig.y1 !== undefined ? orig.y1 : orig.y;
-        let x2 = orig.x2 !== undefined ? orig.x2 : orig.x + orig.width;
-        let y2 = orig.y2 !== undefined ? orig.y2 : orig.y + orig.height;
+        const origX1 = orig.x1 !== undefined ? orig.x1 : orig.x;
+        const origY1 = orig.y1 !== undefined ? orig.y1 : orig.y;
+        const origX2 = orig.x2 !== undefined ? orig.x2 : orig.x + orig.width;
+        const origY2 = orig.y2 !== undefined ? orig.y2 : orig.y + orig.height;
+
+        let x1 = origX1;
+        let y1 = origY1;
+        let x2 = origX2;
+        let y2 = origY2;
 
         if (state.dragHandleType === "p1") {
-          x1 = Math.round(orig.x1 + dx);
-          y1 = Math.round(orig.y1 + dy);
+          x1 = Math.round(origX1 + dx);
+          y1 = Math.round(origY1 + dy);
         } else if (state.dragHandleType === "p2") {
-          x2 = Math.round(orig.x2 + dx);
-          y2 = Math.round(orig.y2 + dy);
+          x2 = Math.round(origX2 + dx);
+          y2 = Math.round(origY2 + dy);
         } else if (state.dragHandleType === "move") {
-          x1 = Math.round(orig.x1 + dx);
-          y1 = Math.round(orig.y1 + dy);
-          x2 = Math.round(orig.x2 + dx);
-          y2 = Math.round(orig.y2 + dy);
+          x1 = Math.round(origX1 + dx);
+          y1 = Math.round(origY1 + dy);
+          x2 = Math.round(origX2 + dx);
+          y2 = Math.round(origY2 + dy);
         }
 
         box.x1 = x1;
@@ -1266,6 +2132,7 @@ function onMouseMove(e) {
         box.height = Math.max(Math.abs(y2 - y1), 2);
       }
 
+      state.isDirty = true;
       render();
       return;
     }
@@ -1280,6 +2147,19 @@ function onMouseMove(e) {
     state.currentDrawEnd = pt;
     render();
     return;
+  }
+
+  // Hover detection and cursor update
+  if (!state.isDrawing && !state.isDraggingHandle) {
+    const hBox = findBoxAt(pt.x, pt.y);
+    const hId = hBox ? hBox.id : null;
+    if (hId !== state.hoverBoxId) {
+      state.hoverBoxId = hId;
+      render();
+      document.querySelectorAll(".annotation-card").forEach((c) => {
+        c.classList.toggle("hovered", c.dataset.id === hId);
+      });
+    }
   }
 
   // Update hover cursor
@@ -1298,8 +2178,10 @@ function onMouseUp(e) {
     state.dragBoxId = null;
     state.dragStartMouse = null;
     state.dragOriginalBox = null;
+    if (state.dragOriginalBoxes) state.dragOriginalBoxes.clear();
     state.isDirty = true;
     render();
+    renderAnnotationCards();
     return;
   }
 
@@ -1310,20 +2192,15 @@ function onMouseUp(e) {
     const dragDist = Math.hypot(pt.x - state.drawStartX, pt.y - state.drawStartY);
 
     if (dragDist < 8) {
-      // Click without drag: select object under click (or deselect)
+      // Click without drag: select object under click (or toggle with Ctrl/Cmd)
       const clicked = findBoxAt(pt.x, pt.y);
+      const isMulti = e.ctrlKey || e.metaKey;
       if (clicked) {
-        state.selectedBoxId = clicked.id;
-        setActiveClass(clicked.label);
-        if (clicked.type === "line" && clicked.thickness) {
-          state.lineThickness = clicked.thickness;
-          const sl = document.getElementById("slider-line-thickness");
-          const lv = document.getElementById("line-thickness-val");
-          if (sl) sl.value = clicked.thickness;
-          if (lv) lv.innerText = `${clicked.thickness}px`;
-        }
+        selectBox(clicked.id, isMulti);
       } else {
-        state.selectedBoxId = null;
+        if (!isMulti) {
+          deselectAll();
+        }
       }
     } else {
       // Dragged: create new annotation
@@ -1349,9 +2226,11 @@ function onMouseUp(e) {
             y2: y2,
           };
           state.boxes.push(newLine);
+          state.selectedBoxIds = new Set([newLine.id]);
           state.selectedBoxId = newLine.id;
           state.isDirty = true;
           updateCleanStatus();
+          renderAnnotationCards();
         }
       } else if (state.activeTool === "box") {
         const x1 = Math.round(Math.min(state.drawStartX, pt.x));
@@ -1372,9 +2251,11 @@ function onMouseUp(e) {
             height: h,
           };
           state.boxes.push(newBox);
+          state.selectedBoxIds = new Set([newBox.id]);
           state.selectedBoxId = newBox.id;
           state.isDirty = true;
           updateCleanStatus();
+          renderAnnotationCards();
         }
       }
     }
@@ -1410,18 +2291,40 @@ function onWheel(e) {
 function onKeyDown(e) {
   if (e.target.tagName === "INPUT") return;
 
+  // Select All: Ctrl+A or Cmd+A
+  if ((e.ctrlKey || e.metaKey) && (e.key === "a" || e.key === "A")) {
+    e.preventDefault();
+    selectAll();
+    return;
+  }
+
+  // AI Auto-Label Hotkey: Y
+  if (e.key === "y" || e.key === "Y") {
+    predictCurrentImage();
+    return;
+  }
+
+  // Mark / Favorite Frame Hotkey: K
+  if (e.key === "k" || e.key === "K") {
+    e.preventDefault();
+    toggleFavoriteCurrentFile();
+    return;
+  }
+
   // Tool Selection Hotkeys
   if (e.key === "b" || e.key === "B") setTool("box");
   if (e.key === "p" || e.key === "P") setTool("polygon");
   if (e.key === "l" || e.key === "L") setTool("line");
   if (e.key === "f" || e.key === "F") selectFullFrame();
 
-  // Class Selection Hotkeys
-  if (e.key === "1") setActiveClass("satellite_streak");
-  if (e.key === "2") setActiveClass("airplane");
-  if (e.key === "3") setActiveClass("cloud");
-  if (e.key === "4") setActiveClass("obstruction");
-  if (e.key === "5") setActiveClass("star_trail");
+  // Class Selection & Batch Relabel Hotkeys: 1 - 9
+  if (e.key >= "1" && e.key <= "9") {
+    const idx = parseInt(e.key, 10) - 1;
+    if (state.classes && idx < state.classes.length) {
+      setActiveClass(state.classes[idx]);
+      return;
+    }
+  }
 
   // Zoom hotkeys
   if (e.key === "+" || e.key === "=") zoomIn();
@@ -1470,12 +2373,17 @@ function onKeyDown(e) {
     }
   }
 
-  // Cancel polygon or delete
+  // Cancel polygon or deselect
   if (e.key === "Escape") {
     if (state.polygonPoints.length > 0) {
       state.polygonPoints = [];
       setStatus("Cancelled polygon shape.");
       render();
+      return;
+    }
+    if (state.selectedBoxIds && state.selectedBoxIds.size > 0) {
+      deselectAll();
+      return;
     }
   }
 
@@ -1485,12 +2393,9 @@ function onKeyDown(e) {
       render();
       return;
     }
-    if (state.selectedBoxId) {
-      state.boxes = state.boxes.filter((b) => b.id !== state.selectedBoxId);
-      state.selectedBoxId = null;
-      state.isDirty = true;
-      updateCleanStatus();
-      render();
+    if (state.selectedBoxIds && state.selectedBoxIds.size > 0) {
+      deleteSelected();
+      return;
     }
   }
 }
@@ -1609,7 +2514,8 @@ function render() {
 
   // Draw existing annotations (boxes, lines, polygons)
   state.boxes.forEach((b) => {
-    const isSelected = b.id === state.selectedBoxId;
+    const isSelected = state.selectedBoxIds ? state.selectedBoxIds.has(b.id) : (b.id === state.selectedBoxId);
+    const isHovered = (b.id === state.hoverBoxId);
     const col = CLASS_COLORS[b.label] || "#4299e1";
     const fontSize = Math.max(10, Math.min(14, 12 / state.zoom));
     ctx.font = `${fontSize}px monospace`;
@@ -1627,16 +2533,25 @@ function render() {
       ctx.closePath();
 
       // Semi-transparent fill
-      ctx.fillStyle = isSelected ? "rgba(255, 255, 255, 0.28)" : hexToRgba(col, 0.18);
+      ctx.fillStyle = isSelected ? "rgba(255, 255, 255, 0.32)" : (isHovered ? "rgba(99, 179, 237, 0.28)" : hexToRgba(col, 0.18));
       ctx.fill();
 
+      // Hover glow outline
+      if (isHovered) {
+        ctx.save();
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 3.5 / state.zoom;
+        ctx.stroke();
+        ctx.restore();
+      }
+
       // Stroke
-      ctx.strokeStyle = col;
-      ctx.lineWidth = (isSelected ? 3.0 : 1.8) / state.zoom;
+      ctx.strokeStyle = isSelected ? "#ffffff" : col;
+      ctx.lineWidth = (isSelected ? 3.0 : (isHovered ? 2.5 : 1.8)) / state.zoom;
       ctx.stroke();
 
       // Vertices (draggable handles)
-      const vr = (isSelected ? 4.5 : 2.5) / state.zoom;
+      const vr = (isSelected ? 4.5 : (isHovered ? 3.5 : 2.5)) / state.zoom;
       for (let i = 0; i < b.points.length; i++) {
         const vx = b.points[i][0] * state.previewScale;
         const vy = b.points[i][1] * state.previewScale;
@@ -1669,7 +2584,7 @@ function render() {
       // Draw semi-transparent buffer swath around line
       if (renderThick > 1) {
         ctx.save();
-        ctx.strokeStyle = hexToRgba(col, isSelected ? 0.28 : 0.16);
+        ctx.strokeStyle = hexToRgba(col, isSelected ? 0.28 : (isHovered ? 0.24 : 0.16));
         ctx.lineWidth = renderThick;
         ctx.lineCap = "round";
         ctx.beginPath();
@@ -1679,15 +2594,27 @@ function render() {
         ctx.restore();
       }
 
-      ctx.strokeStyle = col;
-      ctx.lineWidth = (isSelected ? 3.5 : 2.0) / state.zoom;
+      // Hover glow for line
+      if (isHovered) {
+        ctx.save();
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 4.5 / state.zoom;
+        ctx.beginPath();
+        ctx.moveTo(lx1, ly1);
+        ctx.lineTo(lx2, ly2);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      ctx.strokeStyle = isSelected ? "#ffffff" : col;
+      ctx.lineWidth = (isSelected ? 3.5 : (isHovered ? 2.8 : 2.0)) / state.zoom;
       ctx.beginPath();
       ctx.moveTo(lx1, ly1);
       ctx.lineTo(lx2, ly2);
       ctx.stroke();
 
       // Draw endpoint circles (draggable handles)
-      const r = (isSelected ? 6.0 : 3.0) / state.zoom;
+      const r = (isSelected ? 6.0 : (isHovered ? 4.5 : 3.0)) / state.zoom;
       ctx.fillStyle = isSelected ? "#ffffff" : col;
       ctx.strokeStyle = isSelected ? "#000000" : col;
       ctx.lineWidth = (isSelected ? 2.0 : 1.0) / state.zoom;
@@ -1716,11 +2643,20 @@ function render() {
       const pw = b.width * state.previewScale;
       const ph = b.height * state.previewScale;
 
-      ctx.fillStyle = isSelected ? "rgba(255, 255, 255, 0.18)" : hexToRgba(col, 0.12);
+      ctx.fillStyle = isSelected ? "rgba(255, 255, 255, 0.22)" : (isHovered ? "rgba(99, 179, 237, 0.22)" : hexToRgba(col, 0.12));
       ctx.fillRect(px, py, pw, ph);
 
-      ctx.strokeStyle = col;
-      ctx.lineWidth = (isSelected ? 2.5 : 1.5) / state.zoom;
+      // Hover glow for box
+      if (isHovered) {
+        ctx.save();
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 3.5 / state.zoom;
+        ctx.strokeRect(px, py, pw, ph);
+        ctx.restore();
+      }
+
+      ctx.strokeStyle = isSelected ? "#ffffff" : col;
+      ctx.lineWidth = (isSelected ? 2.5 : (isHovered ? 2.0 : 1.5)) / state.zoom;
       ctx.strokeRect(px, py, pw, ph);
 
       ctx.fillStyle = col;
