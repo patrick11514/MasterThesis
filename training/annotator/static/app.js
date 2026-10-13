@@ -47,7 +47,7 @@ const state = {
   activeAbortController: null,
 
   // AI & Class State
-  classes: ["satellite_streak", "airplane", "cloud", "obstruction", "star_trail", "unfocused_stars"],
+  classes: ["satellite_streak", "airplane", "cloud", "obstruction", "star_trail", "unfocused_star"],
   availableModels: [],
   selectedModel: "",
   aiConfidence: 0.25,
@@ -73,7 +73,7 @@ const CLASS_COLORS = {
   cloud: "#4299e1",
   obstruction: "#9f7aea",
   star_trail: "#ecc94b",
-  unfocused_stars: "#38b2ac",
+  unfocused_star: "#38b2ac",
 };
 
 const canvas = document.getElementById("viewport");

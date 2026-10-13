@@ -331,19 +331,94 @@ Results, checkpoints, and auto-exported ONNX weights are saved under `runs/segme
 To run the complete pipeline—dataset health check, 512×512 slicing for both CNN and YOLO, training YOLO11-seg, and training all CNN architectures (AstroNet, ResNet18, MobileNetV3, EfficientNet-B0)—with a single command:
 
 ```bash
-python master_train.py --data-dir ../TRAINING_FILES --yolo-model yolo11n-seg.pt --no-amp
+python master_train.py --data-dir ../TRAINING_FILES --yolo-backbone yolo11n-seg.pt --no-amp
 ```
 
 Useful flags:
 - `--skip-prep`: Skip tile slicing if `dataset/` and `dataset_yolo/` already exist.
 - `--skip-yolo`: Skip YOLO segmentation training (train only CNNs).
-- `--skip-cnns`: Skip CNN training (train only YOLO segmentation).
+- `--skip-cnn`: Skip CNN training (train only YOLO segmentation).
 - `--cnn-models astronet resnet18`: Train a specific subset of CNN models.
 - `--cnn-epochs 20 --cnn-patience 5`: Set epochs and early stopping patience for CNNs.
 - `--yolo-epochs 30 --yolo-patience 8`: Set epochs and early stopping patience for YOLO.
 - `--no-amp`: Disables mixed precision (recommended for RDNA4 ROCm stability).
+- `--auto-resume`: Automatically detects existing `best.pt` / `best_model.pt` checkpoints and fine-tunes them instead of training from scratch!
 
 Upon completion, `master_train.py` outputs a comparative performance summary table comparing parameters, test loss, and F1 scores across all trained architectures.
+
+---
+
+### Step 3.6: Updating the Dataset & Continuing Training (Incremental Fine-Tuning)
+
+When you label new FITS images or introduce additional defect examples (e.g. adding more `unfocused_stars` or faint satellite streaks), **you do NOT need to retrain models from scratch!** You can extend previous checkpoints (`best.pt` / `best_model.pt`).
+
+#### 1. End-to-End One-Click Update (`master_train.py --auto-resume`)
+
+Re-slice the new data and continue training both YOLO and all CNN backbones from their best saved checkpoints:
+
+```bash
+python master_train.py \
+  --data-dir ../TRAINING_FILES \
+  --auto-resume \
+  --yolo-epochs 20 \
+  --cnn-epochs 15 \
+  --patience 5 \
+  --lr 0.0005 \
+  --no-amp
+```
+
+`master_train.py` will:
+1. Re-slice all FITS files into updated `dataset/` and `dataset_yolo/` folders.
+2. Detect `runs/segment/yolo11_astro/weights/best.pt` and fine-tune YOLO on the extended dataset.
+3. Detect each `checkpoints/<model>_f32/best_model.pt` and resume PyTorch CNN training with fine-tuning learning rate.
+
+#### 2. Fine-Tuning YOLO11-seg Directly (`train_yolo.py`)
+
+To continue training YOLO from your previously trained champion model:
+
+```bash
+# Pass the best checkpoint path via --model / --resume
+python train_yolo.py \
+  --model runs/segment/yolo11_astro/weights/best.pt \
+  --data dataset_yolo/dataset.yaml \
+  --epochs 20 \
+  --patience 7 \
+  --lr 0.0005 \
+  --no-amp
+```
+
+> **Tip**: When fine-tuning on new data, lower the initial learning rate (`--lr 0.0005` or `0.0002` instead of `0.001`) to preserve previous feature representations and avoid catastrophic forgetting.
+
+#### 3. Fine-Tuning CNN Models Directly (`train.py --resume`)
+
+To continue training any classification CNN (e.g., AstroNet or ResNet18) from its previous best checkpoint:
+
+```bash
+# Resume AstroNet on updated dataset
+python train.py \
+  --model astronet \
+  --input-mode f32 \
+  --resume checkpoints/astronet_f32/best_model.pt \
+  --epochs 15 \
+  --patience 5 \
+  --lr 0.0003
+
+# Resume ResNet18
+python train.py \
+  --model resnet18 \
+  --input-mode f32 \
+  --resume checkpoints/resnet18_f32/best_model.pt \
+  --epochs 15 \
+  --patience 5 \
+  --lr 0.0003
+```
+
+The script will log:
+```
+[Resume] Successfully loaded 82 layers from checkpoints/astronet_f32/best_model.pt
+         Checkpoint details: Epoch 14, Macro F1: 0.9124
+```
+If a new defect class was added to `fits_utils.py` since the checkpoint was saved, `train.py` automatically preserves the feature extractor weights and re-initializes only the final classification head for the new number of classes (`strict=False` matching).
 
 ---
 

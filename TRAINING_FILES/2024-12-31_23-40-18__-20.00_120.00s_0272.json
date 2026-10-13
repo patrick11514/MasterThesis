@@ -1,10 +1,10 @@
 {
   "file_name": "2024-12-31_23-40-18__-20.00_120.00s_0272.fits",
-  "width": 0,
-  "height": 0,
+  "width": 3840,
+  "height": 2160,
   "global_star_trailing": false,
   "global_cloud": false,
   "is_clean": true,
-  "boxes": [],
-  "favorite": true
+  "favorite": true,
+  "boxes": []
 }

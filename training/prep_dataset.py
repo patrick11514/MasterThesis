@@ -22,15 +22,9 @@ from fits_utils import (
     to_asinh_f32,
     to_auto_stf_f32,
     to_stf_u8,
+    CLASSES,
 )
 
-CLASSES = [
-    "satellite_streak",
-    "airplane",
-    "cloud",
-    "obstruction",
-    "star_trail",
-]
 
 
 def box_intersects_tile(box: dict, tile_x: int, tile_y: int, tile_size: int) -> bool:

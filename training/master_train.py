@@ -41,6 +41,7 @@ def run_cnn_training(
     lr: float,
     device_arg: Optional[str],
     out_dir: Path,
+    resume_checkpoint: Optional[str] = None,
 ) -> Dict:
     """Invokes train.py as a subprocess to keep PyTorch CUDA context clean between architectures."""
     cmd = [
@@ -54,8 +55,11 @@ def run_cnn_training(
         "--lr", str(lr),
         "--out-dir", str(out_dir),
     ]
+    if resume_checkpoint:
+        cmd.extend(["--resume", str(resume_checkpoint)])
 
-    print(f"\n>>> Running CNN Training: {model_name} (Epochs: {epochs}, Patience: {patience})")
+    resume_msg = f" [Resume from: {resume_checkpoint}]" if resume_checkpoint else ""
+    print(f"\n>>> Running CNN Training: {model_name} (Epochs: {epochs}, Patience: {patience}){resume_msg}")
     t0 = time.time()
     env = os.environ.copy()
     if device_arg:
@@ -131,6 +135,12 @@ def main():
     parser.add_argument("--device", type=str, default=None, help="Device to use (e.g. 0, cpu)")
     parser.add_argument("--no-amp", action="store_true", help="Disable mixed precision")
     parser.add_argument("--no-onnx", action="store_true", help="Skip ONNX exports")
+    parser.add_argument("--auto-resume", action="store_true",
+                        help="Automatically detect and resume from existing best.pt checkpoints for YOLO and CNNs")
+    parser.add_argument("--resume-yolo", type=str, default=None,
+                        help="Explicit checkpoint to resume / fine-tune YOLO from")
+    parser.add_argument("--resume-cnns", action="store_true",
+                        help="Automatically resume CNN models from their respective checkpoints/<model>_f32/best_model.pt")
 
     args = parser.parse_args()
 
@@ -171,8 +181,17 @@ def main():
         if not yaml_path.exists():
             print(f"Error: YOLO config {yaml_path} does not exist. Ensure Step 1 completed successfully.")
         else:
+            yolo_backbone = args.yolo_backbone
+            default_yolo_best = Path("runs/segment/yolo11_astro/weights/best.pt")
+            if args.resume_yolo:
+                yolo_backbone = args.resume_yolo
+                print(f" [Auto-Resume] Using specified YOLO resume weights: {yolo_backbone}")
+            elif args.auto_resume and default_yolo_best.exists():
+                yolo_backbone = str(default_yolo_best)
+                print(f" [Auto-Resume] Found previous YOLO champion: {yolo_backbone}. Fine-tuning on new data!")
+
             train_yolo(
-                model_name=args.yolo_backbone,
+                model_name=yolo_backbone,
                 data_yaml=str(yaml_path),
                 epochs=args.yolo_epochs,
                 batch=args.yolo_batch,
@@ -203,6 +222,12 @@ def main():
         checkpoints_dir.mkdir(parents=True, exist_ok=True)
 
         for m_name in args.cnn_models:
+            cnn_resume_path = None
+            default_cnn_best = checkpoints_dir / f"{m_name}_f32" / "best_model.pt"
+            if (args.auto_resume or args.resume_cnns) and default_cnn_best.exists():
+                cnn_resume_path = str(default_cnn_best)
+                print(f" [Auto-Resume] Found previous checkpoint for {m_name}: {cnn_resume_path}. Continuing training!")
+
             res = run_cnn_training(
                 model_name=m_name,
                 dataset_dir=Path(args.out_dir),
@@ -212,6 +237,7 @@ def main():
                 lr=args.lr,
                 device_arg=args.device,
                 out_dir=checkpoints_dir,
+                resume_checkpoint=cnn_resume_path,
             )
             benchmark_results.append({
                 "model": res["model"],

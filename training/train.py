@@ -244,6 +244,8 @@ def main():
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--weight-decay", type=float, default=1e-4)
+    parser.add_argument("--resume", "--weights", dest="resume", type=str, default=None,
+                        help="Path to existing model checkpoint (.pt) to resume or fine-tune from")
     parser.add_argument("--out-dir", type=str, default="checkpoints")
     parser.add_argument("--patience", type=int, default=5, help="Early stopping patience (epochs without improvement, 0 to disable)")
     parser.add_argument("--dry-run", action="store_true", help="Run 1 quick batch for testing")
@@ -264,6 +266,8 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
     print(f"Training Model: {args.model} | Input Mode: {args.input_mode} | From Scratch: {args.from_scratch} | Patience: {args.patience}")
+    if args.resume:
+        print(f"Resume / Fine-tune weights: {args.resume}")
 
     train_ds = AstroPatchDataset(train_manifest, dataset_dir.parent, input_mode=args.input_mode, augment=True)
     val_ds = AstroPatchDataset(val_manifest, dataset_dir.parent, input_mode=args.input_mode, augment=False)
@@ -274,10 +278,17 @@ def main():
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=2, pin_memory=pin_mem)
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False, num_workers=2)
 
-    # Positive class weighting for imbalanced defect frequencies
     with open(train_manifest, "r", encoding="utf-8") as f:
         records = json.load(f)
     if records:
+        manifest_classes = len(records[0].get("labels", []))
+        if manifest_classes != NUM_CLASSES:
+            raise ValueError(
+                f"Manifest class count mismatch: '{train_manifest}' has {manifest_classes} classes per sample, "
+                f"but models are configured with NUM_CLASSES={NUM_CLASSES} ({CLASSES}).\n"
+                f"Please re-run dataset preparation to sync manifests with current classes:\n"
+                f"  python prep_dataset.py --data-dir ../TRAINING_FILES --out-dir dataset --export-yolo"
+            )
         all_labels = np.array([r["labels"] for r in records])
         pos_counts = np.sum(all_labels, axis=0)
         neg_counts = len(records) - pos_counts
@@ -292,6 +303,34 @@ def main():
     # Build model
     pretrained = not args.from_scratch and args.model != "astronet"
     model = build_model(args.model, pretrained=pretrained, num_classes=NUM_CLASSES).to(device)
+
+    # Load resume weights if requested
+    if args.resume:
+        resume_path = Path(args.resume)
+        if not resume_path.exists():
+            print(f"Error: Specified resume checkpoint not found: {resume_path}")
+            return
+        checkpoint = torch.load(resume_path, map_location=device)
+        state_dict = checkpoint.get("state_dict", checkpoint) if isinstance(checkpoint, dict) else checkpoint
+        prev_epoch = checkpoint.get("epoch", "N/A") if isinstance(checkpoint, dict) else "N/A"
+        prev_f1 = checkpoint.get("metrics", {}).get("macro_f1", "N/A") if isinstance(checkpoint, dict) else "N/A"
+
+        # Filter out mismatching layer keys (e.g. if num_classes changed)
+        model_dict = model.state_dict()
+        filtered_dict = {}
+        mismatched_keys = []
+        for k, v in state_dict.items():
+            if k in model_dict and model_dict[k].shape == v.shape:
+                filtered_dict[k] = v
+            else:
+                mismatched_keys.append(k)
+
+        model_dict.update(filtered_dict)
+        model.load_state_dict(model_dict)
+        print(f" [Resume] Successfully loaded {len(filtered_dict)} layers from {resume_path}")
+        print(f"          Checkpoint details: Epoch {prev_epoch}, Macro F1: {prev_f1}")
+        if mismatched_keys:
+            print(f"          Skipped {len(mismatched_keys)} mismatched or non-matching keys: {mismatched_keys[:3]}...")
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)

@@ -147,10 +147,11 @@ def train_yolo(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="AstroGrader YOLO11-seg Training Runner")
     parser.add_argument(
-        "--model",
+        "--model", "--weights", "--resume",
+        dest="model",
         type=str,
         default="yolo11n-seg.pt",
-        help="Model backbone weights (e.g. yolo11n-seg.pt, yolo11s-seg.pt, yolo11m-seg.pt)",
+        help="Model backbone weights or previous best checkpoint to fine-tune from (e.g. yolo11n-seg.pt, runs/segment/yolo11_astro/weights/best.pt)",
     )
     parser.add_argument(
         "--data",

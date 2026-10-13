@@ -50,7 +50,7 @@ YOLO_MODEL_CACHE = {}
 
 class BoundingBox(BaseModel):
     id: str
-    label: str  # satellite_streak, airplane, cloud, obstruction, star_trail, unfocused_stars
+    label: str  # satellite_streak, airplane, cloud, obstruction, star_trail, unfocused_star
     type: str = "box"  # "box", "line", "polygon"
     x: float = 0.0     # pixel coords on full image
     y: float = 0.0
