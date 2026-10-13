@@ -5,36 +5,39 @@
   "global_star_trailing": false,
   "global_cloud": false,
   "is_clean": false,
+  "favorite": false,
   "boxes": [
     {
       "id": "l_1790847890383",
       "label": "satellite_streak",
       "type": "line",
       "x": -3.0,
-      "y": 900.0,
+      "y": 899.0,
       "width": 3931.0,
       "height": 648.0,
       "x1": -3.0,
-      "y1": 1548.0,
+      "y1": 1547.0,
       "x2": 3928.0,
-      "y2": 900.0,
+      "y2": 899.0,
       "points": null,
-      "confidence": null
+      "confidence": null,
+      "thickness": 6.0
     },
     {
       "id": "l_1790847896603",
       "label": "satellite_streak",
       "type": "line",
-      "x": -17.0,
+      "x": -15.0,
       "y": 1463.0,
       "width": 4075.0,
       "height": 294.0,
-      "x1": -17.0,
+      "x1": -15.0,
       "y1": 1757.0,
-      "x2": 4058.0,
+      "x2": 4060.0,
       "y2": 1463.0,
       "points": null,
-      "confidence": null
+      "confidence": null,
+      "thickness": 6.0
     },
     {
       "id": "poly_1791538734449",
@@ -62,7 +65,8 @@
           -30.0
         ]
       ],
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
     }
   ]
 }
