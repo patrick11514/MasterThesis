@@ -248,6 +248,7 @@ function init() {
         }
       }
       render();
+      renderAnnotationCards();
     });
   }
 
@@ -470,6 +471,11 @@ function selectBox(id, multi = false) {
 
   state.selectedBoxId = state.selectedBoxIds.size === 1 ? [...state.selectedBoxIds][0] : null;
 
+  const thickGroup = document.getElementById("line-thickness-group");
+  const lblThick = document.getElementById("lbl-line-thickness");
+  const slThick = document.getElementById("slider-line-thickness");
+  const lvThick = document.getElementById("line-thickness-val");
+
   if (state.selectedBoxId) {
     const b = state.boxes.find((x) => x.id === state.selectedBoxId);
     if (b) {
@@ -477,13 +483,32 @@ function selectBox(id, multi = false) {
       document.querySelectorAll(".btn-class").forEach((btn) => {
         btn.classList.toggle("active", btn.dataset.class === b.label);
       });
-      if (b.type === "line" && b.thickness) {
-        state.lineThickness = b.thickness;
-        const sl = document.getElementById("slider-line-thickness");
-        const lv = document.getElementById("line-thickness-val");
-        if (sl) sl.value = b.thickness;
-        if (lv) lv.innerText = `${b.thickness}px`;
+      if (b.type === "line") {
+        const thick = b.thickness || state.lineThickness || 16;
+        b.thickness = thick;
+        state.lineThickness = thick;
+        if (slThick) slThick.value = thick;
+        if (lvThick) lvThick.innerText = `${thick}px`;
+        if (lblThick) lblThick.innerText = "Selected Line Width:";
+        if (thickGroup) thickGroup.classList.add("selected-line");
+      } else {
+        if (lblThick) lblThick.innerText = "Line Width:";
+        if (thickGroup) thickGroup.classList.remove("selected-line");
       }
+    }
+  } else {
+    const selectedLines = [...state.selectedBoxIds]
+      .map((id) => state.boxes.find((x) => x.id === id))
+      .filter((x) => x && x.type === "line");
+    if (selectedLines.length > 0) {
+      const thick = selectedLines[0].thickness || state.lineThickness || 16;
+      if (slThick) slThick.value = thick;
+      if (lvThick) lvThick.innerText = `${thick}px`;
+      if (lblThick) lblThick.innerText = `Selected Lines (${selectedLines.length}) Width:`;
+      if (thickGroup) thickGroup.classList.add("selected-line");
+    } else {
+      if (lblThick) lblThick.innerText = "Line Width:";
+      if (thickGroup) thickGroup.classList.remove("selected-line");
     }
   }
 
@@ -503,6 +528,10 @@ function deselectAll() {
   state.selectedBoxIds.clear();
   state.selectedBoxId = null;
   state.hoverBoxId = null;
+  const thickGroup = document.getElementById("line-thickness-group");
+  const lblThick = document.getElementById("lbl-line-thickness");
+  if (lblThick) lblThick.innerText = "Line Width:";
+  if (thickGroup) thickGroup.classList.remove("selected-line");
   render();
   renderAnnotationCards();
 }
@@ -732,7 +761,21 @@ function renderSelectByClassDropdown() {
 
 async function loadAvailableModels() {
   const sel = document.getElementById("select-ai-model");
+  const btnRun = document.getElementById("btn-run-ai");
   if (!sel) return;
+
+  function updatePredictBtnText() {
+    if (!btnRun) return;
+    const cur = state.availableModels.find((m) => m.full_path === sel.value);
+    if (cur && cur.type === "cnn") {
+      btnRun.innerText = "⚡ Predict with CNN (Y)";
+      btnRun.title = "Run CNN tile classification and adjacent square merging [Y]";
+    } else {
+      btnRun.innerText = "⚡ Predict with YOLO (Y)";
+      btnRun.title = "Run YOLO segmentation on current frame [Y]";
+    }
+  }
+
   sel.innerHTML = '<option value="">Loading models...</option>';
   try {
     const res = await fetch("/api/models");
@@ -741,7 +784,7 @@ async function loadAvailableModels() {
     state.availableModels = data.models || [];
     sel.innerHTML = "";
     if (state.availableModels.length === 0) {
-      sel.innerHTML = '<option value="">No .pt models found</option>';
+      sel.innerHTML = '<option value="">No models found</option>';
       return;
     }
     state.availableModels.forEach((m, idx) => {
@@ -753,6 +796,12 @@ async function loadAvailableModels() {
       sel.appendChild(opt);
     });
     state.selectedModel = sel.value;
+
+    sel.onchange = () => {
+      state.selectedModel = sel.value;
+      updatePredictBtnText();
+    };
+    updatePredictBtnText();
   } catch (err) {
     sel.innerHTML = `<option value="">Error loading models: ${err.message}</option>`;
   }
@@ -766,13 +815,20 @@ async function predictCurrentImage() {
   const sel = document.getElementById("select-ai-model");
   const modelPath = sel ? sel.value : state.selectedModel;
   if (!modelPath) {
-    alert("Please select a trained model checkpoint (.pt) first.");
+    alert("Please select a trained model checkpoint (.pt or .onnx) first.");
     return;
   }
 
+  const curModel = state.availableModels.find((m) => m.full_path === modelPath);
+  const isCnn = curModel && curModel.type === "cnn";
+
   const statusEl = document.getElementById("ai-status");
   const btnRun = document.getElementById("btn-run-ai");
-  if (statusEl) statusEl.innerText = "Running YOLO segmentation...";
+  if (statusEl) {
+    statusEl.innerText = isCnn
+      ? "Running CNN tile inference & merging..."
+      : "Running YOLO segmentation...";
+  }
   if (btnRun) {
     btnRun.disabled = true;
     btnRun.innerText = "⏳ Predicting...";
@@ -787,6 +843,7 @@ async function predictCurrentImage() {
       tile_size: 512,
       stride: 460,
       device: "auto",
+      merge_adjacent: true,
     };
     const res = await fetch("/api/models/predict", {
       method: "POST",
@@ -807,6 +864,7 @@ async function predictCurrentImage() {
     }
 
     state.selectedBoxIds = new Set(newBoxes.map((b) => b.id));
+    state.selectedBoxId = newBoxes.length === 1 ? newBoxes[0].id : null;
     if (newBoxes.length > 0) {
       state.isClean = false;
       const chkClean = document.getElementById("chk-clean-sky");
@@ -814,10 +872,13 @@ async function predictCurrentImage() {
     }
     state.isDirty = true;
 
+    const kindLabel = isCnn ? "defect box(es)" : "mask(s)";
     if (statusEl) {
-      statusEl.innerText = `Found ${data.count} defect(s) in ${data.elapsed_sec}s`;
+      statusEl.innerText = `Found ${data.count} ${kindLabel} in ${data.elapsed_sec}s`;
     }
-    setStatus(`AI Auto-Label: ${data.count} polygons generated using ${data.model} in ${data.elapsed_sec}s.`);
+    setStatus(
+      `AI Auto-Label: ${data.count} ${kindLabel} generated using ${data.model} in ${data.elapsed_sec}s.`
+    );
     render();
     renderAnnotationCards();
   } catch (err) {
@@ -826,7 +887,7 @@ async function predictCurrentImage() {
   } finally {
     if (btnRun) {
       btnRun.disabled = false;
-      btnRun.innerText = "⚡ Predict with YOLO (Y)";
+      btnRun.innerText = isCnn ? "⚡ Predict with CNN (Y)" : "⚡ Predict with YOLO (Y)";
     }
   }
 }
@@ -1785,8 +1846,9 @@ function findBoxAt(x, y) {
       const x2 = b.x2 !== undefined ? b.x2 : b.x + b.width;
       const y2 = b.y2 !== undefined ? b.y2 : b.y + b.height;
       const d = distToSegment(x, y, x1, y1, x2, y2);
+      const halfThick = (b.thickness || 16) / 2;
       const threshold = 16 / (state.zoom * state.previewScale);
-      if (d <= Math.max(10, threshold)) return b;
+      if (d <= Math.max(10, halfThick, threshold)) return b;
     } else {
       if (x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height) {
         return b;
@@ -2226,11 +2288,9 @@ function onMouseUp(e) {
             y2: y2,
           };
           state.boxes.push(newLine);
-          state.selectedBoxIds = new Set([newLine.id]);
-          state.selectedBoxId = newLine.id;
+          selectBox(newLine.id, false);
           state.isDirty = true;
           updateCleanStatus();
-          renderAnnotationCards();
         }
       } else if (state.activeTool === "box") {
         const x1 = Math.round(Math.min(state.drawStartX, pt.x));
@@ -2251,11 +2311,9 @@ function onMouseUp(e) {
             height: h,
           };
           state.boxes.push(newBox);
-          state.selectedBoxIds = new Set([newBox.id]);
-          state.selectedBoxId = newBox.id;
+          selectBox(newBox.id, false);
           state.isDirty = true;
           updateCleanStatus();
-          renderAnnotationCards();
         }
       }
     }

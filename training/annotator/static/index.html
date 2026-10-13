@@ -70,9 +70,11 @@
           </div>
           <button id="btn-full-frame" class="btn-tool-action" title="Mark entire frame with selected class (e.g. 100% cloud cover or full sensor trail) [F]">⛶ Full Frame</button>
 
-          <label for="slider-line-thickness" title="Line buffer thickness for intersection and drawing" style="margin-left: 8px;">Line Width:</label>
-          <input type="range" id="slider-line-thickness" min="2" max="60" step="2" value="16" title="Line buffer width in sensor pixels" style="width: 70px;" />
-          <span id="line-thickness-val" class="meta" style="min-width: 32px;">16px</span>
+          <div class="line-thickness-control" id="line-thickness-group">
+            <label for="slider-line-thickness" id="lbl-line-thickness" title="Line buffer thickness for intersection and drawing" style="margin-left: 8px;">Line Width:</label>
+            <input type="range" id="slider-line-thickness" min="2" max="60" step="2" value="16" title="Line buffer width in sensor pixels" style="width: 70px;" />
+            <span id="line-thickness-val" class="meta" style="min-width: 32px;">16px</span>
+          </div>
         </div>
 
         <div class="tool-group">
@@ -164,7 +166,7 @@
       <!-- AI Auto-Label Panel -->
       <div class="sidebar-section ai-panel">
         <div class="section-header">
-          <span>⚡ AI Auto-Label (YOLO)</span>
+          <span>⚡ AI Auto-Label</span>
           <button id="btn-refresh-models" class="btn-icon" title="Refresh available models">↻</button>
         </div>
         <div class="ai-controls">
@@ -184,8 +186,8 @@
               <input type="checkbox" id="chk-ai-append" checked /> Append to existing
             </label>
           </div>
-          <button id="btn-run-ai" class="btn-action full-width" title="Run YOLO segmentation on current frame [Y]">
-            ⚡ Predict with YOLO (Y)
+          <button id="btn-run-ai" class="btn-action full-width" title="Run AI prediction on current frame [Y]">
+            ⚡ Run AI Prediction (Y)
           </button>
           <div id="ai-status" class="status-msg"></div>
         </div>

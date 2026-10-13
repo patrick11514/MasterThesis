@@ -22,11 +22,14 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from fits_utils import (
     load_fits_unified_rgb,
+    to_asinh_f32,
+    to_auto_stf_f32,
     to_stf_u8,
     CLASSES,
     CLASS_HEX_COLORS,
     CLASS_RGB_COLORS,
 )
+from models.cnn_zoo import build_model, NUM_CLASSES
 from dataset_analyzer import analyze_dataset
 
 app = FastAPI(title="AstroGrader Minimalist FITS Annotator")
@@ -46,6 +49,7 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 # Cache current loaded fits image: {path: (rgb_f32, metadata)}
 IMAGE_CACHE = {}
 YOLO_MODEL_CACHE = {}
+CNN_MODEL_CACHE = {}
 
 
 class BoundingBox(BaseModel):
@@ -62,6 +66,7 @@ class BoundingBox(BaseModel):
     y2: Optional[float] = None
     points: Optional[List[List[float]]] = None  # [[x0, y0], [x1, y1], ...] for polygon
     confidence: Optional[float] = None
+    thickness: Optional[float] = 16.0
 
 
 class FrameAnnotation(BaseModel):
@@ -83,6 +88,7 @@ class PredictRequest(BaseModel):
     tile_size: int = 512
     stride: int = 460
     device: Optional[str] = None
+    merge_adjacent: bool = True
 
 
 @app.get("/api/classes")
@@ -331,14 +337,84 @@ def calculate_iou(box1: List[float], box2: List[float]) -> float:
     return interArea / float(areaA + areaB - interArea)
 
 
+def merge_adjacent_tiles(
+    tiles: List[dict],
+    tile_size: int = 512,
+    stride: int = 460,
+) -> List[dict]:
+    """
+    Merges adjacent or overlapping square tiles belonging to the same defect class.
+    Uses connected component clustering with spatial tolerance.
+    """
+    if not tiles:
+        return []
+
+    # Tolerance for adjacent/touching edge connectivity
+    # If stride < tile_size, consecutive tiles overlap (gap <= 0).
+    # If stride >= tile_size, adjacent tiles touch at gap == 0.
+    tol = max(2.0, float(tile_size - stride) if tile_size > stride else 2.0)
+
+    def are_adjacent_or_overlapping(t1: dict, t2: dict) -> bool:
+        gap_x = max(0.0, max(t1["x"], t2["x"]) - min(t1["x"] + t1["w"], t2["x"] + t2["w"]))
+        gap_y = max(0.0, max(t1["y"], t2["y"]) - min(t1["y"] + t1["h"], t2["y"] + t2["h"]))
+        return gap_x <= tol and gap_y <= tol
+
+    n = len(tiles)
+    adj = {i: [] for i in range(n)}
+    for i in range(n):
+        for j in range(i + 1, n):
+            if are_adjacent_or_overlapping(tiles[i], tiles[j]):
+                adj[i].append(j)
+                adj[j].append(i)
+
+    visited = [False] * n
+    merged = []
+
+    for i in range(n):
+        if visited[i]:
+            continue
+
+        component = []
+        queue = [i]
+        visited[i] = True
+        while queue:
+            curr = queue.pop(0)
+            component.append(curr)
+            for neighbor in adj[curr]:
+                if not visited[neighbor]:
+                    visited[neighbor] = True
+                    queue.append(neighbor)
+
+        comp_tiles = [tiles[idx] for idx in component]
+        min_x = min(t["x"] for t in comp_tiles)
+        min_y = min(t["y"] for t in comp_tiles)
+        max_x = max(t["x"] + t["w"] for t in comp_tiles)
+        max_y = max(t["y"] + t["h"] for t in comp_tiles)
+        max_conf = max(t["conf"] for t in comp_tiles)
+
+        merged.append({
+            "class": comp_tiles[0]["class"],
+            "x": round(float(min_x), 1),
+            "y": round(float(min_y), 1),
+            "width": round(float(max_x - min_x), 1),
+            "height": round(float(max_y - min_y), 1),
+            "confidence": round(float(max_conf), 3),
+            "tiles_merged": len(component),
+        })
+
+    return merged
+
+
 @app.get("/api/models")
 def list_available_models():
     base_dir = Path(__file__).resolve().parent.parent
     patterns = [
         "runs/segment/**/weights/*.pt",
         "checkpoints/**/*.pt",
+        "checkpoints/**/*.onnx",
         "weights/*.pt",
         "*.pt",
+        "*.onnx",
     ]
     models = []
     seen = set()
@@ -349,9 +425,15 @@ def list_available_models():
                 continue
             seen.add(resolved)
             rel = str(resolved.relative_to(base_dir))
-            is_yolo = "seg" in rel.lower() or "runs/segment" in rel or "yolo" in rel.lower()
+            is_onnx = resolved.suffix.lower() == ".onnx"
+            is_yolo = not is_onnx and ("seg" in rel.lower() or "runs/segment" in rel or "yolo" in rel.lower())
+
+            display_name = resolved.name
+            if resolved.name == "best_model.pt" or (resolved.parent != base_dir and resolved.parent.name not in ("weights", "checkpoints")):
+                display_name = f"{resolved.parent.name}/{resolved.name}"
+
             models.append({
-                "name": resolved.name,
+                "name": display_name,
                 "relative_path": rel,
                 "full_path": str(resolved),
                 "size_mb": round(resolved.stat().st_size / (1024 * 1024), 2),
@@ -365,7 +447,6 @@ def list_available_models():
 @app.post("/api/models/predict")
 def predict_defect_masks(req: PredictRequest):
     import time
-    from ultralytics import YOLO
 
     fits_path = Path(req.path).resolve()
     if not fits_path.exists():
@@ -375,18 +456,18 @@ def predict_defect_masks(req: PredictRequest):
     if not model_file.exists():
         base_dir = Path(__file__).resolve().parent.parent
         alt = (base_dir / req.model_path).resolve()
+        alt_ckpt = (base_dir / "checkpoints" / req.model_path).resolve()
         if alt.exists():
             model_file = alt
+        elif alt_ckpt.exists():
+            model_file = alt_ckpt
         else:
             raise HTTPException(status_code=404, detail=f"Model checkpoint not found: {req.model_path}")
 
     cache_key = str(model_file)
-    if cache_key not in YOLO_MODEL_CACHE:
-        try:
-            YOLO_MODEL_CACHE[cache_key] = YOLO(str(model_file))
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to load YOLO model: {e}")
-    model = YOLO_MODEL_CACHE[cache_key]
+    is_onnx = model_file.suffix.lower() == ".onnx"
+    rel_path = str(model_file).lower()
+    is_yolo = not is_onnx and ("seg" in rel_path or "runs/segment" in rel_path or "yolo" in rel_path)
 
     fkey = str(fits_path)
     if fkey in IMAGE_CACHE:
@@ -401,121 +482,250 @@ def predict_defect_masks(req: PredictRequest):
             raise HTTPException(status_code=500, detail=f"Failed to load FITS: {e}")
 
     h, w, _ = rgb_f32.shape
-    stf_u8 = to_stf_u8(rgb_f32, shadows_clipping=-2.8, target_bg=0.25, rgb_linked=False, mode="stf")
-
     x_offsets = get_tile_offsets(w, req.tile_size, req.stride)
     y_offsets = get_tile_offsets(h, req.tile_size, req.stride)
 
-    tiles = []
-    coords = []
-    for y in y_offsets:
-        for x in x_offsets:
-            patch = stf_u8[y : y + req.tile_size, x : x + req.tile_size]
-            tiles.append(patch)
-            coords.append((x, y))
-
-    t0 = time.perf_counter()
     device = req.device
     if not device or device == "auto":
         import torch
         device = "0" if torch.cuda.is_available() else "cpu"
 
-    batch_size = 16
-    raw_detections = []
+    t0 = time.perf_counter()
 
-    for i in range(0, len(tiles), batch_size):
-        batch_tiles = tiles[i : i + batch_size]
-        batch_coords = coords[i : i + batch_size]
+    if is_yolo:
+        from ultralytics import YOLO
 
-        try:
-            results = model.predict(
-                source=batch_tiles,
-                conf=req.conf,
-                imgsz=req.tile_size,
-                device=device,
-                verbose=False,
-            )
-        except Exception:
-            results = model.predict(
-                source=batch_tiles,
-                conf=req.conf,
-                imgsz=req.tile_size,
-                device="cpu",
-                verbose=False,
-            )
+        if cache_key not in YOLO_MODEL_CACHE:
+            try:
+                YOLO_MODEL_CACHE[cache_key] = YOLO(str(model_file))
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to load YOLO model: {e}")
+        model = YOLO_MODEL_CACHE[cache_key]
 
-        for res, (tx, ty) in zip(results, batch_coords):
-            if res.boxes is None or len(res.boxes) == 0:
-                continue
+        stf_u8 = to_stf_u8(rgb_f32, shadows_clipping=-2.8, target_bg=0.25, rgb_linked=False, mode="stf")
 
-            has_masks = res.masks is not None and len(res.masks) > 0
+        tiles = []
+        coords = []
+        for y in y_offsets:
+            for x in x_offsets:
+                patch = stf_u8[y : y + req.tile_size, x : x + req.tile_size]
+                tiles.append(patch)
+                coords.append((x, y))
 
-            for idx in range(len(res.boxes)):
-                cid = int(res.boxes.cls[idx].item())
-                conf = float(res.boxes.conf[idx].item())
-                cname = CLASSES[cid] if 0 <= cid < len(CLASSES) else f"class_{cid}"
+        batch_size = 16
+        raw_detections = []
 
-                bx1, by1, bx2, by2 = res.boxes.xyxy[idx].tolist()
-                global_box = [bx1 + tx, by1 + ty, bx2 + tx, by2 + ty]
+        for i in range(0, len(tiles), batch_size):
+            batch_tiles = tiles[i : i + batch_size]
+            batch_coords = coords[i : i + batch_size]
 
-                poly_coords = None
-                if has_masks and idx < len(res.masks.xy):
-                    raw_poly = res.masks.xy[idx]
-                    if len(raw_poly) >= 3:
-                        pts = np.array(raw_poly, dtype=np.float32)
-                        approx = cv2.approxPolyDP(pts, epsilon=1.5, closed=True)
-                        poly_coords = [[round(float(p[0][0] + tx), 1), round(float(p[0][1] + ty), 1)] for p in approx]
+            try:
+                results = model.predict(
+                    source=batch_tiles,
+                    conf=req.conf,
+                    imgsz=req.tile_size,
+                    device=device,
+                    verbose=False,
+                )
+            except Exception:
+                results = model.predict(
+                    source=batch_tiles,
+                    conf=req.conf,
+                    imgsz=req.tile_size,
+                    device="cpu",
+                    verbose=False,
+                )
 
-                raw_detections.append({
-                    "class": cname,
-                    "confidence": conf,
-                    "box": global_box,
-                    "polygon": poly_coords,
-                })
+            for res, (tx, ty) in zip(results, batch_coords):
+                if res.boxes is None or len(res.boxes) == 0:
+                    continue
 
-    raw_detections.sort(key=lambda d: d["confidence"], reverse=True)
-    kept_detections = []
+                has_masks = res.masks is not None and len(res.masks) > 0
 
-    for det in raw_detections:
-        is_dup = False
-        for kept in kept_detections:
-            if det["class"] == kept["class"]:
-                if calculate_iou(det["box"], kept["box"]) > req.iou:
-                    is_dup = True
-                    break
-        if not is_dup:
-            kept_detections.append(det)
+                for idx in range(len(res.boxes)):
+                    cid = int(res.boxes.cls[idx].item())
+                    conf = float(res.boxes.conf[idx].item())
+                    cname = CLASSES[cid] if 0 <= cid < len(CLASSES) else f"class_{cid}"
 
-    ts_now = int(time.time() * 1000)
-    result_boxes = []
-    for idx, d in enumerate(kept_detections):
-        box_id = f"box_ai_{ts_now}_{idx}"
-        cname = d["class"]
-        conf = round(d["confidence"], 3)
-        gbox = d["box"]
+                    bx1, by1, bx2, by2 = res.boxes.xyxy[idx].tolist()
+                    global_box = [bx1 + tx, by1 + ty, bx2 + tx, by2 + ty]
 
-        if d["polygon"] and len(d["polygon"]) >= 3:
-            result_boxes.append(BoundingBox(
-                id=box_id,
-                label=cname,
-                type="polygon",
-                points=d["polygon"],
-                confidence=conf,
-                x=gbox[0],
-                y=gbox[1],
-                width=gbox[2] - gbox[0],
-                height=gbox[3] - gbox[1],
-            ))
+                    poly_coords = None
+                    if has_masks and idx < len(res.masks.xy):
+                        raw_poly = res.masks.xy[idx]
+                        if len(raw_poly) >= 3:
+                            pts = np.array(raw_poly, dtype=np.float32)
+                            approx = cv2.approxPolyDP(pts, epsilon=1.5, closed=True)
+                            poly_coords = [[round(float(p[0][0] + tx), 1), round(float(p[0][1] + ty), 1)] for p in approx]
+
+                    raw_detections.append({
+                        "class": cname,
+                        "confidence": conf,
+                        "box": global_box,
+                        "polygon": poly_coords,
+                    })
+
+        raw_detections.sort(key=lambda d: d["confidence"], reverse=True)
+        kept_detections = []
+
+        for det in raw_detections:
+            is_dup = False
+            for kept in kept_detections:
+                if det["class"] == kept["class"]:
+                    if calculate_iou(det["box"], kept["box"]) > req.iou:
+                        is_dup = True
+                        break
+            if not is_dup:
+                kept_detections.append(det)
+
+        ts_now = int(time.time() * 1000)
+        result_boxes = []
+        for idx, d in enumerate(kept_detections):
+            box_id = f"box_ai_{ts_now}_{idx}"
+            cname = d["class"]
+            conf = round(d["confidence"], 3)
+            gbox = d["box"]
+
+            if d["polygon"] and len(d["polygon"]) >= 3:
+                result_boxes.append(BoundingBox(
+                    id=box_id,
+                    label=cname,
+                    type="polygon",
+                    points=d["polygon"],
+                    confidence=conf,
+                    x=gbox[0],
+                    y=gbox[1],
+                    width=gbox[2] - gbox[0],
+                    height=gbox[3] - gbox[1],
+                ))
+            else:
+                result_boxes.append(BoundingBox(
+                    id=box_id,
+                    label=cname,
+                    type="box",
+                    x=round(gbox[0], 1),
+                    y=round(gbox[1], 1),
+                    width=round(gbox[2] - gbox[0], 1),
+                    height=round(gbox[3] - gbox[1], 1),
+                    confidence=conf,
+                ))
+
+    else:
+        # Non-YOLO CNN Model Inference
+        import torch
+
+        if is_onnx:
+            if cache_key not in CNN_MODEL_CACHE:
+                try:
+                    import onnxruntime as ort
+                    providers = ["CUDAExecutionProvider", "CPUExecutionProvider"] if (device == "0" or device == "cuda") else ["CPUExecutionProvider"]
+                    CNN_MODEL_CACHE[cache_key] = ("onnx", ort.InferenceSession(str(model_file), providers=providers), "f32")
+                except Exception as e:
+                    raise HTTPException(status_code=500, detail=f"Failed to load ONNX CNN model: {e}")
+            mtype, session, input_mode = CNN_MODEL_CACHE[cache_key]
         else:
+            if cache_key not in CNN_MODEL_CACHE:
+                try:
+                    ckpt = torch.load(str(model_file), map_location=device, weights_only=False)
+                    model_name = ckpt.get("model_name", "astronet")
+                    input_mode = ckpt.get("input_mode", "f32")
+                    sd = ckpt.get("state_dict", ckpt)
+                    num_ckpt_classes = NUM_CLASSES
+                    for k in reversed(list(sd.keys())):
+                        if (k.endswith(".weight") or k.endswith(".bias")) and len(sd[k].shape) > 0:
+                            num_ckpt_classes = sd[k].shape[0]
+                            break
+                    cnn_mod = build_model(model_name, pretrained=False, num_classes=num_ckpt_classes)
+                    cnn_mod.load_state_dict(sd)
+                    cnn_mod.to(device)
+                    cnn_mod.eval()
+                    CNN_MODEL_CACHE[cache_key] = ("pt", cnn_mod, input_mode)
+                except Exception as e:
+                    raise HTTPException(status_code=500, detail=f"Failed to load PyTorch CNN model: {e}")
+            mtype, cnn_mod, input_mode = CNN_MODEL_CACHE[cache_key]
+
+        if input_mode == "stf":
+            norm_f32 = to_auto_stf_f32(rgb_f32, rgb_linked=False)
+        else:
+            norm_f32 = to_asinh_f32(rgb_f32)
+
+        planar_f32 = np.transpose(norm_f32, (2, 0, 1)).astype(np.float32)
+
+        tiles = []
+        coords = []
+        for y in y_offsets:
+            for x in x_offsets:
+                patch = planar_f32[:, y : y + req.tile_size, x : x + req.tile_size]
+                tiles.append(patch)
+                coords.append((x, y))
+
+        batch_size = 16
+        flagged_by_class = {c: [] for c in CLASSES}
+
+        for i in range(0, len(tiles), batch_size):
+            b_tiles = tiles[i : i + batch_size]
+            b_coords = coords[i : i + batch_size]
+            batch_np = np.stack(b_tiles, axis=0).astype(np.float32)
+
+            if is_onnx:
+                inp_name = session.get_inputs()[0].name
+                out_name = session.get_outputs()[0].name
+                logits = session.run([out_name], {inp_name: batch_np})[0]
+                probs = 1.0 / (1.0 + np.exp(-np.clip(logits, -20.0, 20.0)))
+            else:
+                batch_t = torch.from_numpy(batch_np).to(device)
+                with torch.no_grad():
+                    logits = cnn_mod(batch_t)
+                    probs = torch.sigmoid(logits).cpu().numpy()
+
+            num_model_classes = probs.shape[1]
+            for p_row, (tx, ty) in zip(probs, b_coords):
+                for cls_idx in range(min(len(CLASSES), num_model_classes)):
+                    cls_name = CLASSES[cls_idx]
+                    conf_val = float(p_row[cls_idx])
+                    if conf_val >= req.conf:
+                        flagged_by_class[cls_name].append({
+                            "class": cls_name,
+                            "x": tx,
+                            "y": ty,
+                            "w": req.tile_size,
+                            "h": req.tile_size,
+                            "conf": conf_val,
+                        })
+
+        merged_results = []
+        for cls_name, cls_tiles in flagged_by_class.items():
+            if not cls_tiles:
+                continue
+            if req.merge_adjacent:
+                merged_results.extend(merge_adjacent_tiles(cls_tiles, req.tile_size, req.stride))
+            else:
+                for t in cls_tiles:
+                    merged_results.append({
+                        "class": t["class"],
+                        "x": t["x"],
+                        "y": t["y"],
+                        "width": t["w"],
+                        "height": t["h"],
+                        "confidence": round(t["conf"], 3),
+                        "tiles_merged": 1,
+                    })
+
+        merged_results.sort(key=lambda d: d["confidence"], reverse=True)
+
+        ts_now = int(time.time() * 1000)
+        result_boxes = []
+        for idx, d in enumerate(merged_results):
+            box_id = f"box_ai_{ts_now}_{idx}"
             result_boxes.append(BoundingBox(
                 id=box_id,
-                label=cname,
+                label=d["class"],
                 type="box",
-                x=round(gbox[0], 1),
-                y=round(gbox[1], 1),
-                width=round(gbox[2] - gbox[0], 1),
-                height=round(gbox[3] - gbox[1], 1),
-                confidence=conf,
+                x=d["x"],
+                y=d["y"],
+                width=d["width"],
+                height=d["height"],
+                confidence=d["confidence"],
             ))
 
     elapsed = time.perf_counter() - t0
