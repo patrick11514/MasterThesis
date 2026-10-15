@@ -20,37 +20,40 @@
       "x2": 589.0,
       "y2": 2164.0,
       "points": null,
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
     },
     {
       "id": "l_1790848804521",
       "label": "satellite_streak",
       "type": "line",
-      "x": 1916.0,
-      "y": 1031.0,
-      "width": 1959.0,
-      "height": 1147.0,
-      "x1": 1916.0,
-      "y1": 2178.0,
-      "x2": 3875.0,
-      "y2": 1031.0,
+      "x": 1951.0,
+      "y": 1053.0,
+      "width": 1890.0,
+      "height": 1108.0,
+      "x1": 1951.0,
+      "y1": 2161.0,
+      "x2": 3841.0,
+      "y2": 1053.0,
       "points": null,
-      "confidence": null
+      "confidence": null,
+      "thickness": 10.0
     },
     {
       "id": "l_1790848808666",
       "label": "satellite_streak",
       "type": "line",
-      "x": 3134.0,
-      "y": 1696.0,
-      "width": 719.0,
-      "height": 481.0,
-      "x1": 3134.0,
-      "y1": 2177.0,
-      "x2": 3853.0,
-      "y2": 1696.0,
+      "x": 3161.0,
+      "y": 1707.0,
+      "width": 679.0,
+      "height": 453.0,
+      "x1": 3161.0,
+      "y1": 2160.0,
+      "x2": 3840.0,
+      "y2": 1707.0,
       "points": null,
-      "confidence": null
+      "confidence": null,
+      "thickness": 10.0
     },
     {
       "id": "poly_1790848821999",
@@ -110,7 +113,8 @@
           2230.0
         ]
       ],
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
     },
     {
       "id": "poly_1790848828838",
@@ -142,7 +146,8 @@
           2217.0
         ]
       ],
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
     }
   ]
 }

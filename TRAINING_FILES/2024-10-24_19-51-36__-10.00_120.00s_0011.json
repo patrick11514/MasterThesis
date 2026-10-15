@@ -5,6 +5,7 @@
   "global_star_trailing": false,
   "global_cloud": false,
   "is_clean": false,
+  "favorite": false,
   "boxes": [
     {
       "id": "l_1791538932641",
@@ -19,7 +20,8 @@
       "x2": 3312.0,
       "y2": 0.0,
       "points": null,
-      "confidence": null
+      "confidence": null,
+      "thickness": 4.0
     },
     {
       "id": "l_1791539461822",
@@ -27,29 +29,31 @@
       "type": "line",
       "x": 2625.0,
       "y": 0.0,
-      "width": 1227.0,
-      "height": 1483.0,
+      "width": 1217.0,
+      "height": 1469.0,
       "x1": 2625.0,
       "y1": 0.0,
-      "x2": 3852.0,
-      "y2": 1483.0,
+      "x2": 3842.0,
+      "y2": 1469.0,
       "points": null,
-      "confidence": null
+      "confidence": null,
+      "thickness": 8.0
     },
     {
       "id": "l_1791539478568",
       "label": "satellite_streak",
       "type": "line",
-      "x": 2723.0,
-      "y": 4.0,
-      "width": 1118.0,
-      "height": 1353.0,
+      "x": 2719.0,
+      "y": 0.0,
+      "width": 1122.0,
+      "height": 1359.0,
       "x1": 3841.0,
-      "y1": 1357.0,
-      "x2": 2723.0,
-      "y2": 4.0,
+      "y1": 1359.0,
+      "x2": 2719.0,
+      "y2": 0.0,
       "points": null,
-      "confidence": null
+      "confidence": null,
+      "thickness": 4.0
     }
   ]
 }

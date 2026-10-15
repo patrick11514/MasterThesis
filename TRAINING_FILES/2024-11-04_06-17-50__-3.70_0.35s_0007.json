@@ -8,7 +8,7 @@
   "favorite": false,
   "boxes": [
     {
-      "id": "full_1791546886279",
+      "id": "full_1792055194856",
       "label": "cloud",
       "type": "box",
       "x": 0.0,
@@ -20,7 +20,8 @@
       "x2": null,
       "y2": null,
       "points": null,
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
     }
   ]
 }

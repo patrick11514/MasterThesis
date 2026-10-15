@@ -5,6 +5,7 @@
   "global_star_trailing": false,
   "global_cloud": false,
   "is_clean": false,
+  "favorite": false,
   "boxes": [
     {
       "id": "l_1790454408084",
@@ -19,7 +20,8 @@
       "x2": -1.0,
       "y2": 910.0,
       "points": null,
-      "confidence": null
+      "confidence": null,
+      "thickness": 4.0
     },
     {
       "id": "poly_1790454441149",
@@ -51,7 +53,8 @@
           2364.0
         ]
       ],
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
     }
   ]
 }

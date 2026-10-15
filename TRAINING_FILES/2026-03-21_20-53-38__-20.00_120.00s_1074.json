@@ -20,7 +20,8 @@
       "x2": 3848.0,
       "y2": 1063.0,
       "points": null,
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
     },
     {
       "id": "l_1790848791976",
@@ -35,7 +36,40 @@
       "x2": 3318.0,
       "y2": 893.0,
       "points": null,
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
+    },
+    {
+      "id": "full_1792058396027",
+      "label": "cloud",
+      "type": "box",
+      "x": 0.0,
+      "y": 0.0,
+      "width": 842.0,
+      "height": 2160.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": null,
+      "confidence": null,
+      "thickness": 16.0
+    },
+    {
+      "id": "b_1792058400640",
+      "label": "cloud",
+      "type": "box",
+      "x": 1653.0,
+      "y": 1225.0,
+      "width": 7.0,
+      "height": 7.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": null,
+      "confidence": null,
+      "thickness": 16.0
     }
   ]
 }

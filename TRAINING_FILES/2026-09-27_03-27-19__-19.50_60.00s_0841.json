@@ -41,7 +41,24 @@
           -39.0
         ]
       ],
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
+    },
+    {
+      "id": "b_1792059479539",
+      "label": "star_trail",
+      "type": "box",
+      "x": 3208.0,
+      "y": 715.0,
+      "width": 334.0,
+      "height": 385.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": null,
+      "confidence": null,
+      "thickness": 16.0
     }
   ]
 }

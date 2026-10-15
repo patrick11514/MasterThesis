@@ -1,24 +1,26 @@
 #!/usr/bin/env node
 
 /**
- * sync_local.js - Sync raw astronomical images (FITS/TIFF) from remote Proxmox storage
+ * sync_local.js - Sync raw astronomical images (FITS/TIFF) from local directory or remote Proxmox storage
  *
- * Scans local defect annotation files (.json / .txt) in the target directory (e.g. TRAINING_FILES
- * or test_fits), identifies which raw image frames are missing locally, connects to Proxmox over SSH,
- * locates them inside /mnt/HDD/ASTRO, and downloads them using rsync.
+ * Scans local defect annotation files (.json) in the target directory (e.g. TRAINING_FILES
+ * or test_fits), identifies which raw image frames are missing locally, locates them
+ * in a local directory (localhost) or on a remote host (Proxmox over SSH), and copies/downloads them.
  *
  * Usage:
- *   node scripts/sync_local.js [target_folder] [options]
+ *   node scripts/sync_local.js [target_folder] [source_folder] [options]
  *
  * Options:
- *   --host <host>        SSH host alias or IP (default: proxmox)
- *   --remote-dir <path>  Remote search directory (default: /mnt/HDD/ASTRO)
- *   --dry-run            Show missing and remote-found files without transferring
+ *   --local, -l          Search on local machine (localhost) instead of remote SSH
+ *   --source-dir, -s <p> Source search directory (aliases: --src-dir, --dir, --remote-dir)
+ *   --host <host>        SSH host alias or IP (default: proxmox; 'localhost'/'local' for local sync)
+ *   --dry-run            Show missing and found files without transferring
  *   --help, -h           Show help message
  */
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { spawn, spawnSync } = require('child_process');
 
 // ANSI Color Helpers
@@ -36,35 +38,60 @@ const colors = {
 
 function printHelp() {
   console.log(`
-${colors.bold}${colors.cyan}AstroGrader Remote FITS Sync Tool${colors.reset}
+${colors.bold}${colors.cyan}AstroGrader Image Sync Tool${colors.reset}
 
 ${colors.bold}Usage:${colors.reset}
-  node sync_local.js [target_dir] [options]
-  ./sync_local.sh [target_dir] [options]
+  node sync_local.js [target_dir] [source_dir] [options]
+  ./sync_local.sh [source_or_target_dir] [options]
 
 ${colors.bold}Arguments:${colors.reset}
-  target_dir           Local directory containing annotations (default: TRAINING_FILES or .)
+  target_dir           Local directory containing annotations (.json) and where images will be placed
+                       (default: auto-detected, e.g. TRAINING_FILES or current directory)
+  source_dir           Directory to search for raw image frames (.fits, .tif, etc.)
+                       Can be a folder on this PC (localhost) or a remote directory path
 
 ${colors.bold}Options:${colors.reset}
-  --host <name>        SSH remote host from ~/.ssh/config or IP (default: proxmox)
-  --remote-dir <path>  Remote search directory on Proxmox (default: /mnt/HDD/ASTRO)
-  --dry-run            Scan and locate files without downloading
+  --local, -l          Search on this local machine (localhost) instead of remote SSH host
+  --source-dir, -s <p> Source search directory for raw images (aliases: --src-dir, --dir, --remote-dir)
+  --host <name>        SSH remote host (default: proxmox). Set to 'localhost' or 'local' for local sync
+  --dry-run            Scan and locate files without downloading/copying
   --help, -h           Show this help message
 
 ${colors.bold}Examples:${colors.reset}
-  node scripts/sync_local.js
-  node scripts/sync_local.js TRAINING_FILES
-  node scripts/sync_local.js test_fits --dry-run
-  node scripts/sync_local.js --host proxmox --remote-dir /mnt/HDD/ASTRO
+  # Sync from another folder on this machine (localhost):
+  ./sync_local.sh /path/to/my/local/astro_images
+  ./sync_local.sh --local --source-dir /media/external/ASTRO
+  node scripts/sync_local.js TRAINING_FILES /mnt/data/fits
+
+  # Sync from remote Proxmox storage over SSH:
+  ./sync_local.sh
+  ./sync_local.sh --host proxmox --remote-dir /mnt/HDD/ASTRO
+
+  # Dry run (locate files without copying):
+  ./sync_local.sh /path/to/local/astro_images --dry-run
 `);
+}
+
+function expandHome(p) {
+  if (!p) return p;
+  if (p === '~') return os.homedir();
+  if (p.startsWith('~/') || p.startsWith('~\\')) {
+    return path.join(os.homedir(), p.slice(2));
+  }
+  return p;
 }
 
 // Parse command line arguments
 const args = process.argv.slice(2);
 let targetDirArg = null;
 let remoteHost = process.env.REMOTE_HOST || 'proxmox';
-let remoteDir = process.env.REMOTE_DIR || '/mnt/HDD/ASTRO';
+let sourceDir = process.env.LOCAL_DIR || process.env.SOURCE_DIR || process.env.SRC_DIR || process.env.REMOTE_DIR || '/mnt/HDD/ASTRO';
 let isDryRun = false;
+let isLocalFlag = Boolean(process.env.LOCAL_DIR);
+let hostExplicitlySet = Boolean(process.env.REMOTE_HOST);
+let sourceDirExplicitlySet = Boolean(process.env.LOCAL_DIR || process.env.SOURCE_DIR || process.env.SRC_DIR || process.env.REMOTE_DIR);
+
+const positionalArgs = [];
 
 for (let i = 0; i < args.length; i++) {
   const arg = args[i];
@@ -73,23 +100,82 @@ for (let i = 0; i < args.length; i++) {
     process.exit(0);
   } else if (arg === '--dry-run') {
     isDryRun = true;
+  } else if (arg === '--local' || arg === '-l' || arg === '--localhost') {
+    isLocalFlag = true;
   } else if (arg === '--host') {
     remoteHost = args[++i];
-  } else if (arg === '--remote-dir') {
-    remoteDir = args[++i];
-  } else if (!arg.startsWith('-') && !targetDirArg) {
-    targetDirArg = arg;
+    hostExplicitlySet = true;
+  } else if (arg.startsWith('--host=')) {
+    remoteHost = arg.slice(7);
+    hostExplicitlySet = true;
+  } else if (arg === '--source-dir' || arg === '--src-dir' || arg === '--remote-dir' || arg === '--dir' || arg === '-s') {
+    sourceDir = expandHome(args[++i]);
+    sourceDirExplicitlySet = true;
+  } else if (arg.startsWith('--source-dir=')) {
+    sourceDir = expandHome(arg.slice(13));
+    sourceDirExplicitlySet = true;
+  } else if (arg.startsWith('--src-dir=')) {
+    sourceDir = expandHome(arg.slice(10));
+    sourceDirExplicitlySet = true;
+  } else if (arg.startsWith('--remote-dir=')) {
+    sourceDir = expandHome(arg.slice(13));
+    sourceDirExplicitlySet = true;
+  } else if (arg.startsWith('--dir=')) {
+    sourceDir = expandHome(arg.slice(6));
+    sourceDirExplicitlySet = true;
+  } else if (arg === '--target-dir' || arg === '-t') {
+    targetDirArg = expandHome(args[++i]);
+  } else if (arg.startsWith('--target-dir=')) {
+    targetDirArg = expandHome(arg.slice(13));
+  } else if (!arg.startsWith('-')) {
+    positionalArgs.push(expandHome(arg));
   }
 }
 
-// Resolve target local directory
+// Check if directory has annotation files
+function dirHasAnnotations(dirPath) {
+  try {
+    const resolved = path.resolve(process.cwd(), dirPath);
+    if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) return false;
+    const files = fs.readdirSync(resolved);
+    return files.some(f => f.endsWith('.json') && !f.includes('package') && !f.includes('history') && !f.includes('config') && f !== 'tsconfig.json');
+  } catch (e) {
+    return false;
+  }
+}
+
+// Map positional arguments
+if (positionalArgs.length >= 2) {
+  if (!targetDirArg) targetDirArg = positionalArgs[0];
+  if (!sourceDirExplicitlySet) {
+    sourceDir = positionalArgs[1];
+    sourceDirExplicitlySet = true;
+  }
+} else if (positionalArgs.length === 1) {
+  const p = positionalArgs[0];
+  if (targetDirArg) {
+    if (!sourceDirExplicitlySet) {
+      sourceDir = p;
+      sourceDirExplicitlySet = true;
+    }
+  } else {
+    if (dirHasAnnotations(p)) {
+      targetDirArg = p;
+    } else {
+      sourceDir = p;
+      sourceDirExplicitlySet = true;
+    }
+  }
+}
+
+// Resolve target local directory (where annotations live and missing files will be placed)
 function resolveTargetDirectory(arg) {
   if (arg) {
     const resolved = path.resolve(process.cwd(), arg);
     if (fs.existsSync(resolved) && fs.statSync(resolved).isDirectory()) {
       return resolved;
     }
-    console.error(`${colors.red}Error: Specified directory does not exist: ${resolved}${colors.reset}`);
+    console.error(`${colors.red}Error: Specified target directory does not exist: ${resolved}${colors.reset}`);
     process.exit(1);
   }
 
@@ -113,10 +199,49 @@ function resolveTargetDirectory(arg) {
 }
 
 const targetDir = resolveTargetDirectory(targetDirArg);
-console.log(`${colors.bold}${colors.cyan}=== AstroGrader Local Sync Tool ===${colors.reset}`);
-console.log(`${colors.dim}Target directory:${colors.reset} ${colors.bold}${targetDir}${colors.reset}`);
-console.log(`${colors.dim}Remote host:${colors.reset}      ${colors.bold}${remoteHost}${colors.reset}`);
-console.log(`${colors.dim}Remote search dir:${colors.reset} ${colors.bold}${remoteDir}${colors.reset}`);
+
+// Determine local vs remote mode
+const resolvedSourceDir = path.resolve(process.cwd(), sourceDir);
+let isSourceDirLocal = false;
+try {
+  isSourceDirLocal = fs.existsSync(resolvedSourceDir) && fs.statSync(resolvedSourceDir).isDirectory();
+} catch (e) {
+  isSourceDirLocal = false;
+}
+
+let isLocal = false;
+if (isLocalFlag) {
+  isLocal = true;
+} else if (hostExplicitlySet) {
+  const h = (remoteHost || '').toLowerCase();
+  isLocal = ['localhost', 'local', '127.0.0.1', '::1', 'none', ''].includes(h);
+} else {
+  // If host wasn't explicitly specified, and sourceDir exists locally on this machine, use local mode!
+  if (sourceDirExplicitlySet && isSourceDirLocal) {
+    isLocal = true;
+  } else {
+    isLocal = false;
+  }
+}
+
+if (isLocal) {
+  if (!isSourceDirLocal) {
+    console.error(`${colors.red}${colors.bold}Error: Local source directory does not exist or is not a directory:${colors.reset} ${resolvedSourceDir}`);
+    console.error(`${colors.dim}Please specify an existing directory on this PC: ./sync_local.sh <folder_path> or --source-dir <folder_path>${colors.reset}`);
+    process.exit(1);
+  }
+  sourceDir = resolvedSourceDir;
+}
+
+console.log(`${colors.bold}${colors.cyan}=== AstroGrader Image Sync Tool ===${colors.reset}`);
+console.log(`${colors.dim}Target directory:${colors.reset}   ${colors.bold}${targetDir}${colors.reset}`);
+if (isLocal) {
+  console.log(`${colors.dim}Sync Mode:${colors.reset}          ${colors.bold}${colors.green}Local machine (localhost)${colors.reset}`);
+  console.log(`${colors.dim}Source directory:${colors.reset}   ${colors.bold}${sourceDir}${colors.reset}`);
+} else {
+  console.log(`${colors.dim}Sync Mode:${colors.reset}          ${colors.bold}${colors.blue}Remote SSH (${remoteHost})${colors.reset}`);
+  console.log(`${colors.dim}Remote search dir:${colors.reset} ${colors.bold}${sourceDir}${colors.reset}`);
+}
 if (isDryRun) {
   console.log(`${colors.yellow}${colors.bold}[DRY RUN MODE]${colors.reset} No files will be transferred.`);
 }
@@ -191,11 +316,11 @@ for (const jsonFile of jsonFiles) {
 }
 
 console.log(`${colors.dim}Total annotations:${colors.reset}       ${colors.bold}${jsonFiles.length}${colors.reset}`);
-console.log(`${colors.green}Already present locally:${colors.reset} ${colors.bold}${presentImages.length}${colors.reset}`);
-console.log(`${colors.yellow}Missing locally:${colors.reset}         ${colors.bold}${missingImages.length}${colors.reset}`);
+console.log(`${colors.green}Already present in target:${colors.reset} ${colors.bold}${presentImages.length}${colors.reset}`);
+console.log(`${colors.yellow}Missing from target:${colors.reset}     ${colors.bold}${missingImages.length}${colors.reset}`);
 
 if (missingImages.length === 0) {
-  console.log(`\n${colors.green}${colors.bold}✔ All corresponding image frames already exist locally! Nothing to sync.${colors.reset}\n`);
+  console.log(`\n${colors.green}${colors.bold}✔ All corresponding image frames already exist in target directory! Nothing to sync.${colors.reset}\n`);
   process.exit(0);
 }
 
@@ -210,7 +335,7 @@ if (missingImages.length <= 10) {
 }
 console.log('');
 
-// Setup persistent SSH ControlMaster socket
+// Setup persistent SSH ControlMaster socket only when connecting to a remote host
 const controlSocketPath = `/tmp/ssh_mux_astro_${process.pid}_%h_%p_%r`;
 const sshControlArgs = [
   '-o', 'ControlMaster=auto',
@@ -219,21 +344,111 @@ const sshControlArgs = [
   '-o', 'ConnectTimeout=15',
 ];
 
-// Clean up socket on process exit
 function cleanupSocket() {
+  if (isLocal) return;
   try {
     spawnSync('ssh', ['-O', 'exit', '-o', `ControlPath=${controlSocketPath}`, remoteHost], {
       stdio: 'ignore',
     });
   } catch (e) {}
 }
-process.on('exit', cleanupSocket);
-process.on('SIGINT', () => {
-  cleanupSocket();
-  process.exit(130);
-});
 
-// Build remote python script to locate target files on Proxmox
+if (!isLocal) {
+  process.on('exit', cleanupSocket);
+  process.on('SIGINT', () => {
+    cleanupSocket();
+    process.exit(130);
+  });
+}
+
+// Local search function
+async function searchLocalFiles(rootDir, missingList) {
+  return new Promise((resolve) => {
+    const targets = new Set();
+    const stems = new Map();
+
+    for (const m of missingList) {
+      targets.add(m.targetName);
+      const stem = path.parse(m.targetName).name.toLowerCase();
+      stems.set(stem, m.targetName);
+      if (m.baseStem) {
+        stems.set(m.baseStem.toLowerCase(), m.targetName);
+      }
+    }
+
+    const totalTargets = targets.size;
+    const results = new Map();
+    const stack = [rootDir];
+    const visitedDirs = new Set();
+    let scannedDirs = 0;
+
+    function checkLocalFile(fileName, fullPath) {
+      if (targets.has(fileName)) {
+        results.set(fileName, fullPath);
+        targets.delete(fileName);
+        return;
+      }
+      const stem = path.parse(fileName).name.toLowerCase();
+      if (stems.has(stem)) {
+        const orig = stems.get(stem);
+        if (targets.has(orig)) {
+          results.set(orig, fullPath);
+          targets.delete(orig);
+        }
+      }
+    }
+
+    while (stack.length > 0 && targets.size > 0) {
+      const currentDir = stack.pop();
+
+      try {
+        const real = fs.realpathSync(currentDir);
+        if (visitedDirs.has(real)) continue;
+        visitedDirs.add(real);
+      } catch (e) {
+        continue;
+      }
+
+      scannedDirs++;
+      if (scannedDirs % 50 === 0) {
+        process.stderr.write(`\rSearching local storage... found ${results.size}/${totalTargets} files (scanned ${scannedDirs} directories)`);
+      }
+
+      let entries;
+      try {
+        entries = fs.readdirSync(currentDir, { withFileTypes: true });
+      } catch (e) {
+        continue;
+      }
+
+      for (const entry of entries) {
+        const fullPath = path.join(currentDir, entry.name);
+
+        if (entry.isDirectory()) {
+          stack.push(fullPath);
+        } else if (entry.isSymbolicLink()) {
+          try {
+            const targetStat = fs.statSync(fullPath);
+            if (targetStat.isDirectory()) {
+              stack.push(fullPath);
+            } else if (targetStat.isFile()) {
+              checkLocalFile(entry.name, fullPath);
+            }
+          } catch (e) {}
+        } else if (entry.isFile()) {
+          checkLocalFile(entry.name, fullPath);
+        }
+
+        if (targets.size === 0) break;
+      }
+    }
+
+    process.stderr.write(`\rSearch completed! Found ${results.size}/${totalTargets} files in ${scannedDirs} directories.\n`);
+    resolve(results);
+  });
+}
+
+// Remote Python script to locate target files on remote host (e.g. Proxmox)
 const remoteFinderScript = `
 import sys, os
 
@@ -263,7 +478,7 @@ scanned_dirs = 0
 for root, dirs, files in os.walk(root_dir, followlinks=True):
     scanned_dirs += 1
     if scanned_dirs % 50 == 0:
-        sys.stderr.write(f"\rSearching Proxmox storage... found {len(found)}/{total_targets} files (scanned {scanned_dirs} directories)")
+        sys.stderr.write(f"\\rSearching Proxmox storage... found {len(found)}/{total_targets} files (scanned {scanned_dirs} directories)")
         sys.stderr.flush()
 
     for f in files:
@@ -283,24 +498,20 @@ for root, dirs, files in os.walk(root_dir, followlinks=True):
     if not targets:
         break
 
-sys.stderr.write(f"\rSearch completed! Found {len(found)}/{total_targets} files in {scanned_dirs} directories.\n")
+sys.stderr.write(f"\\rSearch completed! Found {len(found)}/{total_targets} files in {scanned_dirs} directories.\\n")
 sys.stderr.flush()
 
 for target, full_path in found.items():
     print(f"{target}\\t{full_path}")
 `;
 
-console.log(`${colors.cyan}Connecting to ${remoteHost} and searching ${remoteDir}...${colors.reset}`);
-console.log(`${colors.dim}(If prompted, enter SSH password once to authenticate)${colors.reset}\n`);
-
 // Query remote host via SSH
 async function searchRemoteFiles() {
   return new Promise((resolve, reject) => {
     const inputLines = missingImages.map(m => m.targetName).join('\n') + '\n';
 
-    // Check if remote has find_astro_files.py installed in PATH or ~/find_astro_files.py, else use inline base64 python
     const b64Script = Buffer.from(remoteFinderScript).toString('base64');
-    const remotePyCommand = `if command -v find_astro_files.py >/dev/null 2>&1; then find_astro_files.py --dir ${JSON.stringify(remoteDir)}; elif [ -f ~/find_astro_files.py ]; then python3 ~/find_astro_files.py --dir ${JSON.stringify(remoteDir)}; else python3 -c "import base64; exec(base64.b64decode('${b64Script}').decode('utf-8'))" ${JSON.stringify(remoteDir)}; fi`;
+    const remotePyCommand = `if command -v find_astro_files.py >/dev/null 2>&1; then find_astro_files.py --dir ${JSON.stringify(sourceDir)}; elif [ -f ~/find_astro_files.py ]; then python3 ~/find_astro_files.py --dir ${JSON.stringify(sourceDir)}; else python3 -c "import base64; exec(base64.b64decode('${b64Script}').decode('utf-8'))" ${JSON.stringify(sourceDir)}; fi`;
 
     const sshCmdArgs = [
       ...sshControlArgs,
@@ -342,11 +553,26 @@ async function searchRemoteFiles() {
 }
 
 async function run() {
+  if (isLocal) {
+    console.log(`${colors.cyan}Searching local directory ${sourceDir}...${colors.reset}\n`);
+  } else {
+    console.log(`${colors.cyan}Connecting to ${remoteHost} and searching ${sourceDir}...${colors.reset}`);
+    console.log(`${colors.dim}(If prompted, enter SSH password once to authenticate)${colors.reset}\n`);
+  }
+
   let foundMap;
   try {
-    foundMap = await searchRemoteFiles();
+    if (isLocal) {
+      foundMap = await searchLocalFiles(sourceDir, missingImages);
+    } else {
+      foundMap = await searchRemoteFiles();
+    }
   } catch (err) {
-    console.error(`\n${colors.red}${colors.bold}Error connecting to ${remoteHost}:${colors.reset}`, err.message);
+    if (isLocal) {
+      console.error(`\n${colors.red}${colors.bold}Error searching local directory ${sourceDir}:${colors.reset}`, err.message);
+    } else {
+      console.error(`\n${colors.red}${colors.bold}Error connecting to ${remoteHost}:${colors.reset}`, err.message);
+    }
     process.exit(1);
   }
 
@@ -364,10 +590,11 @@ async function run() {
     }
   }
 
+  const locationLabel = isLocal ? 'locally' : `on ${remoteHost}`;
   console.log(`\n${colors.bold}--- Search Results ---${colors.reset}`);
-  console.log(`${colors.green}Found on Proxmox:${colors.reset}     ${colors.bold}${foundList.length}${colors.reset} / ${missingImages.length}`);
+  console.log(`${colors.green}Found ${locationLabel}:${colors.reset}     ${colors.bold}${foundList.length}${colors.reset} / ${missingImages.length}`);
   if (notFoundList.length > 0) {
-    console.log(`${colors.red}Not found on Proxmox:${colors.reset} ${colors.bold}${notFoundList.length}${colors.reset}`);
+    console.log(`${colors.red}Not found ${locationLabel}:${colors.reset} ${colors.bold}${notFoundList.length}${colors.reset}`);
     if (notFoundList.length <= 10) {
       notFoundList.forEach(m => console.log(`  ${colors.dim}x ${m.targetName}${colors.reset}`));
     } else {
@@ -377,7 +604,7 @@ async function run() {
   }
 
   if (foundList.length === 0) {
-    console.log(`\n${colors.yellow}No missing files could be found under ${remoteDir} on ${remoteHost}.${colors.reset}`);
+    console.log(`\n${colors.yellow}No missing files could be found under ${sourceDir} ${locationLabel}.${colors.reset}`);
     process.exit(0);
   }
 
@@ -386,40 +613,48 @@ async function run() {
     process.exit(0);
   }
 
-  console.log(`\n${colors.bold}${colors.cyan}Transferring ${foundList.length} files via rsync to ${targetDir}...${colors.reset}\n`);
+  const actionVerb = isLocal ? 'Copying' : 'Transferring';
+  console.log(`\n${colors.bold}${colors.cyan}${actionVerb} ${foundList.length} files via rsync to ${targetDir}...${colors.reset}\n`);
 
-  // Batch transfer using rsync
-  // Since files might come from different subdirectories in /mnt/HDD/ASTRO,
-  // we can transfer each batch cleanly.
-  const remotePaths = foundList.map(f => f.remotePath);
-
-  // Group into batches of 20 files to avoid command length limits
+  const filePaths = foundList.map(f => f.remotePath);
   const BATCH_SIZE = 20;
   let completed = 0;
 
-  for (let i = 0; i < remotePaths.length; i += BATCH_SIZE) {
-    const batch = remotePaths.slice(i, i + BATCH_SIZE);
+  for (let i = 0; i < filePaths.length; i += BATCH_SIZE) {
+    const batch = filePaths.slice(i, i + BATCH_SIZE);
     const batchNum = Math.floor(i / BATCH_SIZE) + 1;
-    const totalBatches = Math.ceil(remotePaths.length / BATCH_SIZE);
+    const totalBatches = Math.ceil(filePaths.length / BATCH_SIZE);
 
-    console.log(`${colors.cyan}[Batch ${batchNum}/${totalBatches}] Downloading ${batch.length} files...${colors.reset}`);
+    const transferWord = isLocal ? 'Copying' : 'Downloading';
+    console.log(`${colors.cyan}[Batch ${batchNum}/${totalBatches}] ${transferWord} ${batch.length} files...${colors.reset}`);
 
-    // Each remote file as a separate remote argument (without extra literal quotes, using -s for safe spaces)
-    const remoteArgs = batch.map(p => `${remoteHost}:${p}`);
-    const rsyncArgs = [
-      '-avP',
-      '-s',
-      '-e', `ssh -o ControlPath=${controlSocketPath}`,
-      ...remoteArgs,
-      `${targetDir}/`,
-    ];
+    let rsyncArgs;
+    if (isLocal) {
+      rsyncArgs = [
+        '-avP',
+        ...batch,
+        `${targetDir}/`,
+      ];
+    } else {
+      const remoteArgs = batch.map(p => `${remoteHost}:${p}`);
+      rsyncArgs = [
+        '-avP',
+        '-s',
+        '-e', `ssh -o ControlPath=${controlSocketPath}`,
+        ...remoteArgs,
+        `${targetDir}/`,
+      ];
+    }
 
     const rsyncCode = await new Promise(resolve => {
       const child = spawn('rsync', rsyncArgs, {
         stdio: 'inherit',
       });
       child.on('close', code => resolve(code));
-      child.on('error', () => resolve(1));
+      child.on('error', err => {
+        console.error(`${colors.red}rsync error:${colors.reset}`, err.message);
+        resolve(1);
+      });
     });
 
     if (rsyncCode !== 0) {

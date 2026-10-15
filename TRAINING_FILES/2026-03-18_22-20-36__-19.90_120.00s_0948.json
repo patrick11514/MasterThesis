@@ -8,19 +8,20 @@
   "favorite": false,
   "boxes": [
     {
-      "id": "b_1791550136433",
+      "id": "b_1792058380121",
       "label": "cloud",
       "type": "box",
-      "x": -571.0,
-      "y": -442.0,
-      "width": 1779.0,
-      "height": 2819.0,
+      "x": -36.0,
+      "y": -21.0,
+      "width": 1196.0,
+      "height": 2220.0,
       "x1": null,
       "y1": null,
       "x2": null,
       "y2": null,
       "points": null,
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
     }
   ]
 }

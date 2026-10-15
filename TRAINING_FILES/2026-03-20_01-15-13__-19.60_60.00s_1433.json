@@ -161,7 +161,8 @@
           578.0
         ]
       ],
-      "confidence": 0.528
+      "confidence": 0.528,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_1",
@@ -221,7 +222,8 @@
           1352.0
         ]
       ],
-      "confidence": 0.458
+      "confidence": 0.458,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_2",
@@ -333,7 +335,8 @@
           1686.0
         ]
       ],
-      "confidence": 0.446
+      "confidence": 0.446,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_3",
@@ -489,7 +492,8 @@
           526.0
         ]
       ],
-      "confidence": 0.434
+      "confidence": 0.434,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_4",
@@ -589,7 +593,8 @@
           749.0
         ]
       ],
-      "confidence": 0.414
+      "confidence": 0.414,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_5",
@@ -721,7 +726,8 @@
           1525.0
         ]
       ],
-      "confidence": 0.352
+      "confidence": 0.352,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_6",
@@ -901,7 +907,8 @@
           73.0
         ]
       ],
-      "confidence": 0.342
+      "confidence": 0.342,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_7",
@@ -1061,7 +1068,8 @@
           1073.0
         ]
       ],
-      "confidence": 0.331
+      "confidence": 0.331,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_8",
@@ -1189,7 +1197,8 @@
           66.0
         ]
       ],
-      "confidence": 0.281
+      "confidence": 0.281,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_9",
@@ -1349,7 +1358,8 @@
           941.0
         ]
       ],
-      "confidence": 0.281
+      "confidence": 0.281,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_10",
@@ -1509,7 +1519,8 @@
           956.0
         ]
       ],
-      "confidence": 0.28
+      "confidence": 0.28,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_11",
@@ -1613,7 +1624,8 @@
           1158.0
         ]
       ],
-      "confidence": 0.25
+      "confidence": 0.25,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_12",
@@ -1721,7 +1733,8 @@
           951.0
         ]
       ],
-      "confidence": 0.249
+      "confidence": 0.249,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_13",
@@ -1777,7 +1790,8 @@
           453.0
         ]
       ],
-      "confidence": 0.246
+      "confidence": 0.246,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_14",
@@ -1949,7 +1963,8 @@
           463.0
         ]
       ],
-      "confidence": 0.232
+      "confidence": 0.232,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_15",
@@ -2141,7 +2156,8 @@
           1444.0
         ]
       ],
-      "confidence": 0.22
+      "confidence": 0.22,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_16",
@@ -2309,7 +2325,8 @@
           998.0
         ]
       ],
-      "confidence": 0.216
+      "confidence": 0.216,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_17",
@@ -2489,7 +2506,8 @@
           1699.0
         ]
       ],
-      "confidence": 0.209
+      "confidence": 0.209,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_18",
@@ -2565,7 +2583,8 @@
           26.0
         ]
       ],
-      "confidence": 0.206
+      "confidence": 0.206,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_19",
@@ -2633,7 +2652,8 @@
           427.0
         ]
       ],
-      "confidence": 0.2
+      "confidence": 0.2,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_20",
@@ -2729,7 +2749,8 @@
           1283.0
         ]
       ],
-      "confidence": 0.193
+      "confidence": 0.193,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_21",
@@ -2901,7 +2922,8 @@
           25.0
         ]
       ],
-      "confidence": 0.178
+      "confidence": 0.178,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_22",
@@ -3009,7 +3031,8 @@
           1705.0
         ]
       ],
-      "confidence": 0.17
+      "confidence": 0.17,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_23",
@@ -3113,7 +3136,8 @@
           1394.0
         ]
       ],
-      "confidence": 0.165
+      "confidence": 0.165,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_24",
@@ -3181,7 +3205,8 @@
           1348.0
         ]
       ],
-      "confidence": 0.164
+      "confidence": 0.164,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_25",
@@ -3393,7 +3418,8 @@
           9.0
         ]
       ],
-      "confidence": 0.154
+      "confidence": 0.154,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_26",
@@ -3453,7 +3479,8 @@
           1385.0
         ]
       ],
-      "confidence": 0.147
+      "confidence": 0.147,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_27",
@@ -3517,7 +3544,8 @@
           409.0
         ]
       ],
-      "confidence": 0.146
+      "confidence": 0.146,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_28",
@@ -3673,7 +3701,8 @@
           104.0
         ]
       ],
-      "confidence": 0.145
+      "confidence": 0.145,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_29",
@@ -3833,7 +3862,8 @@
           1705.0
         ]
       ],
-      "confidence": 0.143
+      "confidence": 0.143,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_30",
@@ -3905,7 +3935,8 @@
           894.0
         ]
       ],
-      "confidence": 0.139
+      "confidence": 0.139,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_31",
@@ -4005,7 +4036,8 @@
           1664.0
         ]
       ],
-      "confidence": 0.136
+      "confidence": 0.136,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_32",
@@ -4085,7 +4117,8 @@
           1697.0
         ]
       ],
-      "confidence": 0.132
+      "confidence": 0.132,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_33",
@@ -4281,7 +4314,8 @@
           32.0
         ]
       ],
-      "confidence": 0.129
+      "confidence": 0.129,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_34",
@@ -4417,7 +4451,8 @@
           468.0
         ]
       ],
-      "confidence": 0.127
+      "confidence": 0.127,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_35",
@@ -4545,7 +4580,8 @@
           1084.0
         ]
       ],
-      "confidence": 0.125
+      "confidence": 0.125,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_36",
@@ -4665,7 +4701,8 @@
           1189.0
         ]
       ],
-      "confidence": 0.117
+      "confidence": 0.117,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_37",
@@ -4797,7 +4834,8 @@
           486.0
         ]
       ],
-      "confidence": 0.117
+      "confidence": 0.117,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_38",
@@ -4857,7 +4895,8 @@
           1380.0
         ]
       ],
-      "confidence": 0.109
+      "confidence": 0.109,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_39",
@@ -5029,7 +5068,8 @@
           942.0
         ]
       ],
-      "confidence": 0.107
+      "confidence": 0.107,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_40",
@@ -5249,7 +5289,8 @@
           2112.0
         ]
       ],
-      "confidence": 0.098
+      "confidence": 0.098,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_41",
@@ -5401,7 +5442,8 @@
           1660.0
         ]
       ],
-      "confidence": 0.093
+      "confidence": 0.093,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_42",
@@ -5449,7 +5491,8 @@
           1.0
         ]
       ],
-      "confidence": 0.091
+      "confidence": 0.091,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_43",
@@ -5497,7 +5540,8 @@
           1.0
         ]
       ],
-      "confidence": 0.083
+      "confidence": 0.083,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_44",
@@ -5633,7 +5677,8 @@
           1657.0
         ]
       ],
-      "confidence": 0.081
+      "confidence": 0.081,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_45",
@@ -5665,7 +5710,8 @@
           1374.0
         ]
       ],
-      "confidence": 0.079
+      "confidence": 0.079,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_46",
@@ -5753,7 +5799,8 @@
           26.0
         ]
       ],
-      "confidence": 0.078
+      "confidence": 0.078,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_47",
@@ -5833,7 +5880,8 @@
           465.0
         ]
       ],
-      "confidence": 0.075
+      "confidence": 0.075,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_48",
@@ -5925,7 +5973,8 @@
           1164.0
         ]
       ],
-      "confidence": 0.073
+      "confidence": 0.073,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_49",
@@ -5981,7 +6030,8 @@
           1836.0
         ]
       ],
-      "confidence": 0.072
+      "confidence": 0.072,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_50",
@@ -6137,7 +6187,8 @@
           1469.0
         ]
       ],
-      "confidence": 0.071
+      "confidence": 0.071,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_51",
@@ -6209,7 +6260,8 @@
           939.0
         ]
       ],
-      "confidence": 0.07
+      "confidence": 0.07,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_52",
@@ -6245,7 +6297,8 @@
           1382.0
         ]
       ],
-      "confidence": 0.069
+      "confidence": 0.069,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_53",
@@ -6421,7 +6474,8 @@
           212.0
         ]
       ],
-      "confidence": 0.069
+      "confidence": 0.069,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_54",
@@ -6481,7 +6535,8 @@
           1650.0
         ]
       ],
-      "confidence": 0.068
+      "confidence": 0.068,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_55",
@@ -6589,7 +6644,8 @@
           746.0
         ]
       ],
-      "confidence": 0.067
+      "confidence": 0.067,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_56",
@@ -6725,7 +6781,8 @@
           1135.0
         ]
       ],
-      "confidence": 0.066
+      "confidence": 0.066,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_57",
@@ -6853,7 +6910,8 @@
           27.0
         ]
       ],
-      "confidence": 0.065
+      "confidence": 0.065,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_58",
@@ -7081,7 +7139,8 @@
           922.0
         ]
       ],
-      "confidence": 0.062
+      "confidence": 0.062,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_59",
@@ -7169,7 +7228,8 @@
           1395.0
         ]
       ],
-      "confidence": 0.061
+      "confidence": 0.061,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_60",
@@ -7265,7 +7325,8 @@
           1383.0
         ]
       ],
-      "confidence": 0.061
+      "confidence": 0.061,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_61",
@@ -7393,7 +7454,8 @@
           19.0
         ]
       ],
-      "confidence": 0.059
+      "confidence": 0.059,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_62",
@@ -7493,7 +7555,8 @@
           1666.0
         ]
       ],
-      "confidence": 0.058
+      "confidence": 0.058,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_63",
@@ -7633,7 +7696,8 @@
           462.0
         ]
       ],
-      "confidence": 0.058
+      "confidence": 0.058,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_64",
@@ -7669,7 +7733,8 @@
           1651.0
         ]
       ],
-      "confidence": 0.055
+      "confidence": 0.055,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_65",
@@ -7741,7 +7806,8 @@
           1660.0
         ]
       ],
-      "confidence": 0.055
+      "confidence": 0.055,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_66",
@@ -7821,7 +7887,8 @@
           575.0
         ]
       ],
-      "confidence": 0.054
+      "confidence": 0.054,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791550115556_67",
@@ -8013,7 +8080,24 @@
           1992.0
         ]
       ],
-      "confidence": 0.053
+      "confidence": 0.053,
+      "thickness": 16.0
+    },
+    {
+      "id": "full_1792058390795",
+      "label": "star_trail",
+      "type": "box",
+      "x": 0.0,
+      "y": 0.0,
+      "width": 3840.0,
+      "height": 2160.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": null,
+      "confidence": null,
+      "thickness": 16.0
     }
   ]
 }

@@ -5,6 +5,7 @@
   "global_star_trailing": false,
   "global_cloud": false,
   "is_clean": false,
+  "favorite": false,
   "boxes": [
     {
       "id": "box_ai_1791540341296_0",
@@ -36,7 +37,8 @@
           461.0
         ]
       ],
-      "confidence": 0.618
+      "confidence": 0.618,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540341296_1",
@@ -68,7 +70,8 @@
           460.0
         ]
       ],
-      "confidence": 0.607
+      "confidence": 0.607,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540341296_2",
@@ -100,7 +103,8 @@
           0.0
         ]
       ],
-      "confidence": 0.589
+      "confidence": 0.589,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540341296_3",
@@ -132,7 +136,8 @@
           920.0
         ]
       ],
-      "confidence": 0.588
+      "confidence": 0.588,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540341296_4",
@@ -164,7 +169,8 @@
           920.0
         ]
       ],
-      "confidence": 0.58
+      "confidence": 0.58,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540341296_5",
@@ -196,7 +202,8 @@
           460.0
         ]
       ],
-      "confidence": 0.578
+      "confidence": 0.578,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540341296_6",
@@ -228,7 +235,8 @@
           0.0
         ]
       ],
-      "confidence": 0.572
+      "confidence": 0.572,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540341296_7",
@@ -260,7 +268,8 @@
           1649.0
         ]
       ],
-      "confidence": 0.559
+      "confidence": 0.559,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540341296_8",
@@ -292,7 +301,8 @@
           0.0
         ]
       ],
-      "confidence": 0.551
+      "confidence": 0.551,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540341296_9",
@@ -324,7 +334,8 @@
           920.0
         ]
       ],
-      "confidence": 0.527
+      "confidence": 0.527,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540341296_10",
@@ -356,7 +367,8 @@
           1380.0
         ]
       ],
-      "confidence": 0.501
+      "confidence": 0.501,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540341296_11",
@@ -388,7 +400,8 @@
           1648.0
         ]
       ],
-      "confidence": 0.496
+      "confidence": 0.496,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540341296_12",
@@ -420,7 +433,8 @@
           920.0
         ]
       ],
-      "confidence": 0.489
+      "confidence": 0.489,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540341296_13",
@@ -452,7 +466,8 @@
           0.0
         ]
       ],
-      "confidence": 0.487
+      "confidence": 0.487,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540341296_14",
@@ -576,7 +591,8 @@
           1381.0
         ]
       ],
-      "confidence": 0.477
+      "confidence": 0.477,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540341296_15",
@@ -608,7 +624,8 @@
           1648.0
         ]
       ],
-      "confidence": 0.472
+      "confidence": 0.472,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540341296_16",
@@ -640,7 +657,8 @@
           0.0
         ]
       ],
-      "confidence": 0.423
+      "confidence": 0.423,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540341296_17",
@@ -884,7 +902,8 @@
           0.0
         ]
       ],
-      "confidence": 0.409
+      "confidence": 0.409,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540341296_18",
@@ -1036,7 +1055,8 @@
           1388.0
         ]
       ],
-      "confidence": 0.399
+      "confidence": 0.399,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540341296_19",
@@ -1068,7 +1088,8 @@
           1381.0
         ]
       ],
-      "confidence": 0.393
+      "confidence": 0.393,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540341296_20",
@@ -1100,7 +1121,8 @@
           1380.0
         ]
       ],
-      "confidence": 0.386
+      "confidence": 0.386,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540341296_21",
@@ -1132,7 +1154,8 @@
           460.0
         ]
       ],
-      "confidence": 0.377
+      "confidence": 0.377,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540341296_22",
@@ -1164,7 +1187,8 @@
           460.0
         ]
       ],
-      "confidence": 0.374
+      "confidence": 0.374,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540341296_23",
@@ -1308,7 +1332,8 @@
           920.0
         ]
       ],
-      "confidence": 0.354
+      "confidence": 0.354,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540341296_24",
@@ -1340,7 +1365,8 @@
           1380.0
         ]
       ],
-      "confidence": 0.344
+      "confidence": 0.344,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540341296_25",
@@ -1504,7 +1530,8 @@
           1660.0
         ]
       ],
-      "confidence": 0.337
+      "confidence": 0.337,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540341296_26",
@@ -1536,7 +1563,8 @@
           1.0
         ]
       ],
-      "confidence": 0.306
+      "confidence": 0.306,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540341296_27",
@@ -1568,7 +1596,8 @@
           920.0
         ]
       ],
-      "confidence": 0.276
+      "confidence": 0.276,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540341296_28",
@@ -1748,7 +1777,8 @@
           460.0
         ]
       ],
-      "confidence": 0.26
+      "confidence": 0.26,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540341296_29",
@@ -1780,7 +1810,8 @@
           460.0
         ]
       ],
-      "confidence": 0.226
+      "confidence": 0.226,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540341296_30",
@@ -1812,7 +1843,8 @@
           1648.0
         ]
       ],
-      "confidence": 0.216
+      "confidence": 0.216,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540341296_31",
@@ -2076,7 +2108,8 @@
           73.0
         ]
       ],
-      "confidence": 0.175
+      "confidence": 0.175,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540341296_32",
@@ -2108,7 +2141,8 @@
           920.0
         ]
       ],
-      "confidence": 0.166
+      "confidence": 0.166,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540341296_33",
@@ -2184,7 +2218,8 @@
           1650.0
         ]
       ],
-      "confidence": 0.155
+      "confidence": 0.155,
+      "thickness": 16.0
     },
     {
       "id": "poly_1791540373513",
@@ -2228,7 +2263,8 @@
           2053.0
         ]
       ],
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
     },
     {
       "id": "poly_1791540377960",
@@ -2268,7 +2304,8 @@
           1944.0
         ]
       ],
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
     },
     {
       "id": "poly_1791540381421",
@@ -2308,7 +2345,8 @@
           1976.0
         ]
       ],
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
     },
     {
       "id": "poly_1791540385239",
@@ -2348,7 +2386,8 @@
           2026.0
         ]
       ],
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
     },
     {
       "id": "poly_1791540389939",
@@ -2392,7 +2431,8 @@
           1599.0
         ]
       ],
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
     },
     {
       "id": "poly_1791540395015",
@@ -2436,7 +2476,8 @@
           1923.0
         ]
       ],
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
     },
     {
       "id": "poly_1791540401774",
@@ -2496,7 +2537,8 @@
           885.0
         ]
       ],
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
     },
     {
       "id": "poly_1791540404794",
@@ -2528,7 +2570,72 @@
           820.0
         ]
       ],
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
+    },
+    {
+      "id": "b_1792055458969",
+      "label": "star_trail",
+      "type": "box",
+      "x": 3626.0,
+      "y": 1890.0,
+      "width": 70.0,
+      "height": 76.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": null,
+      "confidence": null,
+      "thickness": 16.0
+    },
+    {
+      "id": "b_1792055463237",
+      "label": "star_trail",
+      "type": "box",
+      "x": 2446.0,
+      "y": 1066.0,
+      "width": 97.0,
+      "height": 90.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": null,
+      "confidence": null,
+      "thickness": 16.0
+    },
+    {
+      "id": "b_1792055464418",
+      "label": "star_trail",
+      "type": "box",
+      "x": 2465.0,
+      "y": 1182.0,
+      "width": 109.0,
+      "height": 85.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": null,
+      "confidence": null,
+      "thickness": 16.0
+    },
+    {
+      "id": "b_1792055467888",
+      "label": "star_trail",
+      "type": "box",
+      "x": 2580.0,
+      "y": 1187.0,
+      "width": 96.0,
+      "height": 71.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": null,
+      "confidence": null,
+      "thickness": 16.0
     }
   ]
 }

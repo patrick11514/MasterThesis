@@ -8,8 +8,8 @@
   "favorite": false,
   "boxes": [
     {
-      "id": "full_1791550579113",
-      "label": "obstruction",
+      "id": "full_1792058274587",
+      "label": "cloud",
       "type": "box",
       "x": 0.0,
       "y": 0.0,
@@ -20,7 +20,8 @@
       "x2": null,
       "y2": null,
       "points": null,
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
     }
   ]
 }

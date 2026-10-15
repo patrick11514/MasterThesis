@@ -5,6 +5,7 @@
   "global_star_trailing": false,
   "global_cloud": false,
   "is_clean": false,
+  "favorite": false,
   "boxes": [
     {
       "id": "l_1790847993238",
@@ -18,7 +19,9 @@
       "y1": 1244.0,
       "x2": 487.0,
       "y2": 2012.0,
-      "points": null
+      "points": null,
+      "confidence": null,
+      "thickness": 16.0
     },
     {
       "id": "l_1790847996319",
@@ -32,7 +35,25 @@
       "y1": 726.0,
       "x2": 1652.0,
       "y2": 1257.0,
-      "points": null
+      "points": null,
+      "confidence": null,
+      "thickness": 16.0
+    },
+    {
+      "id": "full_1792055905067",
+      "label": "unfocused_star",
+      "type": "box",
+      "x": 0.0,
+      "y": 0.0,
+      "width": 3840.0,
+      "height": 2160.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": null,
+      "confidence": null,
+      "thickness": 16.0
     }
   ]
 }

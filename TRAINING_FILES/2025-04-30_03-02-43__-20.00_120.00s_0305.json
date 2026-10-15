@@ -8,8 +8,8 @@
   "favorite": false,
   "boxes": [
     {
-      "id": "full_1791549807744",
-      "label": "cloud",
+      "id": "full_1792056403713",
+      "label": "star_trail",
       "type": "box",
       "x": 0.0,
       "y": 0.0,
@@ -20,7 +20,8 @@
       "x2": null,
       "y2": null,
       "points": null,
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
     }
   ]
 }

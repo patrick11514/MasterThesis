@@ -20,7 +20,8 @@
       "x2": -5.0,
       "y2": 604.0,
       "points": null,
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
     },
     {
       "id": "l_1790457247234",
@@ -35,22 +36,24 @@
       "x2": 1144.0,
       "y2": 2031.0,
       "points": null,
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
     },
     {
-      "id": "b_1791550139115",
+      "id": "b_1792058309150",
       "label": "cloud",
       "type": "box",
-      "x": -666.0,
-      "y": -497.0,
-      "width": 2012.0,
-      "height": 3004.0,
+      "x": -285.0,
+      "y": -121.0,
+      "width": 971.0,
+      "height": 2478.0,
       "x1": null,
       "y1": null,
       "x2": null,
       "y2": null,
       "points": null,
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
     }
   ]
 }

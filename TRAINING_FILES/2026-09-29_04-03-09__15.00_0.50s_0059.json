@@ -4,7 +4,40 @@
   "height": 2160,
   "global_star_trailing": false,
   "global_cloud": false,
-  "is_clean": true,
+  "is_clean": false,
   "favorite": false,
-  "boxes": []
+  "boxes": [
+    {
+      "id": "b_1792059500891",
+      "label": "star_trail",
+      "type": "box",
+      "x": 2952.0,
+      "y": 1423.0,
+      "width": 77.0,
+      "height": 63.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": null,
+      "confidence": null,
+      "thickness": 16.0
+    },
+    {
+      "id": "b_1792059508512",
+      "label": "star_trail",
+      "type": "box",
+      "x": 1011.0,
+      "y": 1656.0,
+      "width": 47.0,
+      "height": 48.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": null,
+      "confidence": null,
+      "thickness": 16.0
+    }
+  ]
 }

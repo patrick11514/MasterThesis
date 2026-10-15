@@ -5,217 +5,8 @@
   "global_star_trailing": false,
   "global_cloud": false,
   "is_clean": false,
+  "favorite": false,
   "boxes": [
-    {
-      "id": "b_1791540225352",
-      "label": "unfocused_star",
-      "type": "box",
-      "x": 2154.0,
-      "y": 1377.0,
-      "width": 36.0,
-      "height": 44.0,
-      "x1": null,
-      "y1": null,
-      "x2": null,
-      "y2": null,
-      "points": null,
-      "confidence": null
-    },
-    {
-      "id": "b_1791540226796",
-      "label": "unfocused_star",
-      "type": "box",
-      "x": 2200.0,
-      "y": 1372.0,
-      "width": 20.0,
-      "height": 26.0,
-      "x1": null,
-      "y1": null,
-      "x2": null,
-      "y2": null,
-      "points": null,
-      "confidence": null
-    },
-    {
-      "id": "b_1791540232215",
-      "label": "unfocused_star",
-      "type": "box",
-      "x": 574.0,
-      "y": 1932.0,
-      "width": 20.0,
-      "height": 25.0,
-      "x1": null,
-      "y1": null,
-      "x2": null,
-      "y2": null,
-      "points": null,
-      "confidence": null
-    },
-    {
-      "id": "b_1791540233834",
-      "label": "unfocused_star",
-      "type": "box",
-      "x": 692.0,
-      "y": 1932.0,
-      "width": 15.0,
-      "height": 18.0,
-      "x1": null,
-      "y1": null,
-      "x2": null,
-      "y2": null,
-      "points": null,
-      "confidence": null
-    },
-    {
-      "id": "b_1791540235823",
-      "label": "unfocused_star",
-      "type": "box",
-      "x": 351.0,
-      "y": 2122.0,
-      "width": 19.0,
-      "height": 18.0,
-      "x1": null,
-      "y1": null,
-      "x2": null,
-      "y2": null,
-      "points": null,
-      "confidence": null
-    },
-    {
-      "id": "b_1791540236902",
-      "label": "unfocused_star",
-      "type": "box",
-      "x": 190.0,
-      "y": 2053.0,
-      "width": 14.0,
-      "height": 22.0,
-      "x1": null,
-      "y1": null,
-      "x2": null,
-      "y2": null,
-      "points": null,
-      "confidence": null
-    },
-    {
-      "id": "b_1791540237689",
-      "label": "unfocused_star",
-      "type": "box",
-      "x": 226.0,
-      "y": 2099.0,
-      "width": 22.0,
-      "height": 22.0,
-      "x1": null,
-      "y1": null,
-      "x2": null,
-      "y2": null,
-      "points": null,
-      "confidence": null
-    },
-    {
-      "id": "b_1791540240403",
-      "label": "unfocused_star",
-      "type": "box",
-      "x": 170.0,
-      "y": 1724.0,
-      "width": 12.0,
-      "height": 13.0,
-      "x1": null,
-      "y1": null,
-      "x2": null,
-      "y2": null,
-      "points": null,
-      "confidence": null
-    },
-    {
-      "id": "b_1791540242832",
-      "label": "unfocused_star",
-      "type": "box",
-      "x": 119.0,
-      "y": 1681.0,
-      "width": 23.0,
-      "height": 28.0,
-      "x1": null,
-      "y1": null,
-      "x2": null,
-      "y2": null,
-      "points": null,
-      "confidence": null
-    },
-    {
-      "id": "b_1791540243914",
-      "label": "unfocused_star",
-      "type": "box",
-      "x": 44.0,
-      "y": 1755.0,
-      "width": 29.0,
-      "height": 28.0,
-      "x1": null,
-      "y1": null,
-      "x2": null,
-      "y2": null,
-      "points": null,
-      "confidence": null
-    },
-    {
-      "id": "b_1791540247518",
-      "label": "unfocused_star",
-      "type": "box",
-      "x": 397.0,
-      "y": 1444.0,
-      "width": 15.0,
-      "height": 22.0,
-      "x1": null,
-      "y1": null,
-      "x2": null,
-      "y2": null,
-      "points": null,
-      "confidence": null
-    },
-    {
-      "id": "b_1791540248777",
-      "label": "unfocused_star",
-      "type": "box",
-      "x": 384.0,
-      "y": 1448.0,
-      "width": 15.0,
-      "height": 24.0,
-      "x1": null,
-      "y1": null,
-      "x2": null,
-      "y2": null,
-      "points": null,
-      "confidence": null
-    },
-    {
-      "id": "b_1791540250654",
-      "label": "unfocused_star",
-      "type": "box",
-      "x": 611.0,
-      "y": 1447.0,
-      "width": 15.0,
-      "height": 27.0,
-      "x1": null,
-      "y1": null,
-      "x2": null,
-      "y2": null,
-      "points": null,
-      "confidence": null
-    },
-    {
-      "id": "b_1791540252140",
-      "label": "unfocused_star",
-      "type": "box",
-      "x": 665.0,
-      "y": 1533.0,
-      "width": 24.0,
-      "height": 30.0,
-      "x1": null,
-      "y1": null,
-      "x2": null,
-      "y2": null,
-      "points": null,
-      "confidence": null
-    },
     {
       "id": "box_ai_1791540261653_0",
       "label": "obstruction",
@@ -246,7 +37,8 @@
           1380.0
         ]
       ],
-      "confidence": 0.64
+      "confidence": 0.64,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540261653_1",
@@ -278,7 +70,8 @@
           1380.0
         ]
       ],
-      "confidence": 0.587
+      "confidence": 0.587,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540261653_2",
@@ -310,7 +103,8 @@
           921.0
         ]
       ],
-      "confidence": 0.521
+      "confidence": 0.521,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540261653_3",
@@ -342,7 +136,8 @@
           461.0
         ]
       ],
-      "confidence": 0.514
+      "confidence": 0.514,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540261653_4",
@@ -374,7 +169,8 @@
           0.0
         ]
       ],
-      "confidence": 0.5
+      "confidence": 0.5,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540261653_5",
@@ -406,7 +202,8 @@
           920.0
         ]
       ],
-      "confidence": 0.481
+      "confidence": 0.481,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540261653_6",
@@ -438,7 +235,8 @@
           920.0
         ]
       ],
-      "confidence": 0.468
+      "confidence": 0.468,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540261653_7",
@@ -470,7 +268,8 @@
           1649.0
         ]
       ],
-      "confidence": 0.462
+      "confidence": 0.462,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540261653_8",
@@ -502,7 +301,8 @@
           460.0
         ]
       ],
-      "confidence": 0.454
+      "confidence": 0.454,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540261653_9",
@@ -534,7 +334,8 @@
           0.0
         ]
       ],
-      "confidence": 0.438
+      "confidence": 0.438,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540261653_10",
@@ -566,39 +367,8 @@
           461.0
         ]
       ],
-      "confidence": 0.412
-    },
-    {
-      "id": "box_ai_1791540261653_11",
-      "label": "cloud",
-      "type": "polygon",
-      "x": 1841.3201293945312,
-      "y": 1.273162841796875,
-      "width": 508.8404541015625,
-      "height": 510.6697998046875,
-      "x1": null,
-      "y1": null,
-      "x2": null,
-      "y2": null,
-      "points": [
-        [
-          1842.0,
-          2.0
-        ],
-        [
-          1842.0,
-          511.0
-        ],
-        [
-          2350.0,
-          511.0
-        ],
-        [
-          2350.0,
-          2.0
-        ]
-      ],
-      "confidence": 0.405
+      "confidence": 0.412,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540261653_12",
@@ -826,7 +596,8 @@
           461.0
         ]
       ],
-      "confidence": 0.405
+      "confidence": 0.405,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540261653_13",
@@ -858,7 +629,8 @@
           1648.0
         ]
       ],
-      "confidence": 0.402
+      "confidence": 0.402,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540261653_14",
@@ -1046,7 +818,8 @@
           453.0
         ]
       ],
-      "confidence": 0.4
+      "confidence": 0.4,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540261653_15",
@@ -1078,7 +851,8 @@
           2.0
         ]
       ],
-      "confidence": 0.378
+      "confidence": 0.378,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540261653_16",
@@ -1110,7 +884,8 @@
           1649.0
         ]
       ],
-      "confidence": 0.362
+      "confidence": 0.362,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540261653_17",
@@ -1142,7 +917,8 @@
           923.0
         ]
       ],
-      "confidence": 0.357
+      "confidence": 0.357,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540261653_18",
@@ -1434,7 +1210,8 @@
           1381.0
         ]
       ],
-      "confidence": 0.312
+      "confidence": 0.312,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540261653_19",
@@ -1466,7 +1243,8 @@
           461.0
         ]
       ],
-      "confidence": 0.301
+      "confidence": 0.301,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540261653_20",
@@ -1642,7 +1420,8 @@
           1382.0
         ]
       ],
-      "confidence": 0.276
+      "confidence": 0.276,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540261653_21",
@@ -1862,7 +1641,8 @@
           3.0
         ]
       ],
-      "confidence": 0.272
+      "confidence": 0.272,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540261653_22",
@@ -1998,7 +1778,8 @@
           1429.0
         ]
       ],
-      "confidence": 0.271
+      "confidence": 0.271,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540261653_23",
@@ -2030,7 +1811,8 @@
           1381.0
         ]
       ],
-      "confidence": 0.247
+      "confidence": 0.247,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540261653_24",
@@ -2062,7 +1844,8 @@
           1.0
         ]
       ],
-      "confidence": 0.209
+      "confidence": 0.209,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540261653_26",
@@ -2266,7 +2049,8 @@
           1651.0
         ]
       ],
-      "confidence": 0.156
+      "confidence": 0.156,
+      "thickness": 16.0
     },
     {
       "id": "box_ai_1791540261653_27",
@@ -2426,7 +2210,8 @@
           3.0
         ]
       ],
-      "confidence": 0.156
+      "confidence": 0.156,
+      "thickness": 16.0
     },
     {
       "id": "b_1791540298832",
@@ -2441,7 +2226,8 @@
       "x2": null,
       "y2": null,
       "points": null,
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
     },
     {
       "id": "b_1791540301583",
@@ -2456,7 +2242,8 @@
       "x2": null,
       "y2": null,
       "points": null,
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
     },
     {
       "id": "b_1791540305088",
@@ -2471,7 +2258,8 @@
       "x2": null,
       "y2": null,
       "points": null,
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
     },
     {
       "id": "b_1791540306297",
@@ -2486,7 +2274,8 @@
       "x2": null,
       "y2": null,
       "points": null,
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
     },
     {
       "id": "b_1791540307932",
@@ -2501,7 +2290,8 @@
       "x2": null,
       "y2": null,
       "points": null,
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
     },
     {
       "id": "b_1791540310158",
@@ -2516,7 +2306,8 @@
       "x2": null,
       "y2": null,
       "points": null,
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
     },
     {
       "id": "b_1791540310887",
@@ -2531,7 +2322,8 @@
       "x2": null,
       "y2": null,
       "points": null,
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
     },
     {
       "id": "b_1791540311650",
@@ -2546,7 +2338,8 @@
       "x2": null,
       "y2": null,
       "points": null,
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
     },
     {
       "id": "b_1791540317531",
@@ -2561,112 +2354,24 @@
       "x2": null,
       "y2": null,
       "points": null,
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
     },
     {
-      "id": "b_1791540323393",
-      "label": "unfocused_star",
+      "id": "full_1792055450614",
+      "label": "star_trail",
       "type": "box",
-      "x": 1989.0,
-      "y": 709.0,
-      "width": 27.0,
-      "height": 30.0,
+      "x": 0.0,
+      "y": 0.0,
+      "width": 3840.0,
+      "height": 2160.0,
       "x1": null,
       "y1": null,
       "x2": null,
       "y2": null,
       "points": null,
-      "confidence": null
-    },
-    {
-      "id": "b_1791540325408",
-      "label": "unfocused_star",
-      "type": "box",
-      "x": 2151.0,
-      "y": 560.0,
-      "width": 22.0,
-      "height": 28.0,
-      "x1": null,
-      "y1": null,
-      "x2": null,
-      "y2": null,
-      "points": null,
-      "confidence": null
-    },
-    {
-      "id": "b_1791540326614",
-      "label": "unfocused_star",
-      "type": "box",
-      "x": 1975.0,
-      "y": 556.0,
-      "width": 19.0,
-      "height": 19.0,
-      "x1": null,
-      "y1": null,
-      "x2": null,
-      "y2": null,
-      "points": null,
-      "confidence": null
-    },
-    {
-      "id": "b_1791540328517",
-      "label": "unfocused_star",
-      "type": "box",
-      "x": 1839.0,
-      "y": 602.0,
-      "width": 22.0,
-      "height": 29.0,
-      "x1": null,
-      "y1": null,
-      "x2": null,
-      "y2": null,
-      "points": null,
-      "confidence": null
-    },
-    {
-      "id": "b_1791540331525",
-      "label": "unfocused_star",
-      "type": "box",
-      "x": 1620.0,
-      "y": 111.0,
-      "width": 22.0,
-      "height": 33.0,
-      "x1": null,
-      "y1": null,
-      "x2": null,
-      "y2": null,
-      "points": null,
-      "confidence": null
-    },
-    {
-      "id": "b_1791540332409",
-      "label": "unfocused_star",
-      "type": "box",
-      "x": 1706.0,
-      "y": 33.0,
-      "width": 22.0,
-      "height": 34.0,
-      "x1": null,
-      "y1": null,
-      "x2": null,
-      "y2": null,
-      "points": null,
-      "confidence": null
-    },
-    {
-      "id": "b_1791540333444",
-      "label": "unfocused_star",
-      "type": "box",
-      "x": 1805.0,
-      "y": 103.0,
-      "width": 14.0,
-      "height": 24.0,
-      "x1": null,
-      "y1": null,
-      "x2": null,
-      "y2": null,
-      "points": null,
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
     }
   ]
 }

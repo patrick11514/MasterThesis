@@ -5,6 +5,7 @@
   "global_star_trailing": false,
   "global_cloud": false,
   "is_clean": false,
+  "favorite": true,
   "boxes": [
     {
       "id": "poly_1790409734479",
@@ -35,8 +36,25 @@
           -66.0,
           -74.0
         ]
-      ]
+      ],
+      "confidence": null,
+      "thickness": 16.0
+    },
+    {
+      "id": "full_1792056422202",
+      "label": "unfocused_star",
+      "type": "box",
+      "x": 0.0,
+      "y": 0.0,
+      "width": 3840.0,
+      "height": 2160.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": null,
+      "confidence": null,
+      "thickness": 16.0
     }
-  ],
-  "favorite": true
+  ]
 }
