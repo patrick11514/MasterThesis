@@ -256,6 +256,8 @@ def main():
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--resume", "--weights", dest="resume", type=str, default=None,
                         help="Path to existing model checkpoint (.pt) to resume or fine-tune from")
+    parser.add_argument("--resume-state", action="store_true",
+                        help="Resume exact optimizer, scheduler, early stopper, and epoch state from checkpoint")
     parser.add_argument("--out-dir", type=str, default="checkpoints")
     parser.add_argument("--patience", type=int, default=5, help="Early stopping patience (epochs without improvement, 0 to disable)")
     parser.add_argument("--dry-run", action="store_true", help="Run 1 quick batch for testing")
@@ -348,9 +350,43 @@ def main():
     early_stopper = EarlyStopping(patience=args.patience, min_delta=1e-3, mode="max")
     best_f1 = -1.0
     history = []
+    start_epoch = 1
+
+    if args.resume and args.resume_state and isinstance(checkpoint, dict):
+        if "optimizer_state_dict" in checkpoint:
+            try:
+                optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+                print(" [Resume] Restored optimizer state.")
+            except Exception as e:
+                print(f" [Resume] Warning: Could not restore optimizer state: {e}")
+        if "scheduler_state_dict" in checkpoint:
+            try:
+                scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+                print(" [Resume] Restored learning rate scheduler state.")
+            except Exception as e:
+                print(f" [Resume] Warning: Could not restore scheduler state: {e}")
+        if "early_stopper" in checkpoint and isinstance(checkpoint["early_stopper"], dict):
+            es_info = checkpoint["early_stopper"]
+            early_stopper.counter = es_info.get("counter", 0)
+            early_stopper.best_score = es_info.get("best_score", None)
+            early_stopper.best_epoch = es_info.get("best_epoch", 0)
+            print(f" [Resume] Restored early stopper (patience counter: {early_stopper.counter}, best score: {early_stopper.best_score})")
+        if "history" in checkpoint and isinstance(checkpoint["history"], list):
+            history = list(checkpoint["history"])
+        if "best_f1" in checkpoint:
+            best_f1 = float(checkpoint["best_f1"])
+        elif "metrics" in checkpoint and "macro_f1" in checkpoint["metrics"]:
+            best_f1 = float(checkpoint["metrics"]["macro_f1"])
+
+        start_epoch = int(checkpoint.get("epoch", 0)) + 1
+        print(f" [Resume] Resuming exact training state from epoch {start_epoch} (target: {args.epochs})")
+
+        if start_epoch > args.epochs:
+            print(f" [Resume] Model already completed {start_epoch - 1} of {args.epochs} epochs. Nothing to train.")
+            return
 
     start_time = time.time()
-    for epoch in range(1, args.epochs + 1):
+    for epoch in range(start_epoch, args.epochs + 1):
         t0 = time.time()
         train_loss = train_one_epoch(model, train_loader, criterion, optimizer, device)
         val_loss, metrics = evaluate(model, val_loader, criterion, device)
@@ -373,6 +409,10 @@ def main():
             **metrics,
         })
 
+        # Incremental history flush to disk
+        with open(out_dir / "training_history.json", "w", encoding="utf-8") as fp:
+            json.dump(history, fp, indent=2)
+
         # Save best model checkpoint
         if macro_f1 > best_f1:
             best_f1 = macro_f1
@@ -384,6 +424,25 @@ def main():
                 "input_mode": args.input_mode,
             }, out_dir / "best_model.pt")
             print(f"  --> Saved new best checkpoint (Macro F1: {best_f1:.4f})")
+
+        # Always save last model checkpoint with full optimizer, scheduler and epoch state
+        torch.save({
+            "epoch": epoch,
+            "target_epochs": args.epochs,
+            "model_name": args.model,
+            "state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "scheduler_state_dict": scheduler.state_dict(),
+            "early_stopper": {
+                "counter": early_stopper.counter,
+                "best_score": early_stopper.best_score,
+                "best_epoch": early_stopper.best_epoch,
+            },
+            "best_f1": best_f1,
+            "metrics": metrics,
+            "history": history,
+            "input_mode": args.input_mode,
+        }, out_dir / "last_model.pt")
 
         if early_stopper.step(macro_f1, epoch):
             print(

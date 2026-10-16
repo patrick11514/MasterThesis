@@ -335,42 +335,91 @@ python master_train.py --data-dir ../TRAINING_FILES --yolo-backbone yolo11n-seg.
 ```
 
 Useful flags:
+- `--session <name>`: Custom session name/ID (defaults to timestamp `YYYY-MM-DD_HH-MM-SS`).
+- `--list-sessions`: Lists all recorded training sessions, their parent sessions, and per-model status/metrics in a clean terminal table.
+- `--resume-session <id|latest>`: Resumes an unfinished or interrupted session in-place. Automatically skips models that already completed in that session, and seamlessly resumes mid-training models from their last saved epoch (`last_model.pt` / `last.pt`) before running remaining pending models.
+- `--continue-session <id|latest>`: Starts a NEW session that fine-tunes all models starting from the saved `best_model.pt` checkpoints of the chosen session.
+- `--resume-model model=session_id ...`: Granular per-model continuation override (e.g. `--resume-model astronet=2026-10-15_12-00 resnet18=checkpoints/custom.pt`).
 - `--skip-prep`: Skip tile slicing if `dataset/` and `dataset_yolo/` already exist.
 - `--skip-yolo`: Skip YOLO segmentation training (train only CNNs).
 - `--skip-cnn`: Skip CNN training (train only YOLO segmentation).
 - `--cnn-models astronet resnet18`: Train a specific subset of CNN models.
-- `--cnn-epochs 20 --cnn-patience 5`: Set epochs and early stopping patience for CNNs.
-- `--yolo-epochs 30 --yolo-patience 8`: Set epochs and early stopping patience for YOLO.
+- `--cnn-epochs 20 --patience 5`: Set epochs and early stopping patience for CNNs.
+- `--yolo-epochs 30 --patience 8`: Set epochs and early stopping patience for YOLO.
 - `--no-amp`: Disables mixed precision (recommended for RDNA4 ROCm stability).
 - `--auto-resume`: Automatically detects existing `best.pt` / `best_model.pt` checkpoints and fine-tunes them instead of training from scratch!
 
-Upon completion, `master_train.py` outputs a comparative performance summary table comparing parameters, test loss, and F1 scores across all trained architectures.
+Upon completion, `master_train.py` outputs a comparative performance summary table comparing parameters, test loss, and F1 scores across all trained architectures. All session checkpoints are recorded under `checkpoints/sessions/<session_id>/` and automatically mirrored to `checkpoints/<model>_f32/` for full backwards compatibility.
 
 ---
 
-### Step 3.6: Updating the Dataset & Continuing Training (Incremental Fine-Tuning)
+### Step 3.6: Session-Based Training & Per-Model Continuation
 
-When you label new FITS images or introduce additional defect examples (e.g. adding more `unfocused_stars` or faint satellite streaks), **you do NOT need to retrain models from scratch!** You can extend previous checkpoints (`best.pt` / `best_model.pt`).
+AstroGrader organizes training into structured, auditable **sessions** under `checkpoints/sessions/<session_id>/session.json`.
 
-#### 1. End-to-End One-Click Update (`master_train.py --auto-resume`)
+#### 1. Inspecting Training Sessions (`--list-sessions`)
 
-Re-slice the new data and continue training both YOLO and all CNN backbones from their best saved checkpoints:
+To inspect all previous training sessions and see which models completed, their epochs, and their metrics:
 
 ```bash
-python master_train.py \
-  --data-dir ../TRAINING_FILES \
-  --auto-resume \
-  --yolo-epochs 20 \
-  --cnn-epochs 15 \
-  --patience 5 \
-  --lr 0.0005 \
-  --no-amp
+python master_train.py --list-sessions
+```
+
+Example output:
+```text
+======================================================================
+                 AstroGrader: Recorded Training Sessions               
+======================================================================
+
+Session ID             Created At           Parent           Status       Models Summary
+--------------------------------------------------------------------------------------------------------------
+2026-10-16_09-30-00    2026-10-16 09:30:00  -                COMPLETED    yolo11:DONE(mAP=0.89), astronet:DONE(F1=0.91), resnet18:DONE(F1=0.93)
+2026-10-16_14-15-22    2026-10-16 14:15:22  -                INTERRUPTED  yolo11:DONE(mAP=0.89), astronet:DONE(F1=0.91), resnet18:PARTIAL(8/20)
+--------------------------------------------------------------------------------------------------------------
+```
+
+#### 2. Resuming an Interrupted Session (`--resume-session`)
+
+If training was interrupted (e.g. system reboot, Ctrl+C, or GPU timeout) while training the 3rd model:
+
+```bash
+# Resumes the latest interrupted session
+python master_train.py --resume-session latest --no-amp
+
+# Or resume a specific session by ID
+python master_train.py --resume-session 2026-10-16_14-15-22 --no-amp
 ```
 
 `master_train.py` will:
-1. Re-slice all FITS files into updated `dataset/` and `dataset_yolo/` folders.
-2. Detect `runs/segment/yolo11_astro/weights/best.pt` and fine-tune YOLO on the extended dataset.
-3. Detect each `checkpoints/<model>_f32/best_model.pt` and resume PyTorch CNN training with fine-tuning learning rate.
+1. Load `session.json` and detect models already marked `completed` (`yolo11`, `astronet`), skipping them instantly and displaying their cached metrics.
+2. Detect the unfinished model (`resnet18`) and resume its training directly from the exact epoch saved in `last_model.pt` (restoring optimizer state, scheduler, and early stopper).
+3. Proceed to train any remaining pending models (`mobilenet_v3`, `efficientnet_b0`).
+
+#### 3. Continuing / Fine-Tuning into a New Session (`--continue-session`)
+
+When you label new FITS data and want to continue training models from a previous session's champion checkpoints into a fresh session:
+
+```bash
+# Continue all models from the latest session into a new session
+python master_train.py \
+  --data-dir ../TRAINING_FILES \
+  --continue-session latest \
+  --cnn-epochs 15 \
+  --lr 0.0003 \
+  --no-amp
+```
+
+#### 4. Per-Model Continuation Overrides (`--resume-model`)
+
+You can also cherry-pick starting checkpoints on a per-model basis from specific sessions or files:
+
+```bash
+python master_train.py \
+  --session experiment_fusion \
+  --resume-model astronet=2026-10-16_09-30-00 resnet18=2026-10-15_18-00-00 \
+  --cnn-models astronet resnet18 \
+  --no-amp
+```
 
 #### 2. Fine-Tuning YOLO11-seg Directly (`train_yolo.py`)
 

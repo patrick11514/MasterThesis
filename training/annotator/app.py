@@ -6,6 +6,7 @@ and saves multi-label bounding boxes in JSON and YOLO format.
 
 import io
 import json
+import os
 from pathlib import Path
 from typing import List, Optional
 
@@ -460,11 +461,22 @@ def list_available_models():
                 continue
             seen.add(resolved)
             rel = str(resolved.relative_to(base_dir))
+            if resolved.name in ("last_model.pt", "last.pt"):
+                continue
+
             is_onnx = resolved.suffix.lower() == ".onnx"
             is_yolo = not is_onnx and ("seg" in rel.lower() or "runs/segment" in rel or "yolo" in rel.lower())
 
             display_name = resolved.name
-            if resolved.name == "best_model.pt" or (resolved.parent != base_dir and resolved.parent.name not in ("weights", "checkpoints")):
+            if "checkpoints/sessions" in rel or "checkpoints" + os.sep + "sessions" in rel:
+                parts = rel.split(os.sep)
+                if "sessions" in parts:
+                    s_idx = parts.index("sessions")
+                    if len(parts) > s_idx + 2:
+                        s_name = parts[s_idx + 1]
+                        m_name = parts[s_idx + 2]
+                        display_name = f"[{s_name}] {m_name}/{resolved.name}"
+            elif resolved.name == "best_model.pt" or (resolved.parent != base_dir and resolved.parent.name not in ("weights", "checkpoints")):
                 display_name = f"{resolved.parent.name}/{resolved.name}"
 
             models.append({

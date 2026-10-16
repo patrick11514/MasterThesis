@@ -47,6 +47,7 @@ def train_yolo(
     patience: int = 10,
     amp: bool = True,
     export_onnx: bool = True,
+    resume_training: bool = False,
 ):
     yaml_path = check_dataset_yaml(Path(data_yaml))
 
@@ -81,6 +82,7 @@ def train_yolo(
     print(f"Epochs:         {epochs}")
     print(f"Patience:       {patience}")
     print(f"AMP (FP16):     {amp}")
+    print(f"Resume Run:     {resume_training}")
     print(f"Device:         {device} ({device_name})")
     print(f"Save Run:       {project}/{name}")
     print("=" * 60 + "\n")
@@ -90,25 +92,29 @@ def train_yolo(
 
     # Train model
     # Note: flipud and fliplr are 0.5 because astronomical images are rotationally invariant.
-    results = model.train(
-        data=str(yaml_path),
-        epochs=epochs,
-        batch=batch,
-        imgsz=imgsz,
-        device=device,
-        workers=workers,
-        project=project,
-        name=name,
-        exist_ok=True,
-        lr0=lr0,
-        patience=patience,
-        amp=amp,
-        fliplr=0.5,
-        flipud=0.5,
-        mosaic=0.5,
-        close_mosaic=5,
-        verbose=True,
-    )
+    train_kwargs = {
+        "data": str(yaml_path),
+        "epochs": epochs,
+        "batch": batch,
+        "imgsz": imgsz,
+        "device": device,
+        "workers": workers,
+        "project": project,
+        "name": name,
+        "exist_ok": True,
+        "lr0": lr0,
+        "patience": patience,
+        "amp": amp,
+        "fliplr": 0.5,
+        "flipud": 0.5,
+        "mosaic": 0.5,
+        "close_mosaic": 5,
+        "verbose": True,
+    }
+    if resume_training:
+        train_kwargs["resume"] = True
+
+    results = model.train(**train_kwargs)
 
     print("\n" + "=" * 60)
     print("                 Training Complete - Validating")
@@ -119,12 +125,26 @@ def train_yolo(
 
     # Report Box and Mask metrics
     print("\nValidation Metrics Summary:")
+    summary_metrics = {
+        "box_map50": 0.0,
+        "box_map": 0.0,
+        "seg_map50": 0.0,
+        "seg_map": 0.0,
+    }
     if hasattr(metrics, "box"):
-        print(f"  Box  mAP@50:    {metrics.box.map50 * 100:.2f}%")
-        print(f"  Box  mAP@50-95: {metrics.box.map * 100:.2f}%")
+        b50 = float(metrics.box.map50)
+        b = float(metrics.box.map)
+        summary_metrics["box_map50"] = round(b50, 4)
+        summary_metrics["box_map"] = round(b, 4)
+        print(f"  Box  mAP@50:    {b50 * 100:.2f}%")
+        print(f"  Box  mAP@50-95: {b * 100:.2f}%")
     if hasattr(metrics, "seg"):
-        print(f"  Mask mAP@50:    {metrics.seg.map50 * 100:.2f}%")
-        print(f"  Mask mAP@50-95: {metrics.seg.map * 100:.2f}%")
+        s50 = float(metrics.seg.map50)
+        s = float(metrics.seg.map)
+        summary_metrics["seg_map50"] = round(s50, 4)
+        summary_metrics["seg_map"] = round(s, 4)
+        print(f"  Mask mAP@50:    {s50 * 100:.2f}%")
+        print(f"  Mask mAP@50-95: {s * 100:.2f}%")
 
     # Export to ONNX if requested
     if export_onnx:
@@ -142,6 +162,7 @@ def train_yolo(
 
     print("\nAll done! Weights and validation figures saved under:")
     print(f"  {Path(project) / name}")
+    return summary_metrics
 
 
 if __name__ == "__main__":
@@ -178,6 +199,11 @@ if __name__ == "__main__":
         action="store_true",
         help="Skip automatic ONNX export after training",
     )
+    parser.add_argument(
+        "--resume-training",
+        action="store_true",
+        help="Resume interrupted YOLO training from checkpoint (calls model.train(resume=True))",
+    )
 
     args = parser.parse_args()
     train_yolo(
@@ -194,4 +220,5 @@ if __name__ == "__main__":
         patience=args.patience,
         amp=not args.no_amp,
         export_onnx=not args.no_onnx,
+        resume_training=args.resume_training,
     )

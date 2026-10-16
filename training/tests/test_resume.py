@@ -72,6 +72,118 @@ class TestResumeCheckpoint(unittest.TestCase):
         model_orig.load_state_dict(model_dict)
         self.assertEqual(model_orig.classifier[3].out_features, NUM_CLASSES)
 
+    def test_last_model_state_resumption(self):
+        """Verify that optimizer, scheduler, early stopper, and history can be saved and restored from last_model.pt."""
+        model = build_model("astronet", pretrained=False, num_classes=NUM_CLASSES)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=10)
+
+        # Take one step so optimizer has state
+        loss = sum(p.sum() for p in model.parameters())
+        loss.backward()
+        optimizer.step()
+        scheduler.step()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            last_ckpt_path = Path(tmpdir) / "last_model.pt"
+            history = [{"epoch": 1, "macro_f1": 0.75, "clean_sky_accuracy": 0.88}]
+            torch.save({
+                "epoch": 1,
+                "target_epochs": 10,
+                "model_name": "astronet",
+                "state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "scheduler_state_dict": scheduler.state_dict(),
+                "early_stopper": {"counter": 2, "best_score": 0.82, "best_epoch": 1},
+                "best_f1": 0.82,
+                "metrics": {"macro_f1": 0.75},
+                "history": history,
+            }, last_ckpt_path)
+
+            self.assertTrue(last_ckpt_path.exists())
+
+            # Fresh model and optimizer
+            model_new = build_model("astronet", pretrained=False, num_classes=NUM_CLASSES)
+            opt_new = torch.optim.AdamW(model_new.parameters(), lr=1e-3, weight_decay=1e-4)
+            sched_new = torch.optim.lr_scheduler.CosineAnnealingLR(opt_new, T_max=10)
+
+            ckpt_loaded = torch.load(last_ckpt_path, map_location="cpu")
+            model_new.load_state_dict(ckpt_loaded["state_dict"])
+            opt_new.load_state_dict(ckpt_loaded["optimizer_state_dict"])
+            sched_new.load_state_dict(ckpt_loaded["scheduler_state_dict"])
+
+            self.assertEqual(ckpt_loaded["epoch"], 1)
+            self.assertEqual(ckpt_loaded["early_stopper"]["counter"], 2)
+            self.assertEqual(ckpt_loaded["best_f1"], 0.82)
+            self.assertEqual(len(ckpt_loaded["history"]), 1)
+            # Verify learning rates match
+            self.assertEqual(opt_new.param_groups[0]["lr"], optimizer.param_groups[0]["lr"])
+
+    def test_session_manifest_and_resolution(self):
+        """Tests session manifest saving, listing, and resolution helpers."""
+        from master_train import (
+            get_all_sessions,
+            resolve_session,
+            save_session_manifest,
+            parse_resume_model_overrides,
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sessions_dir = Path(tmpdir) / "sessions"
+            sessions_dir.mkdir()
+
+            s1_dir = sessions_dir / "2026-10-15_10-00-00"
+            s2_dir = sessions_dir / "2026-10-16_09-00-00"
+
+            save_session_manifest(s1_dir, {
+                "session_id": "2026-10-15_10-00-00",
+                "created_at": "2026-10-15T10:00:00",
+                "status": "completed",
+                "models": {
+                    "astronet": {"status": "completed", "macro_f1": 0.91},
+                    "resnet18": {"status": "completed", "macro_f1": 0.93},
+                },
+            })
+
+            save_session_manifest(s2_dir, {
+                "session_id": "2026-10-16_09-00-00",
+                "created_at": "2026-10-16T09:00:00",
+                "status": "in_progress",
+                "models": {
+                    "astronet": {"status": "completed", "macro_f1": 0.92},
+                    "resnet18": {"status": "in_progress", "epochs_completed": 5, "target_epochs": 20},
+                },
+            })
+
+            sessions = get_all_sessions(sessions_dir)
+            self.assertEqual(len(sessions), 2)
+            # Should be sorted newest first
+            self.assertEqual(sessions[0]["session_id"], "2026-10-16_09-00-00")
+
+            # Resolve 'latest'
+            latest_id, latest_path = resolve_session("latest", sessions_dir)
+            self.assertEqual(latest_id, "2026-10-16_09-00-00")
+            self.assertEqual(latest_path, s2_dir)
+
+            # Resolve exact
+            exact_id, exact_path = resolve_session("2026-10-15_10-00-00", sessions_dir)
+            self.assertEqual(exact_id, "2026-10-15_10-00-00")
+            self.assertEqual(exact_path, s1_dir)
+
+            # Resolve prefix
+            pref_id, pref_path = resolve_session("2026-10-15", sessions_dir)
+            self.assertEqual(pref_id, "2026-10-15_10-00-00")
+
+            # Test --resume-model parsing
+            # Fake a checkpoint file
+            fake_ckpt = s1_dir / "astronet_f32" / "best_model.pt"
+            fake_ckpt.parent.mkdir(parents=True, exist_ok=True)
+            fake_ckpt.write_text("dummy")
+
+            overrides = parse_resume_model_overrides(["astronet=2026-10-15"], sessions_dir)
+            self.assertIn("astronet", overrides)
+            self.assertEqual(overrides["astronet"], str(fake_ckpt.resolve()))
+
 
 if __name__ == "__main__":
     unittest.main()
