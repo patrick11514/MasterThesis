@@ -152,16 +152,21 @@ def save_session_manifest(session_dir: Path, manifest: Dict):
 def ensure_yolo_in_session(session_dir: Path) -> Path:
     """
     Ultralytics can sometimes prepend its default runs/segment/ if project paths
-    are relative. This helper ensures yolo11_astro lives inside session_dir.
+    are relative. This helper ensures yolo_astro lives inside session_dir.
     """
-    dest = session_dir / "yolo11_astro"
-    if dest.exists() and (dest / "weights").exists():
-        return dest
+    for y_name in ["yolo_astro", "yolo11_astro"]:
+        dest = session_dir / y_name
+        if dest.exists() and (dest / "weights").exists():
+            return dest
 
+    dest = session_dir / "yolo_astro"
     sid = session_dir.name
     candidates = [
+        Path("runs/segment") / "checkpoints" / "sessions" / sid / "yolo_astro",
         Path("runs/segment") / "checkpoints" / "sessions" / sid / "yolo11_astro",
+        Path("runs/segment") / str(session_dir).lstrip("/") / "yolo_astro",
         Path("runs/segment") / str(session_dir).lstrip("/") / "yolo11_astro",
+        Path("runs/segment") / sid / "yolo_astro",
         Path("runs/segment") / sid / "yolo11_astro",
     ]
     for c in candidates:
@@ -182,19 +187,28 @@ def sync_latest_mirrors(session_dir: Path, model_name: str, is_yolo: bool = Fals
     """
     Copies newly trained checkpoints to the legacy root directories:
     - CNN: checkpoints/<model_name>_f32/
-    - YOLO: runs/segment/yolo11_astro/weights/
+    - YOLO: runs/segment/yolo_astro/weights/ and runs/segment/yolo11_astro/weights/
     Maintains 100% backwards compatibility for annotator and test scripts.
     """
     try:
         if is_yolo:
-            ensure_yolo_in_session(session_dir)
-            src_weights = session_dir / "yolo11_astro" / "weights"
-            dst_weights = Path("runs/segment/yolo11_astro/weights")
-            dst_weights.mkdir(parents=True, exist_ok=True)
-            for fname in ["best.pt", "last.pt", "best.onnx"]:
-                src_f = src_weights / fname
-                if src_f.exists():
-                    shutil.copy2(src_f, dst_weights / fname)
+            yolo_dir = ensure_yolo_in_session(session_dir)
+            src_weights = yolo_dir / "weights"
+            if not src_weights.exists():
+                src_weights = session_dir / "yolo_astro" / "weights"
+                if not src_weights.exists():
+                    src_weights = session_dir / "yolo11_astro" / "weights"
+
+            dst_targets = [
+                Path("runs/segment/yolo_astro/weights"),
+                Path("runs/segment/yolo11_astro/weights"),
+            ]
+            for dst_weights in dst_targets:
+                dst_weights.mkdir(parents=True, exist_ok=True)
+                for fname in ["best.pt", "last.pt", "best.onnx"]:
+                    src_f = src_weights / fname
+                    if src_f.exists():
+                        shutil.copy2(src_f, dst_weights / fname)
         else:
             src_dir = session_dir / f"{model_name}_f32"
             dst_dir = Path("checkpoints") / f"{model_name}_f32"
@@ -303,8 +317,10 @@ def parse_resume_model_overrides(overrides_list: Optional[List[str]], sessions_d
         else:
             try:
                 sid, sdir = resolve_session(target, sessions_dir)
-                if m_name in ("yolo", "yolo11", "yolo11_astro"):
-                    c_path = sdir / "yolo11_astro" / "weights" / "best.pt"
+                if m_name in ("yolo", "yolo26", "yolo_astro", "yolo11", "yolo11_astro"):
+                    c_path = sdir / "yolo_astro" / "weights" / "best.pt"
+                    if not c_path.exists():
+                        c_path = sdir / "yolo11_astro" / "weights" / "best.pt"
                 else:
                     c_path = sdir / f"{m_name}_f32" / "best_model.pt"
                 if c_path.exists():
@@ -358,8 +374,8 @@ def main():
     # Models & Hyperparameters
     parser.add_argument("--cnn-models", nargs="+", default=["astronet", "resnet18", "mobilenet_v3", "efficientnet_b0"],
                         help="CNN models to train")
-    parser.add_argument("--yolo-backbone", type=str, default="yolo11n-seg.pt",
-                        help="YOLO model backbone weights")
+    parser.add_argument("--yolo-backbone", type=str, default="yolo26n-seg.pt",
+                        help="YOLO model backbone weights (e.g. yolo26n-seg.pt, yolo26s-seg.pt, yolo11n-seg.pt)")
     parser.add_argument("--yolo-epochs", type=int, default=30, help="Epochs for YOLO training")
     parser.add_argument("--yolo-batch", type=int, default=16, help="Batch size for YOLO")
     parser.add_argument("--cnn-epochs", type=int, default=20, help="Epochs for CNN models")
@@ -477,15 +493,16 @@ def main():
         return prev.get("status") == "completed"
 
     try:
-        # Step 2: YOLO11 Instance Segmentation Training
-        yolo_key = "yolo11_astro"
+        # Step 2: YOLO26 Instance Segmentation Training
+        yolo_key = "yolo_astro"
         if not args.skip_yolo:
-            print_banner("Step 2: Ultralytics YOLO11-seg Training")
-            if should_skip_model(yolo_key):
-                prev = models_entry[yolo_key]
-                print(f" [Session Resume] Model YOLO11-seg already completed in session {session_id}. Skipping!")
+            print_banner("Step 2: Ultralytics YOLO26-seg Training")
+            # Support both yolo_astro and legacy yolo11_astro in resumed sessions
+            if should_skip_model("yolo_astro") or should_skip_model("yolo11_astro"):
+                prev = models_entry.get("yolo_astro", models_entry.get("yolo11_astro", {}))
+                print(f" [Session Resume] Model YOLO-seg already completed in session {session_id}. Skipping!")
                 benchmark_results.append({
-                    "model": "YOLO11-seg",
+                    "model": "YOLO26-seg",
                     "task": "Instance Segmentation",
                     "metric_name": "Mask / Box mAP",
                     "metric_val": f"Box mAP50: {prev.get('metrics', {}).get('box_map50', 'N/A')}",
@@ -501,25 +518,37 @@ def main():
                     yolo_backbone = args.yolo_backbone
                     resume_yolo_exact = False
 
-                    # Check for mid-training resume within current session
-                    yolo_session_last = session_dir / "yolo11_astro" / "weights" / "last.pt"
+                    # Check for mid-training resume within current session (check yolo_astro and legacy yolo11_astro)
+                    yolo_session_last = session_dir / "yolo_astro" / "weights" / "last.pt"
+                    if not yolo_session_last.exists():
+                        yolo_session_last = session_dir / "yolo11_astro" / "weights" / "last.pt"
+
                     if is_resuming_existing and yolo_session_last.exists():
                         yolo_backbone = str(yolo_session_last)
                         resume_yolo_exact = True
                         print(f" [Session Resume] Resuming interrupted YOLO run from: {yolo_backbone}")
-                    elif "yolo" in model_overrides or "yolo11_astro" in model_overrides:
-                        yolo_backbone = model_overrides.get("yolo11_astro", model_overrides.get("yolo"))
+                    elif any(k in model_overrides for k in ("yolo", "yolo_astro", "yolo26", "yolo11_astro")):
+                        yolo_backbone = (
+                            model_overrides.get("yolo_astro")
+                            or model_overrides.get("yolo26")
+                            or model_overrides.get("yolo")
+                            or model_overrides.get("yolo11_astro")
+                        )
                         print(f" [Override] Using explicit YOLO resume weights: {yolo_backbone}")
                     elif args.resume_yolo:
                         yolo_backbone = args.resume_yolo
                         print(f" [Resume] Using specified YOLO resume weights: {yolo_backbone}")
                     elif parent_session:
-                        parent_yolo = sessions_base / parent_session / "yolo11_astro" / "weights" / "best.pt"
+                        parent_yolo = sessions_base / parent_session / "yolo_astro" / "weights" / "best.pt"
+                        if not parent_yolo.exists():
+                            parent_yolo = sessions_base / parent_session / "yolo11_astro" / "weights" / "best.pt"
                         if parent_yolo.exists():
                             yolo_backbone = str(parent_yolo)
                             print(f" [Parent Session] Fine-tuning YOLO from parent session checkpoint: {yolo_backbone}")
                     elif args.auto_resume:
-                        default_yolo_best = Path("runs/segment/yolo11_astro/weights/best.pt")
+                        default_yolo_best = Path("runs/segment/yolo_astro/weights/best.pt")
+                        if not default_yolo_best.exists():
+                            default_yolo_best = Path("runs/segment/yolo11_astro/weights/best.pt")
                         if default_yolo_best.exists():
                             yolo_backbone = str(default_yolo_best)
                             print(f" [Auto-Resume] Found previous YOLO champion: {yolo_backbone}. Fine-tuning on new data!")
@@ -540,7 +569,7 @@ def main():
                         imgsz=args.tile_size,
                         device=args.device,
                         project=str(session_dir),
-                        name="yolo11_astro",
+                        name="yolo_astro",
                         lr0=args.lr,
                         patience=args.patience,
                         amp=not args.no_amp,
@@ -550,11 +579,16 @@ def main():
                     elapsed_yolo = time.time() - t0_yolo
 
                     ensure_yolo_in_session(session_dir)
-                    yolo_best_pt = session_dir / "yolo11_astro" / "weights" / "best.pt"
-                    yolo_last_pt = session_dir / "yolo11_astro" / "weights" / "last.pt"
+                    yolo_best_pt = session_dir / "yolo_astro" / "weights" / "best.pt"
+                    if not yolo_best_pt.exists():
+                        yolo_best_pt = session_dir / "yolo11_astro" / "weights" / "best.pt"
 
-                    # Mirror to legacy runs/segment/yolo11_astro/
-                    sync_latest_mirrors(session_dir, "yolo11_astro", is_yolo=True)
+                    yolo_last_pt = session_dir / "yolo_astro" / "weights" / "last.pt"
+                    if not yolo_last_pt.exists():
+                        yolo_last_pt = session_dir / "yolo11_astro" / "weights" / "last.pt"
+
+                    # Mirror to legacy runs/segment/yolo_astro/ and yolo11_astro/
+                    sync_latest_mirrors(session_dir, "yolo_astro", is_yolo=True)
 
                     models_entry[yolo_key] = {
                         "status": "completed",
@@ -572,7 +606,7 @@ def main():
                     b50 = yolo_metrics.get("box_map50", 0.0)
                     s50 = yolo_metrics.get("seg_map50", 0.0)
                     benchmark_results.append({
-                        "model": "YOLO11-seg",
+                        "model": "YOLO26-seg",
                         "task": "Instance Segmentation",
                         "metric_name": "Mask / Box mAP50",
                         "metric_val": f"Box: {b50:.3f} / Mask: {s50:.3f}",
