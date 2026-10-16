@@ -79,17 +79,18 @@ def analyze_dataset(
         except Exception:
             continue
 
-        boxes = data.get("boxes", [])
+        boxes = list(data.get("boxes", []))
+        w = float(data.get("width", 3000))
+        h = float(data.get("height", 2000))
         gst = data.get("global_star_trailing", False)
         gc = data.get("global_cloud", False)
-        is_clean = data.get("is_clean", len(boxes) == 0 and not gst and not gc)
+        if gst and not any(b.get("label") == "star_trail" for b in boxes):
+            boxes.append({"label": "star_trail", "type": "box", "x": 0.0, "y": 0.0, "width": w, "height": h})
+        if gc and not any(b.get("label") == "cloud" for b in boxes):
+            boxes.append({"label": "cloud", "type": "box", "x": 0.0, "y": 0.0, "width": w, "height": h})
+        is_clean = data.get("is_clean", len(boxes) == 0)
 
-        if gst:
-            global_star_trail_frames += 1
-        if gc:
-            global_cloud_frames += 1
-
-        if is_clean or (len(boxes) == 0 and not gst and not gc):
+        if is_clean or len(boxes) == 0:
             clean_frames += 1
         else:
             defective_frames += 1

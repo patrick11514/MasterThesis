@@ -86,8 +86,9 @@ class TestAnnotatorAPI(unittest.TestCase):
             get_res = self.client.get(f"/api/annotations?path={fake_fits}")
             self.assertEqual(get_res.status_code, 200)
             get_data = get_res.json()
-            self.assertEqual(len(get_data["boxes"]), 3)
-            self.assertTrue(get_data.get("global_cloud"))
+            # Legacy global_cloud flag is converted to full-frame box
+            self.assertEqual(len(get_data["boxes"]), 4)
+            self.assertTrue(any(b.get("label") == "cloud" and b.get("width") == 3000 for b in get_data["boxes"]))
             self.assertEqual(get_data["boxes"][2]["type"], "polygon")
             self.assertEqual(len(get_data["boxes"][2]["points"]), 3)
 

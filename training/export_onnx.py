@@ -33,21 +33,23 @@ def export_to_onnx(
     model.load_state_dict(ckpt["state_dict"])
     model.eval()
 
-    # Dummy input: 3-channel float32 RGB patch [1, 3, 512, 512]
-    dummy_input = torch.randn(1, 3, 512, 512, dtype=torch.float32)
+    # Dummy inputs: 3-channel float32 RGB patch [1, 3, 512, 512] and 6-element metadata [1, 6]
+    dummy_image = torch.randn(1, 3, 512, 512, dtype=torch.float32)
+    dummy_meta = torch.randn(1, 6, dtype=torch.float32)
 
     print(f"Exporting '{model_name}' to ONNX at {output_path} (Opset {opset_version})...")
     torch.onnx.export(
         model,
-        dummy_input,
+        (dummy_image, dummy_meta),
         str(output_path),
         export_params=True,
         opset_version=opset_version,
         do_constant_folding=True,
-        input_names=["input"],
+        input_names=["image", "meta"],
         output_names=["logits"],
         dynamic_axes={
-            "input": {0: "batch_size"},
+            "image": {0: "batch_size"},
+            "meta": {0: "batch_size"},
             "logits": {0: "batch_size"},
         },
     )
@@ -62,9 +64,9 @@ def export_to_onnx(
     ort_session = ort.InferenceSession(str(output_path), providers=["CPUExecutionProvider"])
 
     with torch.no_grad():
-        torch_out = model(dummy_input).numpy()
+        torch_out = model(dummy_image, dummy_meta).numpy()
 
-    ort_inputs = {"input": dummy_input.numpy()}
+    ort_inputs = {"image": dummy_image.numpy(), "meta": dummy_meta.numpy()}
     ort_out = ort_session.run(None, ort_inputs)[0]
 
     max_diff = float(np.max(np.abs(torch_out - ort_out)))
@@ -75,10 +77,10 @@ def export_to_onnx(
         print("Warning: Parity difference is larger than 1e-4")
 
     print("\n--- ONNX Model Specification for Rust Integration ---")
-    print(f"Input Name:   'input'")
-    print(f"Input Shape:  [-1, 3, 512, 512] (float32)")
+    print(f"Input 1:      'image' [-1, 3, 512, 512] (float32)")
+    print(f"Input 2:      'meta'  [-1, 6] (float32)")
     print(f"Output Name:  'logits'")
-    print(f"Output Shape: [-1, 5] (float32)")
+    print(f"Output Shape: [-1, {NUM_CLASSES}] (float32)")
     print(f"File Size:    {output_path.stat().st_size / (1024 * 1024):.2f} MB")
     print(f"Saved:        {output_path}")
 

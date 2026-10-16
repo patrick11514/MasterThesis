@@ -25,6 +25,7 @@ from fits_utils import (
     to_asinh_f32,
     to_auto_stf_f32,
     to_stf_u8,
+    compute_tile_metadata,
     CLASSES,
     CLASS_HEX_COLORS,
     CLASS_RGB_COLORS,
@@ -234,6 +235,40 @@ def get_annotations(path: str = Query(...)):
         try:
             with open(json_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
+
+            # Auto-convert legacy global checkboxes to full-frame boxes
+            w = float(data.get("width", 0))
+            h = float(data.get("height", 0))
+            boxes = list(data.get("boxes", []))
+            if w > 0 and h > 0:
+                if data.get("global_star_trailing") and not any(
+                    b.get("label") == "star_trail" and float(b.get("width", 0)) >= w * 0.90 for b in boxes
+                ):
+                    boxes.append({
+                        "id": "legacy_global_st",
+                        "label": "star_trail",
+                        "type": "box",
+                        "x": 0.0,
+                        "y": 0.0,
+                        "width": w,
+                        "height": h,
+                    })
+                if data.get("global_cloud") and not any(
+                    b.get("label") == "cloud" and float(b.get("width", 0)) >= w * 0.90 for b in boxes
+                ):
+                    boxes.append({
+                        "id": "legacy_global_cloud",
+                        "label": "cloud",
+                        "type": "box",
+                        "x": 0.0,
+                        "y": 0.0,
+                        "width": w,
+                        "height": h,
+                    })
+            data["boxes"] = boxes
+            data["global_star_trailing"] = False
+            data["global_cloud"] = False
+            data["is_clean"] = (len(boxes) == 0)
             return data
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to read annotations: {e}")
@@ -257,7 +292,7 @@ def save_annotations(path: str = Query(...), annot: FrameAnnotation = ...):
     json_path = fits_path.with_suffix(".json")
     txt_path = fits_path.with_suffix(".txt")
 
-    # Clean status: if any box exists or global flags are checked, not clean
+    # Clean status: if any box exists, not clean
     if len(annot.boxes) > 0 or annot.global_star_trailing or annot.global_cloud:
         annot.is_clean = False
     else:
@@ -636,13 +671,25 @@ def predict_defect_masks(req: PredictRequest):
                             num_ckpt_classes = sd[k].shape[0]
                             break
                     cnn_mod = build_model(model_name, pretrained=False, num_classes=num_ckpt_classes)
-                    cnn_mod.load_state_dict(sd)
+                    # Support both V1 checkpoints and V2 UniversalFusionWrapper checkpoints
+                    model_dict = cnn_mod.state_dict()
+                    adapted_sd = {}
+                    for k, v in sd.items():
+                        if k in model_dict and model_dict[k].shape == v.shape:
+                            adapted_sd[k] = v
+                        elif f"visual_extractor.{k}" in model_dict and model_dict[f"visual_extractor.{k}"].shape == v.shape:
+                            adapted_sd[f"visual_extractor.{k}"] = v
+                    cnn_mod.load_state_dict(adapted_sd, strict=False)
                     cnn_mod.to(device)
                     cnn_mod.eval()
                     CNN_MODEL_CACHE[cache_key] = ("pt", cnn_mod, input_mode)
                 except Exception as e:
                     raise HTTPException(status_code=500, detail=f"Failed to load PyTorch CNN model: {e}")
             mtype, cnn_mod, input_mode = CNN_MODEL_CACHE[cache_key]
+
+        frame_med = float(meta.get("frame_median", 0.05))
+        frame_mad = float(meta.get("frame_mad", 0.005))
+        pixel_scale = float(meta.get("pixel_scale", 2.39))
 
         if input_mode == "stf":
             norm_f32 = to_auto_stf_f32(rgb_f32, rgb_linked=False)
@@ -652,11 +699,16 @@ def predict_defect_masks(req: PredictRequest):
         planar_f32 = np.transpose(norm_f32, (2, 0, 1)).astype(np.float32)
 
         tiles = []
+        metas = []
         coords = []
         for y in y_offsets:
             for x in x_offsets:
                 patch = planar_f32[:, y : y + req.tile_size, x : x + req.tile_size]
+                tile_linear = rgb_f32[y : y + req.tile_size, x : x + req.tile_size]
+                tile_stf = norm_f32[y : y + req.tile_size, x : x + req.tile_size]
+                tile_meta = compute_tile_metadata(tile_linear, tile_stf, frame_med, frame_mad, pixel_scale)
                 tiles.append(patch)
+                metas.append(tile_meta)
                 coords.append((x, y))
 
         batch_size = 16
@@ -664,18 +716,28 @@ def predict_defect_masks(req: PredictRequest):
 
         for i in range(0, len(tiles), batch_size):
             b_tiles = tiles[i : i + batch_size]
+            b_metas = metas[i : i + batch_size]
             b_coords = coords[i : i + batch_size]
             batch_np = np.stack(b_tiles, axis=0).astype(np.float32)
+            batch_meta_np = np.stack(b_metas, axis=0).astype(np.float32)
 
             if is_onnx:
-                inp_name = session.get_inputs()[0].name
+                input_names = [inp.name for inp in session.get_inputs()]
+                feed_dict = {input_names[0]: batch_np}
+                for inp_name in input_names[1:]:
+                    if "meta" in inp_name.lower():
+                        feed_dict[inp_name] = batch_meta_np
                 out_name = session.get_outputs()[0].name
-                logits = session.run([out_name], {inp_name: batch_np})[0]
+                logits = session.run([out_name], feed_dict)[0]
                 probs = 1.0 / (1.0 + np.exp(-np.clip(logits, -20.0, 20.0)))
             else:
                 batch_t = torch.from_numpy(batch_np).to(device)
+                batch_meta_t = torch.from_numpy(batch_meta_np).to(device)
                 with torch.no_grad():
-                    logits = cnn_mod(batch_t)
+                    try:
+                        logits = cnn_mod(batch_t, batch_meta_t)
+                    except TypeError:
+                        logits = cnn_mod(batch_t)
                     probs = torch.sigmoid(logits).cpu().numpy()
 
             num_model_classes = probs.shape[1]

@@ -33,6 +33,7 @@ CLASS_COLORS = {
     "cloud": (66, 153, 225),              # Blue
     "obstruction": (159, 122, 234),       # Purple
     "star_trail": (236, 201, 75),         # Yellow
+    "unfocused_star": (56, 178, 172),     # Teal
 }
 
 

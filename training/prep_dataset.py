@@ -22,8 +22,10 @@ from fits_utils import (
     to_asinh_f32,
     to_auto_stf_f32,
     to_stf_u8,
+    compute_tile_metadata,
     CLASSES,
 )
+from synthetic_defects import inject_random_synthetic_defect
 
 
 
@@ -156,16 +158,62 @@ def item_intersects_tile(item: dict, tile_x: int, tile_y: int, tile_size: int) -
     return box_intersects_tile(item, tile_x, tile_y, tile_size)
 
 
+def normalize_legacy_annotations(annotations: dict, width: int, height: int) -> dict:
+    """Removes legacy global checkboxes, converting them to full-frame boxes if encountered."""
+    boxes = list(annotations.get("boxes", []))
+    w = float(width if width > 0 else annotations.get("width", 0))
+    h = float(height if height > 0 else annotations.get("height", 0))
+    if w > 0 and h > 0:
+        if annotations.get("global_star_trailing"):
+            has_full_st = any(
+                b.get("label") == "star_trail"
+                and float(b.get("width", 0)) >= w * 0.90
+                and float(b.get("height", 0)) >= h * 0.90
+                for b in boxes
+            )
+            if not has_full_st:
+                boxes.append({
+                    "id": "legacy_global_st",
+                    "label": "star_trail",
+                    "type": "box",
+                    "x": 0.0,
+                    "y": 0.0,
+                    "width": w,
+                    "height": h,
+                })
+        if annotations.get("global_cloud"):
+            has_full_cl = any(
+                b.get("label") == "cloud"
+                and float(b.get("width", 0)) >= w * 0.90
+                and float(b.get("height", 0)) >= h * 0.90
+                for b in boxes
+            )
+            if not has_full_cl:
+                boxes.append({
+                    "id": "legacy_global_cloud",
+                    "label": "cloud",
+                    "type": "box",
+                    "x": 0.0,
+                    "y": 0.0,
+                    "width": w,
+                    "height": h,
+                })
+    return {"boxes": boxes, "is_clean": len(boxes) == 0}
+
+
 def extract_tile_yolo_segments(
     items: List[dict],
     tx: int,
     ty: int,
     tile_size: int = 512,
+    tile_u8: Optional[np.ndarray] = None,
 ) -> List[str]:
     """
     Extracts normalized polygon strings for YOLO instance segmentation:
     <class_id> <x1> <y1> <x2> <y2> ... <xn> <yn>
     Converts polygons, thick line ribbons (for streaks/planes), and boxes to valid polygon masks.
+    If a star_trail or unfocused_star box is larger than 256x256, automatically extracts tight
+    contours around the actual bright stars inside that box using tile_u8.
     """
     yolo_lines = []
     for item in items:
@@ -174,6 +222,53 @@ def extract_tile_yolo_segments(
             continue
         cid = CLASSES.index(lbl)
         itype = item.get("type", "box")
+
+        # Check for large star_trail / unfocused_star boxes to extract tight stellar contours
+        if (
+            itype == "box"
+            and lbl in ("star_trail", "unfocused_star")
+            and tile_u8 is not None
+        ):
+            bx = int(round(float(item.get("x", 0)) - tx))
+            by = int(round(float(item.get("y", 0)) - ty))
+            bw = int(round(float(item.get("width", 0))))
+            bh = int(round(float(item.get("height", 0))))
+
+            if bw >= 256 or bh >= 256:
+                x_start = max(0, bx)
+                y_start = max(0, by)
+                x_end = min(tile_size, bx + bw)
+                y_end = min(tile_size, by + bh)
+
+                if x_end > x_start and y_end > y_start:
+                    crop = tile_u8[y_start:y_end, x_start:x_end]
+                    lum = np.mean(crop, axis=2) if crop.ndim == 3 else crop
+                    c_med = float(np.median(lum))
+                    c_mad = float(np.median(np.abs(lum - c_med)))
+                    c_thresh = c_med + 3.5 * 1.4826 * max(c_mad, 2.0)
+                    star_mask = (lum > c_thresh).astype(np.uint8) * 255
+
+                    contours, _ = cv2.findContours(star_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                    extracted_stars = False
+                    for c in contours:
+                        if cv2.contourArea(c) < 8.0:
+                            continue
+                        approx = cv2.approxPolyDP(c, epsilon=1.0, closed=True)
+                        pts = approx.reshape(-1, 2)
+                        if len(pts) < 3:
+                            continue
+                        extracted_stars = True
+                        norm_coords = []
+                        for px, py in pts:
+                            gx = px + x_start
+                            gy = py + y_start
+                            nx = min(1.0, max(0.0, float(gx) / tile_size))
+                            ny = min(1.0, max(0.0, float(gy) / tile_size))
+                            norm_coords.append(f"{nx:.6f} {ny:.6f}")
+                        yolo_lines.append(f"{cid} " + " ".join(norm_coords))
+
+                    if extracted_stars:
+                        continue
 
         mask = np.zeros((tile_size, tile_size), dtype=np.uint8)
 
@@ -231,14 +326,20 @@ def slice_fits_frame(
     out_dir: Path,
     tile_size: int = 512,
     stride: int = 460,
-    norm_mode: str = "asinh",  # 'asinh' or 'stf'
+    norm_mode: str = "stf",  # 'stf' or 'asinh'
     rgb_linked: bool = False,
+    is_val: bool = False,
+    synth_prob: float = 0.20,
 ) -> List[Dict]:
     """
     Slices a single FITS frame into 512x512 tiles and generates metadata records.
+    Applies star presence gating, area-weighted soft labels, and synthetic defect injection.
     """
     rgb_f32, meta = load_fits_unified_rgb(fits_path)
     h, w, _ = rgb_f32.shape
+    frame_med = float(meta.get("frame_median", 0.05))
+    frame_mad = float(meta.get("frame_mad", 0.005))
+    pixel_scale = float(meta.get("pixel_scale", 2.39))
 
     # Pre-normalize the full image to desired float representation
     if norm_mode == "asinh":
@@ -246,13 +347,11 @@ def slice_fits_frame(
     else:
         norm_f32 = to_auto_stf_f32(rgb_f32, rgb_linked=rgb_linked)
 
-    # 8-bit preview for PNG saving (unlinked removes green/yellow camera cast)
     preview_u8 = to_stf_u8(rgb_f32, rgb_linked=rgb_linked)
 
     # Load annotations if available
     json_path = fits_path.with_suffix(".json")
     if not json_path.exists():
-        # Search fallback locations (e.g. TRAINING_FILES)
         for fb in [
             fits_path.parent / "TRAINING_FILES" / f"{fits_path.stem}.json",
             fits_path.parent.parent / "TRAINING_FILES" / f"{fits_path.stem}.json",
@@ -262,17 +361,16 @@ def slice_fits_frame(
                 json_path = fb
                 break
 
-    annotations = {"boxes": [], "global_star_trailing": False, "global_cloud": False}
+    annotations = {"boxes": []}
     if json_path.exists():
         try:
             with open(json_path, "r", encoding="utf-8") as f:
-                annotations = json.load(f)
+                raw_annot = json.load(f)
+                annotations = normalize_legacy_annotations(raw_annot, w, h)
         except Exception as e:
             print(f"Warning: Failed to parse {json_path}: {e}")
 
     boxes = annotations.get("boxes", [])
-    global_star_trailing = annotations.get("global_star_trailing", False)
-    global_cloud = annotations.get("global_cloud", False)
 
     records = []
     base_name = fits_path.stem
@@ -282,7 +380,6 @@ def slice_fits_frame(
     f32_dir.mkdir(parents=True, exist_ok=True)
     img_dir.mkdir(parents=True, exist_ok=True)
 
-    # Grid slicing across frame - guarantees full edge coverage by snapping last tile
     x_offsets = get_tile_offsets(w, tile_size, stride)
     y_offsets = get_tile_offsets(h, tile_size, stride)
 
@@ -292,50 +389,114 @@ def slice_fits_frame(
             x_end = x_start + tile_size
             y_end = y_start + tile_size
 
-            tile_f32 = norm_f32[y_start:y_end, x_start:x_end]
-            tile_u8 = preview_u8[y_start:y_end, x_start:x_end]
+            tile_linear = np.copy(rgb_f32[y_start:y_end, x_start:x_end])
+            tile_f32 = np.copy(norm_f32[y_start:y_end, x_start:x_end])
+            tile_u8 = np.copy(preview_u8[y_start:y_end, x_start:x_end])
 
-            # Determine multi-label vector: [sat, plane, cloud, obstruction, star_trail]
-            labels = [0] * len(CLASSES)
+            labels = [0.0] * len(CLASSES)
             matched_classes = []
+            valid_tile_boxes = []
 
             for b in boxes:
                 lbl = b.get("label")
-                if lbl in CLASSES and item_intersects_tile(b, x_start, y_start, tile_size):
-                    c_idx = CLASSES.index(lbl)
-                    labels[c_idx] = 1
-                    matched_classes.append(lbl)
+                if lbl not in CLASSES:
+                    continue
+                c_idx = CLASSES.index(lbl)
 
-            if global_star_trailing:
-                # Require stars/PSFs to actually be present in this tile to avoid labeling empty dark sky as star trails
-                bg_median = float(np.median(tile_f32))
-                bg_mad = float(np.median(np.abs(tile_f32 - bg_median)))
-                peak_val = float(np.percentile(tile_f32, 99.8))
-                # Star presence threshold (peak exceeds noise floor)
-                if (peak_val - bg_median) > max(0.015, 4.0 * bg_mad * 1.4826):
-                    st_idx = CLASSES.index("star_trail")
-                    labels[st_idx] = 1
-                    matched_classes.append("star_trail")
+                if lbl in ("cloud", "obstruction"):
+                    # Area-weighted soft label calculation
+                    mask = np.zeros((tile_size, tile_size), dtype=np.uint8)
+                    itype = b.get("type", "box")
+                    if itype == "polygon" and "points" in b and len(b["points"]) >= 3:
+                        pts = np.array([[(p[0] - x_start), (p[1] - y_start)] for p in b["points"]], dtype=np.int32)
+                        cv2.fillPoly(mask, [pts], 255)
+                    elif itype == "line":
+                        x1 = float(b.get("x1", b.get("x", 0)))
+                        y1 = float(b.get("y1", b.get("y", 0)))
+                        x2 = float(b.get("x2", b.get("x", 0) + b.get("width", 0)))
+                        y2 = float(b.get("y2", b.get("y", 0) + b.get("height", 0)))
+                        thickness = max(10.0, float(b.get("thickness", 16.0)))
+                        pt1 = (int(round(x1 - x_start)), int(round(y1 - y_start)))
+                        pt2 = (int(round(x2 - x_start)), int(round(y2 - y_start)))
+                        cv2.line(mask, pt1, pt2, 255, thickness=int(round(thickness)))
+                    else:
+                        bx = int(round(float(b.get("x", 0)) - x_start))
+                        by = int(round(float(b.get("y", 0)) - y_start))
+                        bw = int(round(float(b.get("width", 0))))
+                        bh = int(round(float(b.get("height", 0))))
+                        cv2.rectangle(mask, (bx, by), (bx + bw, by + bh), 255, -1)
 
-            if global_cloud:
-                c_idx = CLASSES.index("cloud")
-                labels[c_idx] = 1
-                matched_classes.append("cloud")
+                    coverage = float(np.count_nonzero(mask)) / float(tile_size * tile_size)
+                    if coverage >= 0.02:
+                        soft_val = round(min(1.0, coverage / 0.25), 4)
+                        labels[c_idx] = max(labels[c_idx], soft_val)
+                        matched_classes.append(lbl)
+                        valid_tile_boxes.append(b)
 
-            is_clean = (sum(labels) == 0)
+                elif lbl in ("star_trail", "unfocused_star"):
+                    if item_intersects_tile(b, x_start, y_start, tile_size):
+                        # Star presence gate: ensure actual stars are present in this tile
+                        bg_median = float(np.median(tile_f32))
+                        bg_mad = float(np.median(np.abs(tile_f32 - bg_median)))
+                        peak_val = float(np.percentile(tile_f32, 99.8))
+                        if (peak_val - bg_median) > max(0.015, 4.0 * bg_mad * 1.4826):
+                            labels[c_idx] = 1.0
+                            matched_classes.append(lbl)
+                            valid_tile_boxes.append(b)
 
-            # Generate YOLO instance segmentation polygons for this tile
-            yolo_segments = extract_tile_yolo_segments(boxes, x_start, y_start, tile_size)
+                else:  # satellite_streak, airplane
+                    if item_intersects_tile(b, x_start, y_start, tile_size):
+                        labels[c_idx] = 1.0
+                        matched_classes.append(lbl)
+                        valid_tile_boxes.append(b)
+
+            is_clean = (sum(labels) == 0.0)
+
+            # Synthetic defect injection: applied only to training split on clean tiles
+            if (not is_val) and is_clean and (random.random() < synth_prob):
+                syn_tile, syn_cls, syn_annot = inject_random_synthetic_defect(tile_linear, frame_med, frame_mad)
+                if syn_cls is not None:
+                    tile_linear = syn_tile
+                    c_idx = CLASSES.index(syn_cls)
+
+                    if syn_cls in ("cloud", "obstruction"):
+                        # Calculate coverage for soft target
+                        s_mask = np.zeros((tile_size, tile_size), dtype=np.uint8)
+                        if isinstance(syn_annot, dict) and syn_annot.get("type") == "polygon":
+                            pts = np.array(syn_annot["points"], dtype=np.int32)
+                            cv2.fillPoly(s_mask, [pts], 255)
+                        cov = float(np.count_nonzero(s_mask)) / float(tile_size * tile_size)
+                        labels[c_idx] = round(min(1.0, max(0.20, cov / 0.25)), 4)
+                    else:
+                        labels[c_idx] = 1.0
+
+                    matched_classes.append(syn_cls)
+                    is_clean = False
+
+                    # Recompute stretched f32 and u8 for modified linear tile
+                    if norm_mode == "asinh":
+                        tile_f32 = to_asinh_f32(tile_linear)
+                    else:
+                        tile_f32 = to_auto_stf_f32(tile_linear, rgb_linked=rgb_linked)
+                    tile_u8 = to_stf_u8(tile_linear, rgb_linked=rgb_linked)
+
+                    syn_items = [syn_annot] if isinstance(syn_annot, dict) else (syn_annot or [])
+                    yolo_segments = extract_tile_yolo_segments(syn_items, 0, 0, tile_size=tile_size, tile_u8=tile_u8)
+                else:
+                    yolo_segments = []
+            else:
+                yolo_segments = extract_tile_yolo_segments(valid_tile_boxes, x_start, y_start, tile_size=tile_size, tile_u8=tile_u8)
+
+            # Compute normalized 6-element metadata vector for tile
+            meta_vec = compute_tile_metadata(tile_linear, tile_f32, frame_med, frame_mad, pixel_scale)
 
             tile_id = f"{base_name}_x{x_start}_y{y_start}"
             npy_path = f32_dir / f"{tile_id}.npy"
             png_path = img_dir / f"{tile_id}.png"
 
-            # Save float32 planar NCHW [3, 512, 512] for direct PyTorch/ONNX loading
             planar_f32 = np.transpose(tile_f32, (2, 0, 1)).astype(np.float32)
             np.save(npy_path, planar_f32)
 
-            # Save 8-bit PNG
             pil_tile = Image.fromarray(tile_u8)
             pil_tile.save(png_path, format="PNG")
 
@@ -348,10 +509,11 @@ def slice_fits_frame(
                 "height": tile_size,
                 "f32_path": str(npy_path.relative_to(out_dir.parent)),
                 "img_path": str(png_path.relative_to(out_dir.parent)),
-                "labels": labels,  # multi-hot vector [0, 0, 1, 0, 0]
+                "labels": labels,
                 "classes": list(set(matched_classes)),
                 "is_clean": is_clean,
                 "yolo_segments": yolo_segments,
+                "meta": meta_vec,
             })
             tile_idx += 1
 
@@ -364,12 +526,13 @@ def prepare_dataset(
     val_split: float = 0.2,
     tile_size: int = 512,
     stride: int = 460,
-    norm_mode: str = "asinh",
+    norm_mode: str = "stf",
     seed: int = 42,
     workers: int = None,
     export_yolo: bool = True,
     yolo_dir: Union[Path, str] = "dataset_yolo",
     bg_ratio: float = 0.15,
+    synth_prob: float = 0.20,
 ):
     """
     Prepares train and validation sets with frame-level isolation to prevent data leakage.
@@ -429,6 +592,8 @@ def prepare_dataset(
                 tile_size=tile_size,
                 stride=stride,
                 norm_mode=norm_mode,
+                is_val=is_val,
+                synth_prob=synth_prob,
             ): (f, is_val)
             for f, is_val in jobs
         }
@@ -466,7 +631,7 @@ def prepare_dataset(
         print(f"  Clean sky tiles:  {clean_count}")
         print(f"  Defect tiles:     {defects_count}")
         for i, cls_name in enumerate(CLASSES):
-            c_count = sum(1 for r in recs if r["labels"][i] == 1)
+            c_count = sum(1 for r in recs if r["labels"][i] >= 0.5)
             print(f"    - {cls_name}: {c_count}")
 
     # Export YOLO instance segmentation dataset
@@ -521,18 +686,15 @@ def prepare_dataset(
                     else:
                         yolo_counts[f"{split_name}_bg"] += 1
 
-        # Write dataset.yaml
+        # Write dataset.yaml dynamically for all 6 classes
+        names_yaml = "\n".join(f"  {idx}: {name}" for idx, name in enumerate(CLASSES))
         yaml_content = f"""# AstroGrader YOLO11 Instance Segmentation Dataset
 path: {yolo_path}
 train: images/train
 val: images/val
 
 names:
-  0: satellite_streak
-  1: airplane
-  2: cloud
-  3: obstruction
-  4: star_trail
+{names_yaml}
 """
         with open(yolo_path / "dataset.yaml", "w", encoding="utf-8") as yf:
             yf.write(yaml_content)
@@ -549,12 +711,13 @@ if __name__ == "__main__":
     parser.add_argument("--out-dir", type=str, default="dataset", help="Output directory for sliced tiles")
     parser.add_argument("--tile-size", type=int, default=512, help="Patch size in pixels")
     parser.add_argument("--stride", type=int, default=460, help="Stride between patches (smaller = overlap)")
-    parser.add_argument("--norm-mode", type=str, default="asinh", choices=["asinh", "stf"])
+    parser.add_argument("--norm-mode", type=str, default="stf", choices=["asinh", "stf"])
     parser.add_argument("--val-split", type=float, default=0.2, help="Validation split ratio")
     parser.add_argument("--workers", type=int, default=None, help="Number of worker processes for parallel slicing (defaults to CPU count - 1)")
     parser.add_argument("--export-yolo", action="store_true", default=True, help="Also export YOLO instance segmentation dataset")
     parser.add_argument("--yolo-dir", type=str, default="dataset_yolo", help="Output directory for YOLO segmentation dataset")
     parser.add_argument("--bg-ratio", type=float, default=0.15, help="Ratio of clean background sky tiles to include in YOLO dataset (default: 0.15)")
+    parser.add_argument("--synth-prob", type=float, default=0.20, help="Probability of injecting synthetic defect into clean training tiles (default: 0.20)")
 
     args = parser.parse_args()
     prepare_dataset(
@@ -568,4 +731,5 @@ if __name__ == "__main__":
         export_yolo=args.export_yolo,
         yolo_dir=args.yolo_dir,
         bg_ratio=args.bg_ratio,
+        synth_prob=args.synth_prob,
     )

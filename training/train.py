@@ -87,9 +87,11 @@ class AstroPatchDataset(Dataset):
     def __len__(self) -> int:
         return len(self.records)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         rec = self.records[idx]
         labels = torch.tensor(rec["labels"], dtype=torch.float32)
+        meta_val = rec.get("meta", [0.0] * 6)
+        meta_tensor = torch.tensor(meta_val, dtype=torch.float32)
 
         if self.input_mode == "f32":
             p = Path(rec["f32_path"])
@@ -110,6 +112,11 @@ class AstroPatchDataset(Dataset):
 
         # Astronomical data augmentation
         if self.augment:
+            # Mono-camera simulation (25% probability)
+            if torch.rand(1).item() < 0.25:
+                lum = tensor.mean(dim=0, keepdim=True)
+                tensor = lum.repeat(3, 1, 1)
+
             # Random 90/180/270 degree rotation
             k = int(torch.randint(0, 4, (1,)).item())
             if k > 0:
@@ -128,7 +135,7 @@ class AstroPatchDataset(Dataset):
                 noise = torch.randn_like(tensor) * 0.005
                 tensor = torch.clamp(tensor + noise, 0.0, 1.0)
 
-        return tensor, labels
+        return tensor, meta_tensor, labels
 
 
 def compute_metrics(
@@ -138,9 +145,10 @@ def compute_metrics(
 ) -> Dict[str, float]:
     """
     Computes multi-label metrics: Precision, Recall, F1 per class, and Clean Sky Accuracy.
+    Binarizes ground truth targets (targets >= 0.5) to seamlessly handle continuous soft targets.
     """
     binary_preds = (all_preds >= threshold).astype(int)
-    targets = all_targets.astype(int)
+    targets = (all_targets >= 0.5).astype(int)
 
     metrics = {}
     f1_list = []
@@ -185,12 +193,13 @@ def train_one_epoch(
 ) -> float:
     model.train()
     total_loss = 0.0
-    for images, targets in loader:
+    for images, metas, targets in loader:
         images = images.to(device)
+        metas = metas.to(device)
         targets = targets.to(device)
 
         optimizer.zero_grad()
-        outputs = model(images)
+        outputs = model(images, metas)
         loss = criterion(outputs, targets)
         loss.backward()
         optimizer.step()
@@ -212,11 +221,12 @@ def evaluate(
     all_targets = []
 
     with torch.no_grad():
-        for images, targets in loader:
+        for images, metas, targets in loader:
             images = images.to(device)
+            metas = metas.to(device)
             targets = targets.to(device)
 
-            outputs = model(images)
+            outputs = model(images, metas)
             loss = criterion(outputs, targets)
             total_loss += loss.item() * images.size(0)
 
@@ -290,7 +300,7 @@ def main():
                 f"  python prep_dataset.py --data-dir ../TRAINING_FILES --out-dir dataset --export-yolo"
             )
         all_labels = np.array([r["labels"] for r in records])
-        pos_counts = np.sum(all_labels, axis=0)
+        pos_counts = np.sum(all_labels >= 0.5, axis=0)
         neg_counts = len(records) - pos_counts
         # Clip pos_weight to [1.0, 10.0]
         pos_weights = np.clip(neg_counts / np.maximum(pos_counts, 1), 1.0, 10.0)
@@ -392,6 +402,39 @@ def main():
 
     with open(out_dir / "training_history.json", "w", encoding="utf-8") as fp:
         json.dump(history, fp, indent=2)
+
+    # Automatic ONNX Export of best checkpoint
+    best_ckpt_path = out_dir / "best_model.pt"
+    if best_ckpt_path.exists():
+        onnx_path = out_dir / "best_model.onnx"
+        print(f"\nExporting champion model to ONNX: {onnx_path}...")
+        try:
+            ckpt_data = torch.load(best_ckpt_path, map_location="cpu")
+            export_model = build_model(args.model, pretrained=False, num_classes=NUM_CLASSES)
+            export_model.load_state_dict(ckpt_data["state_dict"])
+            export_model.eval()
+
+            dummy_img = torch.randn(1, 3, 512, 512, dtype=torch.float32)
+            dummy_meta = torch.randn(1, 6, dtype=torch.float32)
+
+            torch.onnx.export(
+                export_model,
+                (dummy_img, dummy_meta),
+                str(onnx_path),
+                export_params=True,
+                opset_version=18,
+                do_constant_folding=True,
+                input_names=["image", "meta"],
+                output_names=["logits"],
+                dynamic_axes={
+                    "image": {0: "batch_size"},
+                    "meta": {0: "batch_size"},
+                    "logits": {0: "batch_size"},
+                },
+            )
+            print(f"  Successfully saved {onnx_path.name} ({onnx_path.stat().st_size / (1024 * 1024):.2f} MB)")
+        except Exception as e:
+            print(f"  Warning: Automatic ONNX export failed: {e}")
 
 
 if __name__ == "__main__":

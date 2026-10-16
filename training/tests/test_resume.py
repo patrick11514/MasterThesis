@@ -63,14 +63,14 @@ class TestResumeCheckpoint(unittest.TestCase):
                 filtered_dict[k] = v
 
         # Feature extractor layers should match
-        self.assertIn("conv1.weight", filtered_dict)
+        self.assertIn("visual_extractor.0.weight", filtered_dict)
         # Final linear classifier layer should be filtered out due to shape mismatch
-        self.assertNotIn("fc.weight", filtered_dict)
+        self.assertNotIn("classifier.3.weight", filtered_dict)
 
         # Update model dict with matching layers
         model_dict.update(filtered_dict)
         model_orig.load_state_dict(model_dict)
-        self.assertEqual(model_orig.fc.out_features, NUM_CLASSES)
+        self.assertEqual(model_orig.classifier[3].out_features, NUM_CLASSES)
 
 
 if __name__ == "__main__":

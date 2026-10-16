@@ -29,6 +29,7 @@ from fits_utils import (
     to_asinh_f32,
     to_auto_stf_f32,
     to_stf_u8,
+    compute_tile_metadata,
     CLASSES,
 )
 
@@ -38,6 +39,7 @@ CLASS_COLORS_RGB = {
     "cloud": (66, 153, 225),               # Blue
     "obstruction": (159, 122, 234),        # Purple
     "star_trail": (236, 201, 75),          # Yellow
+    "unfocused_star": (56, 178, 172),      # Teal
 }
 
 
@@ -82,6 +84,10 @@ def get_tile_offsets(dimension_size: int, tile_size: int = 512, stride: int = 38
 def run_tile_inference(
     model_or_session,
     full_f32: np.ndarray,
+    raw_f32: Optional[np.ndarray] = None,
+    pixel_scale: float = 2.39,
+    frame_median: Optional[float] = None,
+    frame_mad: Optional[float] = None,
     tile_size: int = 512,
     stride: int = 384,
     device: str = "cpu",
@@ -90,16 +96,20 @@ def run_tile_inference(
 ) -> Tuple[List[Dict], float]:
     """
     Slices normalized f32 full frame into overlapping tiles, batches them,
-    and runs forward inference using PyTorch or ONNX Runtime.
+    computes 6-element metadata vectors, and runs forward inference using PyTorch or ONNX Runtime.
     Guarantees full edge coverage by snapping the final row and column to bottom/right edges.
     """
     h, w, _ = full_f32.shape
     planar_f32 = np.transpose(full_f32, (2, 0, 1))  # [3, H, W]
 
+    f_med = frame_median if frame_median is not None else float(np.median(full_f32))
+    f_mad = frame_mad if frame_mad is not None else float(np.median(np.abs(full_f32 - f_med)))
+
     x_offsets = get_tile_offsets(w, tile_size, stride)
     y_offsets = get_tile_offsets(h, tile_size, stride)
 
     tiles = []
+    metas = []
     positions = []
     for y_start in y_offsets:
         for x_start in x_offsets:
@@ -107,25 +117,39 @@ def run_tile_inference(
             x_end = x_start + tile_size
 
             tile = planar_f32[:, y_start:y_end, x_start:x_end]
+            tile_stf = full_f32[y_start:y_end, x_start:x_end]
+            tile_linear = raw_f32[y_start:y_end, x_start:x_end] if raw_f32 is not None else tile_stf
+            tile_meta = compute_tile_metadata(tile_linear, tile_stf, f_med, f_mad, pixel_scale)
+
             tiles.append(tile)
+            metas.append(tile_meta)
             positions.append((x_start, y_start, tile_size, tile_size))
 
     if not tiles:
         return [], 0.0
 
     batch_np = np.stack(tiles, axis=0).astype(np.float32)
+    batch_meta_np = np.stack(metas, axis=0).astype(np.float32)
 
     t0 = time.perf_counter()
     if is_onnx:
-        input_name = model_or_session.get_inputs()[0].name
+        input_names = [inp.name for inp in model_or_session.get_inputs()]
+        feed_dict = {input_names[0]: batch_np}
+        for inp_name in input_names[1:]:
+            if "meta" in inp_name.lower():
+                feed_dict[inp_name] = batch_meta_np
         output_name = model_or_session.get_outputs()[0].name
-        logits = model_or_session.run([output_name], {input_name: batch_np})[0]
+        logits = model_or_session.run([output_name], feed_dict)[0]
         # Sigmoid with numerical clamp
         probs = 1.0 / (1.0 + np.exp(-np.clip(logits, -20.0, 20.0)))
     else:
         batch = torch.from_numpy(batch_np).to(device)
+        batch_meta = torch.from_numpy(batch_meta_np).to(device)
         with torch.no_grad():
-            logits = model_or_session(batch)
+            try:
+                logits = model_or_session(batch, batch_meta)
+            except TypeError:
+                logits = model_or_session(batch)
             probs = torch.sigmoid(logits).cpu().numpy()
     elapsed = time.perf_counter() - t0
 
@@ -248,10 +272,14 @@ def verify_fits_batch(
             # Generate diagnostic visual output with unlinked STF by default for maximum contrast
             stf_u8 = to_stf_u8(rgb_f32, rgb_linked=rgb_linked)
 
-            # Run tile inference
+            # Run tile inference with dual visual and metadata inputs
             detections, infer_time = run_tile_inference(
                 model_or_session,
-                norm_f32,
+                full_f32=norm_f32,
+                raw_f32=rgb_f32,
+                pixel_scale=float(meta.get("pixel_scale", 2.39)),
+                frame_median=meta.get("frame_median"),
+                frame_mad=meta.get("frame_mad"),
                 tile_size=512,
                 stride=384,
                 device=device,
@@ -320,7 +348,7 @@ if __name__ == "__main__":
     parser.add_argument("--out-dir", type=str, default="verification_output", help="Directory for inspection PNGs")
     parser.add_argument("--threshold", type=float, default=0.5, help="Detection threshold [0.0 - 1.0]")
     parser.add_argument("--device", type=str, default="cpu", help="Device (cpu or cuda)")
-    parser.add_argument("--norm-mode", type=str, default="asinh", choices=["asinh", "stf"], help="Normalization mode (must match dataset prep)")
+    parser.add_argument("--norm-mode", type=str, default="stf", choices=["asinh", "stf"], help="Normalization mode (must match dataset prep)")
     parser.add_argument("--linked-rgb", action="store_true", help="Use linked RGB STF (default is unlinked for enhanced visibility)")
 
     args = parser.parse_args()
