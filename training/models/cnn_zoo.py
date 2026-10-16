@@ -25,18 +25,18 @@ NUM_CLASSES = len(CLASSES)
 
 class DualPool2d(nn.Module):
     """
-    Concatenated AdaptiveAvgPool2d + AdaptiveMaxPool2d.
+    Concatenated AdaptiveAvgPool2d + MaxPool (via amax).
     Preserves both diffuse low-frequency gradients (clouds, vignetting)
     and high-frequency localized activations (1-pixel satellite streaks, strobes).
+    Uses amax over spatial dimensions for seamless, robust ONNX export across all Dynamo and TorchScript backends.
     """
     def __init__(self):
         super().__init__()
         self.avg_pool = nn.AdaptiveAvgPool2d((1, 1))
-        self.max_pool = nn.AdaptiveMaxPool2d((1, 1))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         avg_feat = torch.flatten(self.avg_pool(x), 1)
-        max_feat = torch.flatten(self.max_pool(x), 1)
+        max_feat = torch.flatten(x.amax(dim=(-2, -1), keepdim=True), 1)
         return torch.cat([avg_feat, max_feat], dim=1)
 
 
