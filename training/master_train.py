@@ -149,6 +149,35 @@ def save_session_manifest(session_dir: Path, manifest: Dict):
     temp_path.replace(manifest_path)
 
 
+def ensure_yolo_in_session(session_dir: Path) -> Path:
+    """
+    Ultralytics can sometimes prepend its default runs/segment/ if project paths
+    are relative. This helper ensures yolo11_astro lives inside session_dir.
+    """
+    dest = session_dir / "yolo11_astro"
+    if dest.exists() and (dest / "weights").exists():
+        return dest
+
+    sid = session_dir.name
+    candidates = [
+        Path("runs/segment") / "checkpoints" / "sessions" / sid / "yolo11_astro",
+        Path("runs/segment") / str(session_dir).lstrip("/") / "yolo11_astro",
+        Path("runs/segment") / sid / "yolo11_astro",
+    ]
+    for c in candidates:
+        if c.exists() and (c / "weights").exists():
+            print(f" [Session Recovery] Relocating YOLO run from {c} to {dest}")
+            try:
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(c), str(dest))
+                return dest
+            except Exception as e:
+                print(f"Warning: Failed to relocate YOLO folder: {e}")
+                return c
+
+    return dest
+
+
 def sync_latest_mirrors(session_dir: Path, model_name: str, is_yolo: bool = False):
     """
     Copies newly trained checkpoints to the legacy root directories:
@@ -158,6 +187,7 @@ def sync_latest_mirrors(session_dir: Path, model_name: str, is_yolo: bool = Fals
     """
     try:
         if is_yolo:
+            ensure_yolo_in_session(session_dir)
             src_weights = session_dir / "yolo11_astro" / "weights"
             dst_weights = Path("runs/segment/yolo11_astro/weights")
             dst_weights.mkdir(parents=True, exist_ok=True)
@@ -349,7 +379,7 @@ def main():
 
     args = parser.parse_args()
 
-    checkpoints_base = Path("checkpoints")
+    checkpoints_base = Path("checkpoints").resolve()
     sessions_base = checkpoints_base / "sessions"
     sessions_base.mkdir(parents=True, exist_ok=True)
 
@@ -374,8 +404,9 @@ def main():
         # Resume incomplete session in-place
         res_id, res_dir = resolve_session(args.resume_session, sessions_base)
         session_id = res_id
-        session_dir = res_dir
+        session_dir = res_dir.resolve()
         is_resuming_existing = True
+        ensure_yolo_in_session(session_dir)
         s_json = session_dir / "session.json"
         if s_json.exists():
             with open(s_json, "r", encoding="utf-8") as fp:
@@ -390,7 +421,7 @@ def main():
 
         now_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         session_id = args.session if args.session else now_str
-        session_dir = sessions_base / session_id
+        session_dir = (sessions_base / session_id).resolve()
         session_dir.mkdir(parents=True, exist_ok=True)
 
         session_manifest = {
@@ -518,6 +549,7 @@ def main():
                     )
                     elapsed_yolo = time.time() - t0_yolo
 
+                    ensure_yolo_in_session(session_dir)
                     yolo_best_pt = session_dir / "yolo11_astro" / "weights" / "best.pt"
                     yolo_last_pt = session_dir / "yolo11_astro" / "weights" / "last.pt"
 
