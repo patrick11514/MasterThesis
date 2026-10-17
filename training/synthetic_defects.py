@@ -40,7 +40,7 @@ def inject_synthetic_satellite(
 ) -> Tuple[np.ndarray, str, Dict]:
     """
     Injects a single straight satellite streak into a linear-space tile.
-    Optionally simulates satellite tumbling flare with smooth sinusoidal modulation.
+    Optionally simulates satellite tumbling flare with slow, smooth sinusoidal modulation.
     """
     h, w, c = linear_tile.shape
     streak_layer = np.zeros((h, w), dtype=np.float32)
@@ -53,9 +53,10 @@ def inject_synthetic_satellite(
     length = math.hypot(dx, dy)
     num_steps = max(int(length * 2.0), 200)
 
-    # Tumbling modulation
-    is_tumbling = (random.random() < 0.45)
-    freq = random.uniform(1.0, 5.0)
+    # Tumbling modulation: reduced probability and lower frequency to prevent
+    # looking like rapid airplane strobe flashes
+    is_tumbling = (random.random() < 0.15)
+    freq = random.uniform(0.3, 1.8)
     phase = random.uniform(0.0, 2.0 * math.pi)
 
     t_vals = np.linspace(0.0, 1.0, num_steps, dtype=np.float32)
@@ -63,7 +64,7 @@ def inject_synthetic_satellite(
     py_coords = np.clip(np.round(y1 + t_vals * dy).astype(np.int32), 0, h - 1)
 
     if is_tumbling:
-        brightness_mod = 0.4 + 0.6 * np.sin(2.0 * np.pi * freq * t_vals + phase)
+        brightness_mod = 0.5 + 0.5 * np.sin(2.0 * np.pi * freq * t_vals + phase)
     else:
         brightness_mod = np.ones(num_steps, dtype=np.float32)
 
@@ -73,17 +74,17 @@ def inject_synthetic_satellite(
             float(brightness_mod[i]),
         )
 
-    # Convolve with Gaussian PSF (sigma in [0.8, 1.6] px)
-    sigma = random.uniform(0.8, 1.6)
+    # Convolve with Gaussian PSF (sigma in [0.7, 1.4] px for sharp satellite streak)
+    sigma = random.uniform(0.7, 1.4)
     ksize = int(math.ceil(sigma * 4.0)) * 2 + 1
     blurred = cv2.GaussianBlur(streak_layer, (ksize, ksize), sigmaX=sigma, sigmaY=sigma)
 
     # Amplitude scaling based on noise floor (including faint streaks)
-    amp_factor = random.uniform(3.0, 20.0) * max(float(bg_mad), 1e-5)
+    amp_factor = random.uniform(3.0, 18.0) * max(float(bg_mad), 1e-5)
     injected_streak = blurred * amp_factor
 
     # Slightly chromatic or neutral white
-    chroma = [random.uniform(0.85, 1.15) for _ in range(3)]
+    chroma = [random.uniform(0.9, 1.1) for _ in range(3)]
     modified = np.copy(linear_tile)
     for ch in range(3):
         modified[:, :, ch] += injected_streak * chroma[ch]
@@ -97,7 +98,7 @@ def inject_synthetic_satellite(
         "y1": round(y1, 1),
         "x2": round(x2, 1),
         "y2": round(y2, 1),
-        "thickness": 14.0,
+        "thickness": 12.0,
     }
 
     return modified, "satellite_streak", annot
@@ -109,8 +110,12 @@ def inject_synthetic_airplane(
     bg_mad: float,
 ) -> Tuple[np.ndarray, str, Dict]:
     """
-    Injects an airplane track with central fuselage streak, two parallel wingtip lines,
-    and periodic anti-collision strobe flashes with RGB chromatic weighting.
+    Injects an airplane track matching real optical/sensor physics:
+    - Central steady fuselage or navigation streak.
+    - Asymmetric or dual wingtip tracks with offset scaling from [6, 45] px (accounting
+      for altitude and focal length).
+    - Periodic anti-collision strobes rendered as streaked dashes (15-60 px) rather than dots.
+    - True-to-life OSC camera chromatic weights (amber/white fuselage, deep red / green-white wing strobes).
     """
     h, w, _ = linear_tile.shape
     x1, y1, x2, y2 = _random_crossing_line(h)
@@ -126,61 +131,100 @@ def inject_synthetic_airplane(
     nx = -uy
     ny = ux
 
-    offset = random.uniform(5.0, 12.0)
-    wing_scale = random.uniform(0.30, 0.60)
+    # Wing separation accounts for altitude (high cruise = narrow, low flyby = wide)
+    # and optical focal length. Range: [6.0, 45.0] px
+    offset = random.uniform(6.0, 45.0)
 
     # 3-channel canvas for colored strobes and fuselage
     plane_layer = np.zeros((h, w, 3), dtype=np.float32)
 
-    # Central fuselage streak
+    # 1. Central fuselage / navigation streak (continuous)
     num_steps = max(int(dist * 2.0), 300)
     t_vals = np.linspace(0.0, dist, num_steps, dtype=np.float32)
+
+    # Warm amber / white tint typical for OSC cameras on fuselage light
+    fuselage_rgb = np.array([
+        random.uniform(0.9, 1.0),
+        random.uniform(0.7, 0.88),
+        random.uniform(0.2, 0.45)
+    ], dtype=np.float32)
 
     for d in t_vals:
         cx = int(round(x1 + d * ux))
         cy = int(round(y1 + d * uy))
         if 0 <= cx < w and 0 <= cy < h:
-            plane_layer[cy, cx, :] = 1.0
+            for ch in range(3):
+                plane_layer[cy, cx, ch] = max(plane_layer[cy, cx, ch], fuselage_rgb[ch])
 
-        # Left & right wingtip lines
-        for sign in (-1.0, 1.0):
-            wx = int(round(x1 + d * ux + sign * offset * nx))
-            wy = int(round(y1 + d * uy + sign * offset * ny))
-            if 0 <= wx < w and 0 <= wy < h:
-                plane_layer[wy, wx, :] = max(plane_layer[wy, wx, 0], wing_scale)
+    # 2. Side tracks (wingtip lights and periodic dashes)
+    # In real flights, one wing carries port (red) strobe/nav, the other starboard (green/white).
+    # Side track presence depends on focal length and orientation
+    has_left_track = True
+    has_right_track = (random.random() < 0.75)  # Can be single-sided or dual-sided
 
-    # Periodic anti-collision strobes
-    strobe_spacing = random.uniform(25.0, 60.0)
-    strobe_dists = np.arange(strobe_spacing * 0.5, dist, strobe_spacing)
+    # Strobe dash parameters:
+    # Strobe duration translates to a streak segment of length dash_len during exposure
+    dash_len = random.uniform(15.0, 55.0)
+    strobe_period = random.uniform(90.0, 320.0)  # distance between flash starts
 
-    for sd in strobe_dists:
-        sx = int(round(x1 + sd * ux))
-        sy = int(round(y1 + sd * uy))
-        flash_intensity = random.uniform(3.0, 6.0)
-        # Red / Green / White strobe coloring
-        strobe_color = random.choice([
-            (1.0, 0.2, 0.2),  # Red beacon
-            (0.2, 1.0, 0.4),  # Green starboard
-            (1.0, 1.0, 1.0),  # White strobe
-        ])
+    # Left wing track: port strobe (predominantly red/amber pulses)
+    if has_left_track:
+        sign = -1.0
+        # Determine whether left track has a faint continuous baseline
+        faint_baseline = random.uniform(0.0, 0.25)
+        if faint_baseline > 0.05:
+            for d in t_vals:
+                wx = int(round(x1 + d * ux + sign * offset * nx))
+                wy = int(round(y1 + d * uy + sign * offset * ny))
+                if 0 <= wx < w and 0 <= wy < h:
+                    plane_layer[wy, wx, 0] = max(plane_layer[wy, wx, 0], faint_baseline)
+                    plane_layer[wy, wx, 1] = max(plane_layer[wy, wx, 1], faint_baseline * 0.5)
 
-        for r_offset in (-2, -1, 0, 1, 2):
-            for c_offset in (-2, -1, 0, 1, 2):
-                fx = sx + c_offset
-                fy = sy + r_offset
-                if 0 <= fx < w and 0 <= fy < h:
-                    falloff = math.exp(-(r_offset ** 2 + c_offset ** 2) / 2.0)
+        # Strobes as streaked dashes
+        strobe_starts = np.arange(random.uniform(0.0, strobe_period * 0.5), dist, strobe_period)
+        for s_start in strobe_starts:
+            s_end = min(s_start + dash_len, dist)
+            s_steps = max(int((s_end - s_start) * 2.0), 20)
+            dash_d = np.linspace(s_start, s_end, s_steps)
+            intensity = random.uniform(1.8, 3.8)
+            # Port red strobe
+            strobe_rgb = (intensity * 1.0, intensity * random.uniform(0.3, 0.5), intensity * 0.1)
+            for d in dash_d:
+                wx = int(round(x1 + d * ux + sign * offset * nx))
+                wy = int(round(y1 + d * uy + sign * offset * ny))
+                if 0 <= wx < w and 0 <= wy < h:
                     for ch in range(3):
-                        plane_layer[fy, fx, ch] += flash_intensity * strobe_color[ch] * falloff
+                        plane_layer[wy, wx, ch] = max(plane_layer[wy, wx, ch], strobe_rgb[ch])
 
-    # Convolve with Gaussian PSF (sigma in [1.0, 2.2] px)
-    sigma = random.uniform(1.0, 2.2)
+    # Right wing track: starboard strobe (green/white or white flash)
+    if has_right_track:
+        sign = 1.0
+        # Right offset can have slight perspective difference or asymmetry
+        r_offset = offset * random.uniform(0.85, 1.15)
+        # Periodic dashes
+        strobe_starts = np.arange(random.uniform(0.0, strobe_period * 0.5), dist, strobe_period)
+        for s_start in strobe_starts:
+            s_end = min(s_start + dash_len * random.uniform(0.8, 1.2), dist)
+            s_steps = max(int((s_end - s_start) * 2.0), 20)
+            dash_d = np.linspace(s_start, s_end, s_steps)
+            intensity = random.uniform(1.5, 3.5)
+            # Green / white strobe
+            strobe_rgb = (intensity * random.uniform(0.5, 1.0), intensity * 1.0, intensity * random.uniform(0.4, 0.9))
+            for d in dash_d:
+                wx = int(round(x1 + d * ux + sign * r_offset * nx))
+                wy = int(round(y1 + d * uy + sign * r_offset * ny))
+                if 0 <= wx < w and 0 <= wy < h:
+                    for ch in range(3):
+                        plane_layer[wy, wx, ch] = max(plane_layer[wy, wx, ch], strobe_rgb[ch])
+
+    # Convolve with Gaussian PSF (sigma in [1.0, 2.0] px)
+    sigma = random.uniform(1.0, 2.0)
     ksize = int(math.ceil(sigma * 4.0)) * 2 + 1
     for ch in range(3):
         plane_layer[:, :, ch] = cv2.GaussianBlur(plane_layer[:, :, ch], (ksize, ksize), sigmaX=sigma, sigmaY=sigma)
 
-    # Scale amplitude
-    amp_factor = random.uniform(8.0, 45.0) * max(float(bg_mad), 1e-5)
+    # Scale amplitude relative to background noise floor
+    amp_factor = random.uniform(10.0, 45.0) * max(float(bg_mad), 1e-5)
     modified = np.clip(linear_tile + plane_layer * amp_factor, 0.0, 1.0)
 
     annot = {
@@ -190,7 +234,7 @@ def inject_synthetic_airplane(
         "y1": round(y1, 1),
         "x2": round(x2, 1),
         "y2": round(y2, 1),
-        "thickness": round(offset * 2.0 + 12.0, 1),
+        "thickness": round(offset * 2.2 + 14.0, 1),
     }
 
     return modified, "airplane", annot

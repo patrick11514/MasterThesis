@@ -372,6 +372,8 @@ def main():
     parser.add_argument("--no-onnx", action="store_true", help="Skip ONNX exports")
     parser.add_argument("--auto-resume", action="store_true",
                         help="Automatically detect and resume from existing best.pt checkpoints for YOLO and CNNs")
+    parser.add_argument("--from-iteration", type=str, default=None,
+                        help="Name of an iteration from iterations/ (via iter_manager.py) to resume / fine-tune from")
     parser.add_argument("--resume-yolo", type=str, default=None,
                         help="Explicit checkpoint to resume / fine-tune YOLO from")
     parser.add_argument("--resume-cnns", action="store_true",
@@ -399,6 +401,28 @@ def main():
     is_resuming_existing = False
 
     model_overrides = parse_resume_model_overrides(args.resume_model, sessions_base)
+
+    # Handle --from-iteration: activate or resolve iteration models directly
+    if args.from_iteration:
+        iter_dir = Path("iterations") / args.from_iteration
+        if not iter_dir.exists():
+            raise ValueError(f"Iteration '{args.from_iteration}' does not exist in {iter_dir.resolve()}")
+        iter_models = iter_dir / "models"
+        print(f" [Iteration Resume] Sourcing models from iteration: {args.from_iteration}")
+        # Resolve YOLO if not explicitly set
+        if not args.resume_yolo:
+            y_cand = iter_models / "yolo_best.pt"
+            if y_cand.exists():
+                args.resume_yolo = str(y_cand)
+                print(f"  [+] Sourced YOLO from iteration: {args.resume_yolo}")
+        # Resolve CNN overrides
+        for m_cand in iter_models.glob("*_best.pt"):
+            if m_cand.name == "yolo_best.pt":
+                continue
+            m_name = m_cand.name.replace("_best.pt", "")
+            if m_name not in model_overrides:
+                model_overrides[m_name] = str(m_cand)
+                print(f"  [+] Sourced CNN {m_name} from iteration: {m_cand}")
 
     if args.resume_session:
         # Resume incomplete session in-place
