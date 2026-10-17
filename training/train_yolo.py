@@ -34,7 +34,7 @@ def check_dataset_yaml(yaml_path: Path) -> Path:
 
 
 def train_yolo(
-    model_name: str = "yolo26n-seg.pt",
+    model_name: str = "yolo11n-seg.pt",
     data_yaml: str = "dataset_yolo/dataset.yaml",
     epochs: int = 30,
     batch: int = 16,
@@ -42,7 +42,7 @@ def train_yolo(
     device: str = None,
     workers: int = 4,
     project: str = "runs/segment",
-    name: str = "yolo_astro",
+    name: str = "yolo11_astro",
     lr0: float = 0.001,
     patience: int = 10,
     amp: bool = True,
@@ -73,7 +73,7 @@ def train_yolo(
             print("  - Running in pure FP32 mode (AMP disabled) for maximum ROCm numerical stability.")
 
     print("=" * 60)
-    print("      AstroGrader: YOLO-seg Instance Segmentation Training")
+    print("      AstroGrader: YOLO11-seg Instance Segmentation Training")
     print("=" * 60)
     print(f"Model Backbone: {model_name}")
     print(f"Dataset YAML:   {yaml_path}")
@@ -166,13 +166,13 @@ def train_yolo(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="AstroGrader YOLO-seg Instance Segmentation Training Runner")
+    parser = argparse.ArgumentParser(description="AstroGrader YOLO11-seg Training Runner")
     parser.add_argument(
         "--model", "--weights", "--resume",
         dest="model",
         type=str,
-        default="yolo26n-seg.pt",
-        help="Model backbone weights or previous best checkpoint to fine-tune from (e.g. yolo26n-seg.pt, yolo26s-seg.pt, yolo11n-seg.pt)",
+        default="yolo11n-seg.pt",
+        help="Model backbone weights or previous best checkpoint to fine-tune from (e.g. yolo11n-seg.pt, runs/segment/yolo11_astro/weights/best.pt)",
     )
     parser.add_argument(
         "--data",
@@ -187,7 +187,7 @@ if __name__ == "__main__":
     parser.add_argument("--device", type=str, default=None, help="Device (0, cpu, or auto)")
     parser.add_argument("--workers", type=int, default=4, help="Dataloader worker threads (default: 4)")
     parser.add_argument("--project", type=str, default="runs/segment", help="Project save directory")
-    parser.add_argument("--name", type=str, default="yolo_astro", help="Experiment name")
+    parser.add_argument("--name", type=str, default="yolo11_astro", help="Experiment name")
     parser.add_argument("--lr", type=float, default=0.001, help="Initial learning rate")
     parser.add_argument(
         "--no-amp",

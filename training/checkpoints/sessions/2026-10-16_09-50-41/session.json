@@ -1,0 +1,84 @@
+{
+  "session_id": "2026-10-16_09-50-41",
+  "created_at": "2026-10-16T09:50:41.592213",
+  "parent_session": null,
+  "status": "completed",
+  "config": {
+    "yolo_epochs": 30,
+    "cnn_epochs": 30,
+    "batch_size": 16,
+    "lr": 0.001,
+    "patience": 5
+  },
+  "models": {
+    "yolo11_astro": {
+      "status": "completed",
+      "task": "Instance Segmentation",
+      "epochs_completed": 30,
+      "target_epochs": 30,
+      "metrics": {
+        "box_map50": 0.417,
+        "box_map": 0.3216,
+        "seg_map50": 0.3392,
+        "seg_map": 0.2161
+      },
+      "checkpoint": "checkpoints/sessions/2026-10-16_09-50-41/yolo11_astro/weights/best.pt",
+      "last_checkpoint": "checkpoints/sessions/2026-10-16_09-50-41/yolo11_astro/weights/last.pt",
+      "resumed_from": "yolo11n-seg.pt",
+      "elapsed_sec": 7468.2
+    },
+    "astronet": {
+      "status": "completed",
+      "task": "Multi-Label Classification",
+      "epochs_completed": 11,
+      "target_epochs": 30,
+      "best_epoch": 6,
+      "macro_f1": 0.4099,
+      "clean_sky_acc": 0.7203,
+      "checkpoint": "checkpoints/sessions/2026-10-16_09-50-41/astronet_f32/best_model.pt",
+      "last_checkpoint": "checkpoints/sessions/2026-10-16_09-50-41/astronet_f32/last_model.pt",
+      "resumed_from": null,
+      "elapsed_sec": 2557.1
+    },
+    "resnet18": {
+      "status": "completed",
+      "task": "Multi-Label Classification",
+      "epochs_completed": 11,
+      "target_epochs": 30,
+      "best_epoch": 6,
+      "macro_f1": 0.4611,
+      "clean_sky_acc": 0.7712,
+      "checkpoint": "checkpoints/sessions/2026-10-16_09-50-41/resnet18_f32/best_model.pt",
+      "last_checkpoint": "checkpoints/sessions/2026-10-16_09-50-41/resnet18_f32/last_model.pt",
+      "resumed_from": null,
+      "elapsed_sec": 3849.9
+    },
+    "mobilenet_v3": {
+      "status": "completed",
+      "task": "Multi-Label Classification",
+      "epochs_completed": 18,
+      "target_epochs": 30,
+      "best_epoch": 13,
+      "macro_f1": 0.4873,
+      "clean_sky_acc": 0.7868,
+      "checkpoint": "checkpoints/sessions/2026-10-16_09-50-41/mobilenet_v3_f32/best_model.pt",
+      "last_checkpoint": "checkpoints/sessions/2026-10-16_09-50-41/mobilenet_v3_f32/last_model.pt",
+      "resumed_from": null,
+      "elapsed_sec": 4943.5
+    },
+    "efficientnet_b0": {
+      "status": "completed",
+      "task": "Multi-Label Classification",
+      "epochs_completed": 15,
+      "target_epochs": 30,
+      "best_epoch": 10,
+      "macro_f1": 0.4766,
+      "clean_sky_acc": 0.7993,
+      "checkpoint": "checkpoints/sessions/2026-10-16_09-50-41/efficientnet_b0_f32/best_model.pt",
+      "last_checkpoint": "checkpoints/sessions/2026-10-16_09-50-41/efficientnet_b0_f32/last_model.pt",
+      "resumed_from": null,
+      "elapsed_sec": 13257.8
+    }
+  },
+  "updated_at": "2026-10-16T18:50:49.053456"
+}
