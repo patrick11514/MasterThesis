@@ -1,0 +1,32 @@
+{
+  "session_id": "2026-10-17_15-46-17",
+  "created_at": "2026-10-17T15:46:17.018532",
+  "parent_session": null,
+  "status": "completed",
+  "config": {
+    "yolo_epochs": 30,
+    "cnn_epochs": 30,
+    "batch_size": 16,
+    "lr": 0.001,
+    "patience": 5
+  },
+  "models": {
+    "yolo_astro": {
+      "status": "completed",
+      "task": "Instance Segmentation",
+      "epochs_completed": 30,
+      "target_epochs": 30,
+      "metrics": {
+        "box_map50": 0.4446,
+        "box_map": 0.3521,
+        "seg_map50": 0.3455,
+        "seg_map": 0.2335
+      },
+      "checkpoint": "/home/patrick115/Projects/MasterThesis/training/checkpoints/sessions/2026-10-17_15-46-17/yolo_astro/weights/best.pt",
+      "last_checkpoint": "/home/patrick115/Projects/MasterThesis/training/checkpoints/sessions/2026-10-17_15-46-17/yolo_astro/weights/last.pt",
+      "resumed_from": "yolo26n-seg.pt",
+      "elapsed_sec": 16027.8
+    }
+  },
+  "updated_at": "2026-10-17T20:13:24.819154"
+}

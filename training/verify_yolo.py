@@ -290,9 +290,9 @@ def verify_batch(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="AstroGrader YOLO11-seg Full-Frame Verification")
+    parser = argparse.ArgumentParser(description="AstroGrader YOLO-seg Full-Frame Verification")
     parser.add_argument("--fits", type=str, nargs="+", required=True, help="Path, directory, or glob pattern of FITS files")
-    parser.add_argument("--model", type=str, default="yolo11n-seg.pt", help="Path to trained YOLO11 weights (.pt)")
+    parser.add_argument("--model", type=str, default="yolo26n-seg.pt", help="Path to trained YOLO weights (.pt)")
     parser.add_argument("--out-dir", type=str, default="verification_output", help="Directory for visual reports")
     parser.add_argument("--conf", type=float, default=0.25, help="Confidence threshold (default: 0.25)")
     parser.add_argument("--device", type=str, default="cpu", help="Device (cpu or 0)")
