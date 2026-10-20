@@ -335,7 +335,7 @@ def main():
                         help="When resuming a session, force re-running specific models even if marked completed")
 
     # Dataset & Paths
-    parser.add_argument("--data-dir", type=str, default="TRAINING_FILES", nargs="+",
+    parser.add_argument("--data-dir", type=str, default="../TRAINING_FILES", nargs="+",
                         help="Path(s) to raw FITS and JSON annotations directory")
     parser.add_argument("--out-dir", type=str, default="dataset",
                         help="Output directory for sliced CNN dataset")
@@ -435,6 +435,21 @@ def main():
         if s_json.exists():
             with open(s_json, "r", encoding="utf-8") as fp:
                 session_manifest = json.load(fp)
+            # Inherit previous session config if not explicitly overridden on CLI
+            saved_cfg = session_manifest.get("config", {})
+            if saved_cfg:
+                # If CLI passed default values, restore what the session originally used
+                if args.cnn_epochs == parser.get_default("cnn_epochs") and "cnn_epochs" in saved_cfg:
+                    args.cnn_epochs = saved_cfg["cnn_epochs"]
+                if args.yolo_epochs == parser.get_default("yolo_epochs") and "yolo_epochs" in saved_cfg:
+                    args.yolo_epochs = saved_cfg["yolo_epochs"]
+                if args.lr == parser.get_default("lr") and "lr" in saved_cfg:
+                    args.lr = saved_cfg["lr"]
+                if args.cnn_batch == parser.get_default("cnn_batch") and "batch_size" in saved_cfg:
+                    args.cnn_batch = saved_cfg["batch_size"]
+                if args.patience == parser.get_default("patience") and "patience" in saved_cfg:
+                    args.patience = saved_cfg["patience"]
+                print(f" [Session Config] Restored settings from session: cnn_epochs={args.cnn_epochs}, yolo_epochs={args.yolo_epochs}, lr={args.lr}")
         print(f" [Session] Resuming existing session in-place: {session_id}")
     else:
         # Create a new session
