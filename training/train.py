@@ -16,6 +16,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from PIL import Image
+from tqdm import tqdm
 
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -190,10 +191,13 @@ def train_one_epoch(
     criterion: nn.Module,
     optimizer: torch.optim.Optimizer,
     device: torch.device,
+    epoch: int = 1,
+    total_epochs: int = 1,
 ) -> float:
     model.train()
     total_loss = 0.0
-    for images, metas, targets in loader:
+    pbar = tqdm(loader, desc=f"Epoch {epoch:02d}/{total_epochs:02d} [Train]", leave=False)
+    for images, metas, targets in pbar:
         images = images.to(device)
         metas = metas.to(device)
         targets = targets.to(device)
@@ -204,7 +208,9 @@ def train_one_epoch(
         loss.backward()
         optimizer.step()
 
-        total_loss += loss.item() * images.size(0)
+        batch_loss = loss.item()
+        total_loss += batch_loss * images.size(0)
+        pbar.set_postfix(loss=f"{batch_loss:.4f}")
 
     return total_loss / len(loader.dataset)
 
@@ -214,21 +220,26 @@ def evaluate(
     loader: DataLoader,
     criterion: nn.Module,
     device: torch.device,
+    epoch: int = 1,
+    total_epochs: int = 1,
 ) -> Tuple[float, Dict[str, float]]:
     model.eval()
     total_loss = 0.0
     all_preds = []
     all_targets = []
 
+    pbar = tqdm(loader, desc=f"Epoch {epoch:02d}/{total_epochs:02d} [Val]", leave=False)
     with torch.no_grad():
-        for images, metas, targets in loader:
+        for images, metas, targets in pbar:
             images = images.to(device)
             metas = metas.to(device)
             targets = targets.to(device)
 
             outputs = model(images, metas)
             loss = criterion(outputs, targets)
-            total_loss += loss.item() * images.size(0)
+            batch_loss = loss.item()
+            total_loss += batch_loss * images.size(0)
+            pbar.set_postfix(loss=f"{batch_loss:.4f}")
 
             probs = torch.sigmoid(outputs).cpu().numpy()
             all_preds.append(probs)
@@ -388,8 +399,8 @@ def main():
     start_time = time.time()
     for epoch in range(start_epoch, args.epochs + 1):
         t0 = time.time()
-        train_loss = train_one_epoch(model, train_loader, criterion, optimizer, device)
-        val_loss, metrics = evaluate(model, val_loader, criterion, device)
+        train_loss = train_one_epoch(model, train_loader, criterion, optimizer, device, epoch=epoch, total_epochs=args.epochs)
+        val_loss, metrics = evaluate(model, val_loader, criterion, device, epoch=epoch, total_epochs=args.epochs)
         scheduler.step()
 
         elapsed = time.time() - t0
