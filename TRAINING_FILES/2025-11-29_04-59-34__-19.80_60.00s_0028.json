@@ -8,13 +8,13 @@
   "favorite": false,
   "boxes": [
     {
-      "id": "full_1791550206495",
+      "id": "full_1792704477106",
       "label": "cloud",
       "type": "box",
-      "x": 1470.0,
-      "y": 1092.0,
-      "width": 2370.0,
-      "height": 1068.0,
+      "x": 0.0,
+      "y": 0.0,
+      "width": 3840.0,
+      "height": 2160.0,
       "x1": null,
       "y1": null,
       "x2": null,

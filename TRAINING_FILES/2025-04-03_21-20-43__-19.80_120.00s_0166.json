@@ -3,7 +3,7 @@
   "width": 3840,
   "height": 2160,
   "global_star_trailing": false,
-  "global_cloud": true,
+  "global_cloud": false,
   "is_clean": false,
   "favorite": false,
   "boxes": [
@@ -41,7 +41,7 @@
     },
     {
       "id": "full_1792056332163",
-      "label": "star_trail",
+      "label": "unfocused_star",
       "type": "box",
       "x": 0.0,
       "y": 0.0,

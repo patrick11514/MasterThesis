@@ -8,44 +8,20 @@
   "favorite": false,
   "boxes": [
     {
-      "id": "poly_1791547778262",
+      "id": "full_1792704481205",
       "label": "cloud",
-      "type": "polygon",
-      "x": 1777.0,
-      "y": 1202.0,
-      "width": 2191.0,
-      "height": 1126.0,
+      "type": "box",
+      "x": 0.0,
+      "y": 0.0,
+      "width": 3840.0,
+      "height": 2160.0,
       "x1": null,
       "y1": null,
       "x2": null,
       "y2": null,
-      "points": [
-        [
-          3968.0,
-          1346.0
-        ],
-        [
-          2952.0,
-          1202.0
-        ],
-        [
-          2369.0,
-          1416.0
-        ],
-        [
-          2097.0,
-          1846.0
-        ],
-        [
-          1777.0,
-          2261.0
-        ],
-        [
-          3904.0,
-          2328.0
-        ]
-      ],
-      "confidence": null
+      "points": null,
+      "confidence": null,
+      "thickness": 16.0
     }
   ]
 }

@@ -20,7 +20,8 @@
       "x2": 2724.0,
       "y2": 2166.0,
       "points": null,
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
     },
     {
       "id": "l_1790456749891",
@@ -35,7 +36,8 @@
       "x2": 1416.0,
       "y2": 1.0,
       "points": null,
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
     },
     {
       "id": "l_1790456751782",
@@ -50,39 +52,24 @@
       "x2": 2.0,
       "y2": 1445.0,
       "points": null,
-      "confidence": null
+      "confidence": null,
+      "thickness": 16.0
     },
     {
-      "id": "poly_1790456760084",
+      "id": "full_1792704471288",
       "label": "cloud",
-      "type": "polygon",
-      "x": 2211.0,
-      "y": -164.0,
-      "width": 1911.0,
-      "height": 2514.0,
+      "type": "box",
+      "x": 0.0,
+      "y": 0.0,
+      "width": 3840.0,
+      "height": 2160.0,
       "x1": null,
       "y1": null,
       "x2": null,
       "y2": null,
-      "points": [
-        [
-          2211.0,
-          -59.0
-        ],
-        [
-          3278.0,
-          2350.0
-        ],
-        [
-          4122.0,
-          2218.0
-        ],
-        [
-          4122.0,
-          -164.0
-        ]
-      ],
-      "confidence": null
+      "points": null,
+      "confidence": null,
+      "thickness": 16.0
     }
   ]
 }
