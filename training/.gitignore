@@ -12,6 +12,8 @@ dataset*/
 verification_output/
 *.onnx
 *.pt
+*.tar
+*.tar.gz
 runs/
 
 # Do not commit raw FITS images or metadata info files inside training directory
