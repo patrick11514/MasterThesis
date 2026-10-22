@@ -1,0 +1,27 @@
+{
+  "file_name": "2026-10-19_04-26-23__-19.90_60.00s_0000.fits",
+  "width": 1920,
+  "height": 1080,
+  "global_star_trailing": false,
+  "global_cloud": false,
+  "is_clean": false,
+  "favorite": false,
+  "boxes": [
+    {
+      "id": "full_1792666147082",
+      "label": "cloud",
+      "type": "box",
+      "x": 0.0,
+      "y": 0.0,
+      "width": 1920.0,
+      "height": 1080.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": null,
+      "confidence": null,
+      "thickness": 16.0
+    }
+  ]
+}

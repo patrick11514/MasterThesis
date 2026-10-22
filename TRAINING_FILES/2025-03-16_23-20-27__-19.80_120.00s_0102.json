@@ -35,22 +35,6 @@
       ],
       "confidence": null,
       "thickness": 16.0
-    },
-    {
-      "id": "full_1792056096126",
-      "label": "unfocused_star",
-      "type": "box",
-      "x": 0.0,
-      "y": 0.0,
-      "width": 3840.0,
-      "height": 2160.0,
-      "x1": null,
-      "y1": null,
-      "x2": null,
-      "y2": null,
-      "points": null,
-      "confidence": null,
-      "thickness": 16.0
     }
   ]
 }
