@@ -26,6 +26,38 @@ class TestAnnotatorAPI(unittest.TestCase):
             self.assertIn("files", data)
             self.assertGreater(len(data["files"]), 0)
 
+    def test_files_classes_extraction(self):
+        """Tests that /api/files extracts classes present in annotations JSON."""
+        import json
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+            f1 = tmppath / "f1.fits"
+            f2 = tmppath / "f2.fits"
+            f3 = tmppath / "f3.fits"
+            f1.touch()
+            f2.touch()
+            f3.touch()
+
+            # f1 has satellite_streak and cloud
+            (tmppath / "f1.json").write_text(json.dumps({
+                "boxes": [{"label": "satellite_streak"}, {"label": "cloud"}]
+            }))
+            # f2 has legacy global_star_trailing and airplane
+            (tmppath / "f2.json").write_text(json.dumps({
+                "boxes": [{"label": "airplane"}],
+                "global_star_trailing": True
+            }))
+            # f3 has no json (unannotated)
+
+            res = self.client.get(f"/api/files?dir_path={tmppath}")
+            self.assertEqual(res.status_code, 200)
+            data = res.json()
+            files_map = {item["name"]: item for item in data["files"]}
+
+            self.assertEqual(files_map["f1.fits"]["classes"], ["cloud", "satellite_streak"])
+            self.assertEqual(files_map["f2.fits"]["classes"], ["airplane", "star_trail"])
+            self.assertEqual(files_map["f3.fits"]["classes"], [])
+
     def test_save_and_load_annotations(self):
         """Tests saving and retrieving both box and streak line annotations."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -81,6 +113,7 @@ class TestAnnotatorAPI(unittest.TestCase):
             post_data = post_res.json()
             self.assertEqual(post_data["boxes_count"], 3)
             self.assertFalse(post_data["is_clean"])
+            self.assertEqual(sorted(post_data["classes"]), ["cloud", "satellite_streak"])
 
             # GET annotations
             get_res = self.client.get(f"/api/annotations?path={fake_fits}")
@@ -220,7 +253,7 @@ class TestAnnotatorAPI(unittest.TestCase):
         self.assertEqual(len(res4), 2)
 
     def test_list_models_contains_cnn(self):
-        """Tests that /api/models lists both YOLO and CNN models."""
+        """Tests that /api/models lists both YOLO and CNN models, and checks iterations/sessions."""
         response = self.client.get("/api/models")
         self.assertEqual(response.status_code, 200)
         data = response.json()
@@ -228,6 +261,37 @@ class TestAnnotatorAPI(unittest.TestCase):
         types = {m["type"] for m in data["models"]}
         # Should have at least cnn or yolo-seg
         self.assertTrue("cnn" in types or "yolo-seg" in types)
+
+        # Check iterations discovery
+        iter_models = [m for m in data["models"] if m.get("source") == "iteration" or m.get("iteration")]
+        self.assertGreater(len(iter_models), 0)
+        for m in iter_models:
+            self.assertTrue(m["iteration"] in ("v1", "v2"))
+            self.assertTrue(m["name"].startswith(f"[Iteration {m['iteration']}]"))
+
+    def test_list_models_session_discovery(self):
+        """Tests that models in sessions directories are properly discovered and formatted."""
+        sessions_dir = Path(__file__).resolve().parent.parent / "checkpoints" / "sessions" / "test_sess_001" / "resnet_test"
+        sessions_dir.mkdir(parents=True, exist_ok=True)
+        fake_model = sessions_dir / "best_model.pt"
+        fake_model.touch()
+        try:
+            res = self.client.get("/api/models")
+            self.assertEqual(res.status_code, 200)
+            data = res.json()
+            matches = [m for m in data["models"] if "test_sess_001" in m.get("name", "")]
+            self.assertEqual(len(matches), 1)
+            self.assertEqual(matches[0]["session"], "test_sess_001")
+            self.assertEqual(matches[0]["source"], "session")
+            self.assertTrue(matches[0]["name"].startswith("[Session test_sess_001]"))
+        finally:
+            if fake_model.exists():
+                fake_model.unlink()
+            if sessions_dir.exists():
+                sessions_dir.rmdir()
+            parent = sessions_dir.parent
+            if parent.exists() and not any(parent.iterdir()):
+                parent.rmdir()
 
     def test_predict_cnn_endpoint(self):
         """Tests running CNN inference and tile merging via /api/models/predict."""

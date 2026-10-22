@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>AstroGrader - FITS Tagging Tool</title>
-  <link rel="stylesheet" href="/static/style.css?v=6">
+  <link rel="stylesheet" href="/static/style.css?v=7">
 </head>
 <body>
   <div id="app">
@@ -37,6 +37,12 @@
             <option value="time_desc">Last Classified (Newest first)</option>
           </select>
         </div>
+        <div class="file-filter-row">
+          <label for="select-filter-class">Defect:</label>
+          <select id="select-filter-class" title="Filter files containing specific defect class">
+            <option value="">All Defects / Any</option>
+          </select>
+        </div>
         <ul id="file-list"></ul>
       </div>
       <div class="sidebar-footer">
@@ -49,6 +55,9 @@
         <button id="btn-clear-labels" class="btn-danger" title="Clear all annotations and global tags for this image">Clear All Labels</button>
       </div>
     </div>
+
+    <!-- Left Resizer Handle -->
+    <div id="resizer-left" class="panel-resizer resizer-left" title="Drag to resize file list panel"></div>
 
     <!-- Main Workspace -->
     <div id="workspace">
@@ -161,6 +170,9 @@
       </div>
     </div>
 
+    <!-- Right Resizer Handle -->
+    <div id="resizer-right" class="panel-resizer resizer-right" title="Drag to resize annotations panel"></div>
+
     <!-- Right Sidebar: AI Auto-Label & Current Image Annotations -->
     <div id="right-sidebar">
       <!-- AI Auto-Label Panel -->
@@ -253,6 +265,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=10"></script>
+  <script src="/static/app.js?v=11"></script>
 </body>
 </html>

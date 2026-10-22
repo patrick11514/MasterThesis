@@ -125,12 +125,23 @@ def list_fits_files(dir_path: str = Query(..., description="Directory containing
         is_annotated = annot_json.exists()
         is_favorite = False
         annot_mtime = 0.0
+        file_classes = []
         if is_annotated:
             try:
                 annot_mtime = float(annot_json.stat().st_mtime)
                 with open(annot_json, "r", encoding="utf-8") as jf:
                     jdata = json.load(jf)
                     is_favorite = bool(jdata.get("favorite", False))
+                    cls_set = set()
+                    for b in jdata.get("boxes", []):
+                        lbl = b.get("label")
+                        if lbl:
+                            cls_set.add(lbl)
+                    if jdata.get("global_star_trailing"):
+                        cls_set.add("star_trail")
+                    if jdata.get("global_cloud"):
+                        cls_set.add("cloud")
+                    file_classes = sorted(list(cls_set))
             except Exception:
                 pass
 
@@ -141,6 +152,7 @@ def list_fits_files(dir_path: str = Query(..., description="Directory containing
             "annotated": is_annotated,
             "annot_mtime": annot_mtime,
             "favorite": is_favorite,
+            "classes": file_classes,
         })
 
     return {"directory": str(p), "files": result}
@@ -331,8 +343,21 @@ def save_annotations(path: str = Query(...), annot: FrameAnnotation = ...):
         with open(txt_path, "w", encoding="utf-8") as f:
             f.write("\n".join(lines))
 
+    saved_classes = sorted(list(set(box.label for box in annot.boxes if box.label)))
+    if annot.global_star_trailing and "star_trail" not in saved_classes:
+        saved_classes.append("star_trail")
+    if annot.global_cloud and "cloud" not in saved_classes:
+        saved_classes.append("cloud")
+    saved_classes.sort()
+
     mtime = float(json_path.stat().st_mtime) if json_path.exists() else 0.0
-    return {"status": "ok", "boxes_count": len(annot.boxes), "is_clean": annot.is_clean, "annot_mtime": mtime}
+    return {
+        "status": "ok",
+        "boxes_count": len(annot.boxes),
+        "is_clean": annot.is_clean,
+        "annot_mtime": mtime,
+        "classes": saved_classes,
+    }
 
 
 @app.delete("/api/annotations")
@@ -448,6 +473,10 @@ def list_available_models():
         "runs/segment/**/weights/*.pt",
         "checkpoints/**/*.pt",
         "checkpoints/**/*.onnx",
+        "iterations/**/*.pt",
+        "iterations/**/*.onnx",
+        "sessions/**/*.pt",
+        "sessions/**/*.onnx",
         "weights/*.pt",
         "*.pt",
         "*.onnx",
@@ -467,17 +496,40 @@ def list_available_models():
             is_onnx = resolved.suffix.lower() == ".onnx"
             is_yolo = not is_onnx and ("seg" in rel.lower() or "runs/segment" in rel or "yolo" in rel.lower())
 
+            parts = rel.split(os.sep)
             display_name = resolved.name
-            if "checkpoints/sessions" in rel or "checkpoints" + os.sep + "sessions" in rel:
-                parts = rel.split(os.sep)
-                if "sessions" in parts:
-                    s_idx = parts.index("sessions")
-                    if len(parts) > s_idx + 2:
-                        s_name = parts[s_idx + 1]
-                        m_name = parts[s_idx + 2]
-                        display_name = f"[{s_name}] {m_name}/{resolved.name}"
-            elif resolved.name == "best_model.pt" or (resolved.parent != base_dir and resolved.parent.name not in ("weights", "checkpoints")):
+            source = "other"
+            iteration_name = None
+            session_name = None
+
+            if "iterations" in parts:
+                source = "iteration"
+                it_idx = parts.index("iterations")
+                if len(parts) > it_idx + 1:
+                    iteration_name = parts[it_idx + 1]
+                rem = parts[it_idx + 2:]
+                if rem and rem[0] == "models":
+                    rem = rem[1:]
+                model_label = "/".join(rem) if rem else resolved.name
+                display_name = f"[Iteration {iteration_name}] {model_label}"
+            elif "sessions" in parts:
+                source = "session"
+                s_idx = parts.index("sessions")
+                if len(parts) > s_idx + 1:
+                    session_name = parts[s_idx + 1]
+                rem = parts[s_idx + 2:]
+                if rem and len(rem) >= 2 and rem[1] == "weights":
+                    rem = [rem[0], rem[-1]]
+                model_label = "/".join(rem) if rem else resolved.name
+                display_name = f"[Session {session_name}] {model_label}"
+            elif "runs" in parts and resolved.parent.name == "weights":
+                source = "run"
+                display_name = f"{resolved.parent.parent.name}/{resolved.name}"
+            elif resolved.name in ("best_model.pt", "best.pt") or (resolved.parent != base_dir and resolved.parent.name not in ("weights", "checkpoints")):
+                source = "checkpoint"
                 display_name = f"{resolved.parent.name}/{resolved.name}"
+            else:
+                source = "checkpoint"
 
             models.append({
                 "name": display_name,
@@ -485,6 +537,9 @@ def list_available_models():
                 "full_path": str(resolved),
                 "size_mb": round(resolved.stat().st_size / (1024 * 1024), 2),
                 "type": "yolo-seg" if is_yolo else "cnn",
+                "source": source,
+                "iteration": iteration_name,
+                "session": session_name,
                 "mtime": resolved.stat().st_mtime,
             })
     models.sort(key=lambda x: x["mtime"], reverse=True)
@@ -504,10 +559,19 @@ def predict_defect_masks(req: PredictRequest):
         base_dir = Path(__file__).resolve().parent.parent
         alt = (base_dir / req.model_path).resolve()
         alt_ckpt = (base_dir / "checkpoints" / req.model_path).resolve()
+        alt_iter = (base_dir / "iterations" / req.model_path).resolve()
+        alt_sess = (base_dir / "sessions" / req.model_path).resolve()
+        alt_ckpt_sess = (base_dir / "checkpoints" / "sessions" / req.model_path).resolve()
         if alt.exists():
             model_file = alt
         elif alt_ckpt.exists():
             model_file = alt_ckpt
+        elif alt_iter.exists():
+            model_file = alt_iter
+        elif alt_sess.exists():
+            model_file = alt_sess
+        elif alt_ckpt_sess.exists():
+            model_file = alt_ckpt_sess
         else:
             raise HTTPException(status_code=404, detail=f"Model checkpoint not found: {req.model_path}")
 

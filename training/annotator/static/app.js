@@ -57,6 +57,7 @@ const state = {
   isFavorite: false,
   filterFavorites: false,
   filterUntagged: false,
+  filterClass: "",
   fileSortMode: "name_asc",
   showGrid: false,
   showCutPreview: false,
@@ -146,6 +147,22 @@ function init() {
     selFileSort.addEventListener("change", (e) => {
       state.fileSortMode = e.target.value;
       renderFileList();
+    });
+  }
+
+  // Defect class filter dropdown
+  const selFilterClass = document.getElementById("select-filter-class");
+  if (selFilterClass) {
+    selFilterClass.value = state.filterClass;
+    selFilterClass.addEventListener("change", (e) => {
+      state.filterClass = e.target.value;
+      renderFileList();
+      if (state.filterClass && state.currentFile) {
+        const visible = getVisibleFileIndices();
+        if (visible.length > 0 && !visible.includes(state.currentIndex)) {
+          loadFile(visible[0]);
+        }
+      }
     });
   }
 
@@ -394,8 +411,134 @@ function init() {
     }
   });
 
+  // Setup resizable panels
+  initPanelResizers();
+
   // Initial load
   loadDirectory();
+}
+
+function initPanelResizers() {
+  const sidebar = document.getElementById("sidebar");
+  const rightSidebar = document.getElementById("right-sidebar");
+  const resizerLeft = document.getElementById("resizer-left");
+  const resizerRight = document.getElementById("resizer-right");
+
+  // Restore saved widths from localStorage
+  try {
+    const savedLeft = localStorage.getItem("astrograder_sidebar_left_width");
+    if (savedLeft && sidebar) {
+      const parsedLeft = parseInt(savedLeft, 10);
+      if (parsedLeft >= 180 && parsedLeft <= window.innerWidth * 0.45) {
+        sidebar.style.width = `${parsedLeft}px`;
+        sidebar.style.flex = `0 0 ${parsedLeft}px`;
+      }
+    }
+    const savedRight = localStorage.getItem("astrograder_sidebar_right_width");
+    if (savedRight && rightSidebar) {
+      const parsedRight = parseInt(savedRight, 10);
+      if (parsedRight >= 220 && parsedRight <= window.innerWidth * 0.50) {
+        rightSidebar.style.width = `${parsedRight}px`;
+        rightSidebar.style.flex = `0 0 ${parsedRight}px`;
+      }
+    }
+  } catch (err) {
+    console.warn("Could not restore sidebar widths:", err);
+  }
+
+  // Left sidebar resizer
+  if (resizerLeft && sidebar) {
+    let isDraggingLeft = false;
+    let startX = 0;
+    let startWidth = 0;
+
+    const onPointerMoveLeft = (e) => {
+      if (!isDraggingLeft) return;
+      const maxW = Math.max(180, Math.floor(window.innerWidth * 0.45));
+      const newW = Math.round(Math.max(180, Math.min(maxW, startWidth + (e.clientX - startX))));
+      sidebar.style.width = `${newW}px`;
+      sidebar.style.flex = `0 0 ${newW}px`;
+      resizeCanvas();
+    };
+
+    const onPointerUpLeft = () => {
+      if (!isDraggingLeft) return;
+      isDraggingLeft = false;
+      resizerLeft.classList.remove("resizing");
+      document.body.classList.remove("resizing-active");
+      window.removeEventListener("pointermove", onPointerMoveLeft);
+      window.removeEventListener("pointerup", onPointerUpLeft);
+      try {
+        const curW = Math.round(sidebar.getBoundingClientRect().width);
+        localStorage.setItem("astrograder_sidebar_left_width", curW);
+      } catch (err) {}
+      resizeCanvas();
+    };
+
+    const onPointerDownLeft = (e) => {
+      e.preventDefault();
+      isDraggingLeft = true;
+      startX = e.clientX;
+      startWidth = sidebar.getBoundingClientRect().width;
+      resizerLeft.classList.add("resizing");
+      document.body.classList.add("resizing-active");
+      window.addEventListener("pointermove", onPointerMoveLeft);
+      window.addEventListener("pointerup", onPointerUpLeft);
+    };
+
+    resizerLeft.addEventListener("pointerdown", onPointerDownLeft);
+  }
+
+  // Right sidebar resizer
+  if (resizerRight && rightSidebar) {
+    let isDraggingRight = false;
+    let startX = 0;
+    let startWidth = 0;
+
+    const onPointerMoveRight = (e) => {
+      if (!isDraggingRight) return;
+      const maxW = Math.max(220, Math.floor(window.innerWidth * 0.50));
+      const newW = Math.round(Math.max(220, Math.min(maxW, startWidth - (e.clientX - startX))));
+      rightSidebar.style.width = `${newW}px`;
+      rightSidebar.style.flex = `0 0 ${newW}px`;
+      resizeCanvas();
+    };
+
+    const onPointerUpRight = () => {
+      if (!isDraggingRight) return;
+      isDraggingRight = false;
+      resizerRight.classList.remove("resizing");
+      document.body.classList.remove("resizing-active");
+      window.removeEventListener("pointermove", onPointerMoveRight);
+      window.removeEventListener("pointerup", onPointerUpRight);
+      try {
+        const curW = Math.round(rightSidebar.getBoundingClientRect().width);
+        localStorage.setItem("astrograder_sidebar_right_width", curW);
+      } catch (err) {}
+      resizeCanvas();
+    };
+
+    const onPointerDownRight = (e) => {
+      e.preventDefault();
+      isDraggingRight = true;
+      startX = e.clientX;
+      startWidth = rightSidebar.getBoundingClientRect().width;
+      resizerRight.classList.add("resizing");
+      document.body.classList.add("resizing-active");
+      window.addEventListener("pointermove", onPointerMoveRight);
+      window.addEventListener("pointerup", onPointerUpRight);
+    };
+
+    resizerRight.addEventListener("pointerdown", onPointerDownRight);
+  }
+
+  // Auto-resize canvas when workspace or canvas-container changes size
+  if (window.ResizeObserver && container) {
+    const resizeObserver = new ResizeObserver(() => {
+      resizeCanvas();
+    });
+    resizeObserver.observe(container);
+  }
 }
 
 function resizeCanvas() {
@@ -699,6 +842,7 @@ async function loadClassesConfig() {
       renderClassButtons();
       renderBatchRelabelButtons();
       renderSelectByClassDropdown();
+      renderFilterByClassDropdown();
     }
   } catch (err) {
     console.warn("Failed to load /api/classes:", err);
@@ -759,6 +903,21 @@ function renderSelectByClassDropdown() {
   });
 }
 
+function renderFilterByClassDropdown() {
+  const sel = document.getElementById("select-filter-class");
+  if (!sel) return;
+  const currentVal = state.filterClass || "";
+  sel.innerHTML = '<option value="">All Defects / Any</option>';
+  state.classes.forEach((cls) => {
+    const opt = document.createElement("option");
+    opt.value = cls;
+    const prettyName = cls.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    opt.textContent = prettyName;
+    sel.appendChild(opt);
+  });
+  sel.value = currentVal;
+}
+
 async function loadAvailableModels() {
   const sel = document.getElementById("select-ai-model");
   const btnRun = document.getElementById("btn-run-ai");
@@ -787,14 +946,56 @@ async function loadAvailableModels() {
       sel.innerHTML = '<option value="">No models found</option>';
       return;
     }
-    state.availableModels.forEach((m, idx) => {
+    const iterModels = state.availableModels.filter((m) => m.source === "iteration" || m.iteration);
+    const sessModels = state.availableModels.filter((m) => m.source === "session" || m.session);
+    const otherModels = state.availableModels.filter(
+      (m) => !(m.source === "iteration" || m.iteration) && !(m.source === "session" || m.session)
+    );
+
+    const appendOption = (parent, m, isFirst) => {
       const opt = document.createElement("option");
       opt.value = m.full_path;
       const tag = m.type === "yolo-seg" ? "[YOLO-Seg]" : "[CNN]";
       opt.textContent = `${tag} ${m.name} (${m.size_mb} MB)`;
-      if (idx === 0) opt.selected = true;
-      sel.appendChild(opt);
-    });
+      if (isFirst) opt.selected = true;
+      parent.appendChild(opt);
+    };
+
+    let firstSelected = false;
+
+    if (iterModels.length > 0) {
+      const grp = document.createElement("optgroup");
+      grp.label = "🔄 Iterations";
+      iterModels.forEach((m) => {
+        appendOption(grp, m, !firstSelected);
+        firstSelected = true;
+      });
+      sel.appendChild(grp);
+    }
+
+    if (sessModels.length > 0) {
+      const grp = document.createElement("optgroup");
+      grp.label = "⏱️ Sessions";
+      sessModels.forEach((m) => {
+        appendOption(grp, m, !firstSelected);
+        firstSelected = true;
+      });
+      sel.appendChild(grp);
+    }
+
+    if (otherModels.length > 0) {
+      const grp = document.createElement("optgroup");
+      grp.label = "📦 Base Checkpoints & Pretrained";
+      otherModels.forEach((m) => {
+        appendOption(grp, m, !firstSelected);
+        firstSelected = true;
+      });
+      sel.appendChild(grp);
+    }
+
+    if (state.selectedModel) {
+      sel.value = state.selectedModel;
+    }
     state.selectedModel = sel.value;
 
     sel.onchange = () => {
@@ -1075,6 +1276,7 @@ function getVisibleFileIndices() {
   state.files.forEach((f, idx) => {
     if (state.filterUntagged && f.annotated) return;
     if (state.filterFavorites && !f.favorite) return;
+    if (state.filterClass && (!f.classes || !f.classes.includes(state.filterClass))) return;
     indices.push(idx);
   });
 
@@ -1127,7 +1329,7 @@ function renderFileList() {
   const visibleIndices = getVisibleFileIndices();
   const countEl = document.getElementById("file-count");
   if (countEl) {
-    const isFiltered = state.filterUntagged || state.filterFavorites;
+    const isFiltered = state.filterUntagged || state.filterFavorites || Boolean(state.filterClass);
     countEl.innerText = isFiltered ? `${visibleIndices.length} / ${state.files.length}` : `${state.files.length}`;
   }
 
@@ -1141,6 +1343,21 @@ function renderFileList() {
 
     const badges = document.createElement("span");
     badges.className = "file-badges";
+
+    if (f.classes && f.classes.length > 0) {
+      const clsBadges = document.createElement("span");
+      clsBadges.className = "file-class-badges";
+      f.classes.forEach((cls) => {
+        const dot = document.createElement("span");
+        dot.className = "badge-cls-dot";
+        dot.style.backgroundColor = CLASS_COLORS[cls] || "#888";
+        const prettyCls = cls.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+        dot.title = prettyCls;
+        clsBadges.appendChild(dot);
+      });
+      badges.appendChild(clsBadges);
+    }
+
     if (f.favorite) {
       const favBadge = document.createElement("span");
       favBadge.className = "badge-fav";
@@ -1151,12 +1368,16 @@ function renderFileList() {
     if (f.annotated) {
       const annotBadge = document.createElement("span");
       annotBadge.className = "badge-annot";
+      let annotTitle = "Annotated";
       if (f.annot_mtime) {
         const d = new Date(f.annot_mtime * 1000);
-        annotBadge.title = `Classified: ${d.toLocaleDateString()} ${d.toLocaleTimeString()}`;
-      } else {
-        annotBadge.title = "Annotated";
+        annotTitle = `Classified: ${d.toLocaleDateString()} ${d.toLocaleTimeString()}`;
       }
+      if (f.classes && f.classes.length > 0) {
+        const classNames = f.classes.map((c) => c.replace(/_/g, " ").replace(/\b\w/g, (ch) => ch.toUpperCase())).join(", ");
+        annotTitle += ` (${classNames})`;
+      }
+      annotBadge.title = annotTitle;
       annotBadge.innerText = "✓";
       badges.appendChild(annotBadge);
     }
@@ -1345,6 +1566,11 @@ async function loadAnnotations(file, seq, signal) {
     const chkClean = document.getElementById("chk-clean-sky");
     if (chkClean) chkClean.checked = state.isClean;
 
+    const loadedClasses = Array.from(new Set((state.boxes || []).map((b) => b.label).filter(Boolean)));
+    if (state.globalStarTrailing && !loadedClasses.includes("star_trail")) loadedClasses.push("star_trail");
+    if (state.globalCloud && !loadedClasses.includes("cloud")) loadedClasses.push("cloud");
+    file.classes = loadedClasses.sort();
+
     updateCleanStatus();
   } catch (err) {
     if (err.name !== "AbortError") {
@@ -1388,6 +1614,12 @@ async function saveAnnotations(explicitFile = null) {
     const resData = await res.json().catch(() => ({}));
     fileToSave.annotated = true;
     fileToSave.annot_mtime = resData.annot_mtime || (Date.now() / 1000);
+
+    const savedClasses = Array.from(new Set(payload.boxes.map((b) => b.label).filter(Boolean)));
+    if (payload.global_star_trailing && !savedClasses.includes("star_trail")) savedClasses.push("star_trail");
+    if (payload.global_cloud && !savedClasses.includes("cloud")) savedClasses.push("cloud");
+    fileToSave.classes = resData.classes || savedClasses.sort();
+
     renderFileList();
 
     if (state.currentFile && state.currentFile.path === filePath) {
@@ -1434,6 +1666,7 @@ async function clearAnnotations() {
 
     fileToClear.annotated = false;
     fileToClear.annot_mtime = 0;
+    fileToClear.classes = [];
     renderFileList();
     render();
     renderAnnotationCards();

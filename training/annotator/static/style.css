@@ -23,7 +23,9 @@ body {
 /* Sidebar */
 #sidebar {
   width: 280px;
-  min-width: 250px;
+  min-width: 180px;
+  max-width: 600px;
+  flex-shrink: 0;
   background-color: #1e1e1e;
   border-right: 1px solid #333333;
   display: flex;
@@ -159,6 +161,7 @@ button:active {
   font-size: 10px;
   letter-spacing: 0.5px;
   color: #71717a;
+  min-width: 44px;
 }
 
 .file-sort-row select {
@@ -173,6 +176,40 @@ button:active {
 }
 
 .file-sort-row select:focus {
+  outline: none;
+  border-color: #63b3ed;
+}
+
+.file-filter-row {
+  padding: 4px 12px 6px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #a0aec0;
+  border-bottom: 1px solid #27272a;
+}
+
+.file-filter-row label {
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  color: #71717a;
+  min-width: 44px;
+}
+
+.file-filter-row select {
+  flex: 1;
+  background-color: #27272a;
+  border: 1px solid #3f3f46;
+  color: #e4e4e7;
+  font-size: 11px;
+  padding: 3px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.file-filter-row select:focus {
   outline: none;
   border-color: #63b3ed;
 }
@@ -257,6 +294,21 @@ button:active {
   font-weight: bold;
 }
 
+.file-class-badges {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+}
+
+.badge-cls-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+  border: 1px solid rgba(0, 0, 0, 0.4);
+}
+
 .sidebar-footer {
   padding: 10px;
   border-top: 1px solid #333333;
@@ -274,9 +326,49 @@ button:active {
   flex: 1;
 }
 
+/* Panel Resizers */
+.panel-resizer {
+  width: 5px;
+  background-color: #27272a;
+  cursor: col-resize;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 20;
+  transition: background-color 0.15s ease;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.panel-resizer:hover,
+.panel-resizer.resizing {
+  background-color: #3b82f6;
+}
+
+.panel-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  right: -4px;
+}
+
+body.resizing-active {
+  cursor: col-resize !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+body.resizing-active * {
+  cursor: col-resize !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
 /* Workspace */
 #workspace {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 200px;
   display: flex;
   flex-direction: column;
   background-color: #111111;
@@ -556,8 +648,9 @@ canvas#viewport {
 /* ======================================================== */
 #right-sidebar {
   width: 310px;
-  min-width: 280px;
-  max-width: 340px;
+  min-width: 220px;
+  max-width: 700px;
+  flex-shrink: 0;
   background-color: #1e1e1e;
   border-left: 1px solid #333333;
   display: flex;
@@ -637,6 +730,20 @@ canvas#viewport {
   border-radius: 3px;
   font-size: 11px;
   font-family: monospace;
+}
+
+.field-row select optgroup {
+  font-weight: bold;
+  color: #63b3ed;
+  background-color: #1a202c;
+  padding: 4px 0;
+}
+
+.field-row select option {
+  font-weight: normal;
+  color: #e2e8f0;
+  background-color: #2d3748;
+  padding: 3px 6px;
 }
 
 .checkbox-field {
