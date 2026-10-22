@@ -1,0 +1,22 @@
+{
+  "session_id": "2026-10-18_16-14-39",
+  "created_at": "2026-10-18T16:14:39.199577",
+  "parent_session": null,
+  "status": "in_progress",
+  "config": {
+    "yolo_epochs": 30,
+    "cnn_epochs": 30,
+    "batch_size": 16,
+    "lr": 0.0001,
+    "patience": 5
+  },
+  "models": {
+    "yolo_astro": {
+      "status": "in_progress",
+      "task": "Instance Segmentation",
+      "target_epochs": 30,
+      "resumed_from": "iterations/v1/models/yolo_best.pt"
+    }
+  },
+  "updated_at": "2026-10-18T16:14:39.313576"
+}

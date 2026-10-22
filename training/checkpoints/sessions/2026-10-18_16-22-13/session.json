@@ -1,0 +1,84 @@
+{
+  "session_id": "2026-10-18_16-22-13",
+  "created_at": "2026-10-18T16:22:13.438757",
+  "parent_session": null,
+  "status": "completed",
+  "config": {
+    "yolo_epochs": 30,
+    "cnn_epochs": 30,
+    "batch_size": 16,
+    "lr": 0.0001,
+    "patience": 5
+  },
+  "models": {
+    "yolo_astro": {
+      "status": "completed",
+      "task": "Instance Segmentation",
+      "epochs_completed": 30,
+      "target_epochs": 30,
+      "metrics": {
+        "box_map50": 0.4355,
+        "box_map": 0.3389,
+        "seg_map50": 0.3351,
+        "seg_map": 0.2214
+      },
+      "checkpoint": "/home/patrick115/Projects/MasterThesis/training/checkpoints/sessions/2026-10-18_16-22-13/yolo_astro/weights/best.pt",
+      "last_checkpoint": "/home/patrick115/Projects/MasterThesis/training/checkpoints/sessions/2026-10-18_16-22-13/yolo_astro/weights/last.pt",
+      "resumed_from": "iterations/v1/models/yolo_best.pt",
+      "elapsed_sec": 3491.6
+    },
+    "astronet": {
+      "status": "completed",
+      "task": "Multi-Label Classification",
+      "epochs_completed": 10,
+      "target_epochs": 30,
+      "best_epoch": 9,
+      "macro_f1": 0.4075,
+      "clean_sky_acc": 0.724,
+      "checkpoint": "/home/patrick115/Projects/MasterThesis/training/checkpoints/sessions/2026-10-18_16-22-13/astronet_f32/best_model.pt",
+      "last_checkpoint": "/home/patrick115/Projects/MasterThesis/training/checkpoints/sessions/2026-10-18_16-22-13/astronet_f32/last_model.pt",
+      "resumed_from": "iterations/v1/models/astronet_best.pt",
+      "elapsed_sec": 2357.4
+    },
+    "resnet18": {
+      "status": "completed",
+      "task": "Multi-Label Classification",
+      "epochs_completed": 6,
+      "target_epochs": 30,
+      "best_epoch": 1,
+      "macro_f1": 0.4562,
+      "clean_sky_acc": 0.7579,
+      "checkpoint": "/home/patrick115/Projects/MasterThesis/training/checkpoints/sessions/2026-10-18_16-22-13/resnet18_f32/best_model.pt",
+      "last_checkpoint": "/home/patrick115/Projects/MasterThesis/training/checkpoints/sessions/2026-10-18_16-22-13/resnet18_f32/last_model.pt",
+      "resumed_from": "iterations/v1/models/resnet18_best.pt",
+      "elapsed_sec": 2153.0
+    },
+    "mobilenet_v3": {
+      "status": "completed",
+      "task": "Multi-Label Classification",
+      "epochs_completed": 8,
+      "target_epochs": 30,
+      "best_epoch": 3,
+      "macro_f1": 0.4755,
+      "clean_sky_acc": 0.7913,
+      "checkpoint": "/home/patrick115/Projects/MasterThesis/training/checkpoints/sessions/2026-10-18_16-22-13/mobilenet_v3_f32/best_model.pt",
+      "last_checkpoint": "/home/patrick115/Projects/MasterThesis/training/checkpoints/sessions/2026-10-18_16-22-13/mobilenet_v3_f32/last_model.pt",
+      "resumed_from": "iterations/v1/models/mobilenet_v3_best.pt",
+      "elapsed_sec": 2037.2
+    },
+    "efficientnet_b0": {
+      "status": "completed",
+      "task": "Multi-Label Classification",
+      "epochs_completed": 10,
+      "target_epochs": 30,
+      "best_epoch": 5,
+      "macro_f1": 0.4573,
+      "clean_sky_acc": 0.7803,
+      "checkpoint": "/home/patrick115/Projects/MasterThesis/training/checkpoints/sessions/2026-10-18_16-22-13/efficientnet_b0_f32/best_model.pt",
+      "last_checkpoint": "/home/patrick115/Projects/MasterThesis/training/checkpoints/sessions/2026-10-18_16-22-13/efficientnet_b0_f32/last_model.pt",
+      "resumed_from": null,
+      "elapsed_sec": 8840.1
+    }
+  },
+  "updated_at": "2026-10-20T13:25:00.483890"
+}
