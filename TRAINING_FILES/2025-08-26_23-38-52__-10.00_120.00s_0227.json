@@ -1,10 +1,27 @@
 {
   "file_name": "2025-08-26_23-38-52__-10.00_120.00s_0227.fits",
-  "width": 0,
-  "height": 0,
+  "width": 3840,
+  "height": 2160,
   "global_star_trailing": false,
   "global_cloud": false,
-  "is_clean": true,
-  "boxes": [],
-  "favorite": true
+  "is_clean": false,
+  "favorite": true,
+  "boxes": [
+    {
+      "id": "full_1792730405754",
+      "label": "star_trail",
+      "type": "box",
+      "x": 0.0,
+      "y": 0.0,
+      "width": 3840.0,
+      "height": 2160.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": null,
+      "confidence": null,
+      "thickness": 16.0
+    }
+  ]
 }

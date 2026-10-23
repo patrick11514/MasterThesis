@@ -1,10 +1,153 @@
 {
   "file_name": "2026-04-12_03-33-46__-19.90_120.00s_0099.fits",
-  "width": 0,
-  "height": 0,
+  "width": 3840,
+  "height": 2160,
   "global_star_trailing": false,
   "global_cloud": false,
-  "is_clean": true,
-  "boxes": [],
-  "favorite": true
+  "is_clean": false,
+  "favorite": true,
+  "boxes": [
+    {
+      "id": "l_1792730813945",
+      "label": "satellite_streak",
+      "type": "line",
+      "x": 0.0,
+      "y": 203.0,
+      "width": 706.0,
+      "height": 375.0,
+      "x1": 706.0,
+      "y1": 203.0,
+      "x2": 0.0,
+      "y2": 578.0,
+      "points": null,
+      "confidence": null,
+      "thickness": 12.0
+    },
+    {
+      "id": "l_1792730824630",
+      "label": "satellite_streak",
+      "type": "line",
+      "x": 2629.0,
+      "y": 1653.0,
+      "width": 1160.0,
+      "height": 506.0,
+      "x1": 2629.0,
+      "y1": 2159.0,
+      "x2": 3789.0,
+      "y2": 1653.0,
+      "points": null,
+      "confidence": null,
+      "thickness": 12.0
+    },
+    {
+      "id": "poly_1792730846703",
+      "label": "obstruction",
+      "type": "polygon",
+      "x": 2674.0,
+      "y": 1056.0,
+      "width": 1190.0,
+      "height": 1103.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": [
+        [
+          3219.0,
+          1056.0
+        ],
+        [
+          3396.0,
+          1427.0
+        ],
+        [
+          3864.0,
+          1627.0
+        ],
+        [
+          3845.0,
+          2159.0
+        ],
+        [
+          3420.0,
+          1617.0
+        ],
+        [
+          3187.0,
+          1794.0
+        ],
+        [
+          3057.0,
+          1815.0
+        ],
+        [
+          2952.0,
+          1598.0
+        ],
+        [
+          2674.0,
+          1408.0
+        ],
+        [
+          2782.0,
+          1252.0
+        ],
+        [
+          2973.0,
+          1405.0
+        ],
+        [
+          3126.0,
+          1569.0
+        ],
+        [
+          3158.0,
+          1411.0
+        ],
+        [
+          3084.0,
+          1313.0
+        ],
+        [
+          2959.0,
+          1133.0
+        ]
+      ],
+      "confidence": null,
+      "thickness": 16.0
+    },
+    {
+      "id": "poly_1792730851146",
+      "label": "obstruction",
+      "type": "polygon",
+      "x": 1920.0,
+      "y": -115.0,
+      "width": 2290.0,
+      "height": 389.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": [
+        [
+          3882.0,
+          274.0
+        ],
+        [
+          2301.0,
+          139.0
+        ],
+        [
+          1920.0,
+          -88.0
+        ],
+        [
+          4210.0,
+          -115.0
+        ]
+      ],
+      "confidence": null,
+      "thickness": 16.0
+    }
+  ]
 }

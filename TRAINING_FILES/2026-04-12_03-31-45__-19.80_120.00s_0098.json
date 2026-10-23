@@ -1,10 +1,300 @@
 {
   "file_name": "2026-04-12_03-31-45__-19.80_120.00s_0098.fits",
-  "width": 0,
-  "height": 0,
+  "width": 3840,
+  "height": 2160,
   "global_star_trailing": false,
   "global_cloud": false,
-  "is_clean": true,
-  "boxes": [],
-  "favorite": true
+  "is_clean": false,
+  "favorite": true,
+  "boxes": [
+    {
+      "id": "poly_1792730716849",
+      "label": "obstruction",
+      "type": "polygon",
+      "x": 3116.0,
+      "y": 1241.0,
+      "width": 831.0,
+      "height": 888.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": [
+        [
+          3301.0,
+          1241.0
+        ],
+        [
+          3608.0,
+          1801.0
+        ],
+        [
+          3894.0,
+          1883.0
+        ],
+        [
+          3947.0,
+          2129.0
+        ],
+        [
+          3672.0,
+          1904.0
+        ],
+        [
+          3340.0,
+          1826.0
+        ],
+        [
+          3116.0,
+          1330.0
+        ]
+      ],
+      "confidence": null,
+      "thickness": 16.0
+    },
+    {
+      "id": "poly_1792730719718",
+      "label": "obstruction",
+      "type": "polygon",
+      "x": 2873.0,
+      "y": 1540.0,
+      "width": 417.0,
+      "height": 461.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": [
+        [
+          2926.0,
+          1540.0
+        ],
+        [
+          2873.0,
+          1712.0
+        ],
+        [
+          3233.0,
+          2001.0
+        ],
+        [
+          3290.0,
+          1847.0
+        ]
+      ],
+      "confidence": null,
+      "thickness": 16.0
+    },
+    {
+      "id": "poly_1792730739384",
+      "label": "obstruction",
+      "type": "polygon",
+      "x": 1749.0,
+      "y": -105.0,
+      "width": 2255.0,
+      "height": 660.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": [
+        [
+          2698.0,
+          -1.0
+        ],
+        [
+          3087.0,
+          166.0
+        ],
+        [
+          3301.0,
+          248.0
+        ],
+        [
+          3323.0,
+          9.0
+        ],
+        [
+          3494.0,
+          13.0
+        ],
+        [
+          3651.0,
+          245.0
+        ],
+        [
+          3761.0,
+          163.0
+        ],
+        [
+          3737.0,
+          -51.0
+        ],
+        [
+          4004.0,
+          52.0
+        ],
+        [
+          3933.0,
+          555.0
+        ],
+        [
+          3351.0,
+          505.0
+        ],
+        [
+          2727.0,
+          334.0
+        ],
+        [
+          2330.0,
+          281.0
+        ],
+        [
+          1749.0,
+          -1.0
+        ],
+        [
+          2038.0,
+          -105.0
+        ],
+        [
+          2195.0,
+          102.0
+        ],
+        [
+          2495.0,
+          27.0
+        ]
+      ],
+      "confidence": null,
+      "thickness": 16.0
+    },
+    {
+      "id": "poly_1792730744399",
+      "label": "obstruction",
+      "type": "polygon",
+      "x": 3256.0,
+      "y": 579.0,
+      "width": 405.0,
+      "height": 367.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": [
+        [
+          3256.0,
+          579.0
+        ],
+        [
+          3440.0,
+          946.0
+        ],
+        [
+          3661.0,
+          903.0
+        ],
+        [
+          3483.0,
+          587.0
+        ]
+      ],
+      "confidence": null,
+      "thickness": 16.0
+    },
+    {
+      "id": "poly_1792730747632",
+      "label": "obstruction",
+      "type": "polygon",
+      "x": 2708.0,
+      "y": 482.0,
+      "width": 440.0,
+      "height": 418.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": [
+        [
+          2938.0,
+          482.0
+        ],
+        [
+          2708.0,
+          622.0
+        ],
+        [
+          2751.0,
+          900.0
+        ],
+        [
+          2911.0,
+          895.0
+        ],
+        [
+          2951.0,
+          725.0
+        ],
+        [
+          3083.0,
+          606.0
+        ],
+        [
+          3148.0,
+          517.0
+        ]
+      ],
+      "confidence": null,
+      "thickness": 16.0
+    },
+    {
+      "id": "l_1792730777521",
+      "label": "satellite_streak",
+      "type": "line",
+      "x": -4.0,
+      "y": 2.0,
+      "width": 1443.0,
+      "height": 1026.0,
+      "x1": -4.0,
+      "y1": 1028.0,
+      "x2": 1439.0,
+      "y2": 2.0,
+      "points": null,
+      "confidence": null,
+      "thickness": 12.0
+    },
+    {
+      "id": "l_1792730789672",
+      "label": "satellite_streak",
+      "type": "line",
+      "x": 1.0,
+      "y": 1.0,
+      "width": 380.0,
+      "height": 272.0,
+      "x1": 1.0,
+      "y1": 273.0,
+      "x2": 381.0,
+      "y2": 1.0,
+      "points": null,
+      "confidence": null,
+      "thickness": 12.0
+    },
+    {
+      "id": "l_1792730800656",
+      "label": "satellite_streak",
+      "type": "line",
+      "x": 2605.0,
+      "y": 1619.0,
+      "width": 1234.0,
+      "height": 540.0,
+      "x1": 3839.0,
+      "y1": 1619.0,
+      "x2": 2605.0,
+      "y2": 2159.0,
+      "points": null,
+      "confidence": null,
+      "thickness": 12.0
+    }
+  ]
 }
