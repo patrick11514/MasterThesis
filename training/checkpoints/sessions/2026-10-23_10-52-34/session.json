@@ -1,0 +1,77 @@
+{
+  "session_id": "2026-10-23_10-52-34",
+  "created_at": "2026-10-23T10:52:34.470960",
+  "parent_session": null,
+  "status": "interrupted",
+  "config": {
+    "yolo_epochs": 30,
+    "cnn_epochs": 30,
+    "batch_size": 16,
+    "lr": 0.001,
+    "patience": 5
+  },
+  "models": {
+    "yolo_astro": {
+      "status": "completed",
+      "task": "Instance Segmentation",
+      "epochs_completed": 30,
+      "target_epochs": 30,
+      "metrics": {
+        "box_map50": 0.466,
+        "box_map": 0.3333,
+        "seg_map50": 0.3249,
+        "seg_map": 0.1896
+      },
+      "checkpoint": "/home/patrick115/Projects/MasterThesis/training/checkpoints/sessions/2026-10-23_10-52-34/yolo_astro/weights/best.pt",
+      "last_checkpoint": "/home/patrick115/Projects/MasterThesis/training/checkpoints/sessions/2026-10-23_10-52-34/yolo_astro/weights/last.pt",
+      "resumed_from": "yolo26n-seg.pt",
+      "elapsed_sec": 21960.3
+    },
+    "astronet": {
+      "status": "completed",
+      "task": "Multi-Label Classification",
+      "epochs_completed": 8,
+      "target_epochs": 30,
+      "best_epoch": 3,
+      "macro_f1": 0.3276,
+      "clean_sky_acc": 0.4675,
+      "checkpoint": "/home/patrick115/Projects/MasterThesis/training/checkpoints/sessions/2026-10-23_10-52-34/astronet_f32/best_model.pt",
+      "last_checkpoint": "/home/patrick115/Projects/MasterThesis/training/checkpoints/sessions/2026-10-23_10-52-34/astronet_f32/last_model.pt",
+      "resumed_from": null,
+      "elapsed_sec": 2474.2
+    },
+    "resnet18": {
+      "status": "completed",
+      "task": "Multi-Label Classification",
+      "epochs_completed": 11,
+      "target_epochs": 30,
+      "best_epoch": 6,
+      "macro_f1": 0.6415,
+      "clean_sky_acc": 0.688,
+      "checkpoint": "/home/patrick115/Projects/MasterThesis/training/checkpoints/sessions/2026-10-23_10-52-34/resnet18_f32/best_model.pt",
+      "last_checkpoint": "/home/patrick115/Projects/MasterThesis/training/checkpoints/sessions/2026-10-23_10-52-34/resnet18_f32/last_model.pt",
+      "resumed_from": null,
+      "elapsed_sec": 5033.9
+    },
+    "mobilenet_v3": {
+      "status": "completed",
+      "task": "Multi-Label Classification",
+      "epochs_completed": 17,
+      "target_epochs": 30,
+      "best_epoch": 12,
+      "macro_f1": 0.7412,
+      "clean_sky_acc": 0.8888,
+      "checkpoint": "/home/patrick115/Projects/MasterThesis/training/checkpoints/sessions/2026-10-23_10-52-34/mobilenet_v3_f32/best_model.pt",
+      "last_checkpoint": "/home/patrick115/Projects/MasterThesis/training/checkpoints/sessions/2026-10-23_10-52-34/mobilenet_v3_f32/last_model.pt",
+      "resumed_from": null,
+      "elapsed_sec": 5649.6
+    },
+    "efficientnet_b0": {
+      "status": "in_progress",
+      "task": "Multi-Label Classification",
+      "target_epochs": 30,
+      "resumed_from": null
+    }
+  },
+  "updated_at": "2026-10-27T20:27:41.902227"
+}
