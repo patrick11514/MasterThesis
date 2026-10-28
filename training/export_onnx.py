@@ -26,11 +26,27 @@ def export_to_onnx(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     print(f"Loading checkpoint: {model_path}")
-    ckpt = torch.load(model_path, map_location="cpu")
-    model_name = ckpt.get("model_name", "astronet")
+    ckpt = torch.load(model_path, map_location="cpu", weights_only=False)
+    model_name = ckpt.get("model_name")
+    if not model_name:
+        fn = model_path.stem.lower()
+        for arch in ["mobilenet_v3", "resnet18", "efficientnet_b0", "resnet34", "astronet"]:
+            if arch in fn:
+                model_name = arch
+                break
+        if not model_name:
+            model_name = "astronet"
 
+    sd = ckpt.get("state_dict", ckpt)
     model = build_model(model_name, pretrained=False, num_classes=NUM_CLASSES)
-    model.load_state_dict(ckpt["state_dict"])
+    model_dict = model.state_dict()
+    adapted_sd = {}
+    for k, v in sd.items():
+        if k in model_dict and model_dict[k].shape == v.shape:
+            adapted_sd[k] = v
+        elif f"visual_extractor.{k}" in model_dict and model_dict[f"visual_extractor.{k}"].shape == v.shape:
+            adapted_sd[f"visual_extractor.{k}"] = v
+    model.load_state_dict(adapted_sd, strict=False)
     model.eval()
 
     # Dummy inputs: 3-channel float32 RGB patch [1, 3, 512, 512] and 6-element metadata [1, 6]
@@ -45,6 +61,7 @@ def export_to_onnx(
         export_params=True,
         opset_version=opset_version,
         do_constant_folding=True,
+        dynamo=False,
         input_names=["image", "meta"],
         output_names=["logits"],
         dynamic_axes={

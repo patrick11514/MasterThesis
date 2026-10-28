@@ -596,10 +596,18 @@ def predict_defect_masks(req: PredictRequest):
     x_offsets = get_tile_offsets(w, req.tile_size, req.stride)
     y_offsets = get_tile_offsets(h, req.tile_size, req.stride)
 
-    device = req.device
-    if not device or device == "auto":
-        import torch
-        device = "0" if torch.cuda.is_available() else "cpu"
+    raw_dev = (req.device or "auto").strip().lower()
+    import torch
+    if raw_dev in ("", "auto", "cuda"):
+        torch_device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    elif raw_dev.isdigit():
+        torch_device = torch.device(f"cuda:{raw_dev}" if torch.cuda.is_available() else "cpu")
+    else:
+        try:
+            torch_device = torch.device(raw_dev)
+        except Exception:
+            torch_device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    yolo_device = "0" if torch_device.type == "cuda" else "cpu"
 
     t0 = time.perf_counter()
 
@@ -635,7 +643,7 @@ def predict_defect_masks(req: PredictRequest):
                     source=batch_tiles,
                     conf=req.conf,
                     imgsz=req.tile_size,
-                    device=device,
+                    device=yolo_device,
                     verbose=False,
                 )
             except Exception:
@@ -729,7 +737,13 @@ def predict_defect_masks(req: PredictRequest):
             if cache_key not in CNN_MODEL_CACHE:
                 try:
                     import onnxruntime as ort
-                    providers = ["CUDAExecutionProvider", "CPUExecutionProvider"] if (device == "0" or device == "cuda") else ["CPUExecutionProvider"]
+                    avail_providers = ort.get_available_providers()
+                    target_providers = (
+                        ["ROCMExecutionProvider", "CUDAExecutionProvider", "CPUExecutionProvider"]
+                        if torch_device.type == "cuda"
+                        else ["CPUExecutionProvider"]
+                    )
+                    providers = [p for p in target_providers if p in avail_providers] or ["CPUExecutionProvider"]
                     CNN_MODEL_CACHE[cache_key] = ("onnx", ort.InferenceSession(str(model_file), providers=providers), "f32")
                 except Exception as e:
                     raise HTTPException(status_code=500, detail=f"Failed to load ONNX CNN model: {e}")
@@ -737,8 +751,16 @@ def predict_defect_masks(req: PredictRequest):
         else:
             if cache_key not in CNN_MODEL_CACHE:
                 try:
-                    ckpt = torch.load(str(model_file), map_location=device, weights_only=False)
-                    model_name = ckpt.get("model_name", "astronet")
+                    ckpt = torch.load(str(model_file), map_location="cpu", weights_only=False)
+                    model_name = ckpt.get("model_name")
+                    if not model_name:
+                        fn = model_file.stem.lower()
+                        for arch in ["mobilenet_v3", "resnet18", "efficientnet_b0", "resnet34", "astronet"]:
+                            if arch in fn:
+                                model_name = arch
+                                break
+                        if not model_name:
+                            model_name = "astronet"
                     input_mode = ckpt.get("input_mode", "f32")
                     sd = ckpt.get("state_dict", ckpt)
                     num_ckpt_classes = NUM_CLASSES
@@ -756,7 +778,7 @@ def predict_defect_masks(req: PredictRequest):
                         elif f"visual_extractor.{k}" in model_dict and model_dict[f"visual_extractor.{k}"].shape == v.shape:
                             adapted_sd[f"visual_extractor.{k}"] = v
                     cnn_mod.load_state_dict(adapted_sd, strict=False)
-                    cnn_mod.to(device)
+                    cnn_mod.to(torch_device)
                     cnn_mod.eval()
                     CNN_MODEL_CACHE[cache_key] = ("pt", cnn_mod, input_mode)
                 except Exception as e:
@@ -767,7 +789,7 @@ def predict_defect_masks(req: PredictRequest):
         frame_mad = float(meta.get("frame_mad", 0.005))
         pixel_scale = float(meta.get("pixel_scale", 2.39))
 
-        if input_mode == "stf":
+        if input_mode in ("stf", "f32"):
             norm_f32 = to_auto_stf_f32(rgb_f32, rgb_linked=False)
         else:
             norm_f32 = to_asinh_f32(rgb_f32)
@@ -807,8 +829,8 @@ def predict_defect_masks(req: PredictRequest):
                 logits = session.run([out_name], feed_dict)[0]
                 probs = 1.0 / (1.0 + np.exp(-np.clip(logits, -20.0, 20.0)))
             else:
-                batch_t = torch.from_numpy(batch_np).to(device)
-                batch_meta_t = torch.from_numpy(batch_meta_np).to(device)
+                batch_t = torch.from_numpy(batch_np).to(torch_device)
+                batch_meta_t = torch.from_numpy(batch_meta_np).to(torch_device)
                 with torch.no_grad():
                     try:
                         logits = cnn_mod(batch_t, batch_meta_t)

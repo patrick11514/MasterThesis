@@ -322,12 +322,20 @@ def cmd_create(args):
             if hist_src.exists():
                 shutil.copy2(hist_src, models_dir / f"{m}_training_history.json")
 
-            # Also copy ONNX if present
+            # Also copy ONNX if present and monolithic; otherwise export a fresh monolithic ONNX
+            dest_onnx = models_dir / f"{m}.onnx"
             onnx_src = cnn_src.parent / "best_model.onnx"
             if not onnx_src.exists():
                 onnx_src = cnn_src.parent / f"{m}.onnx"
-            if onnx_src.exists():
-                shutil.copy2(onnx_src, models_dir / f"{m}.onnx")
+            if onnx_src.exists() and onnx_src.stat().st_size >= 1_000_000:
+                shutil.copy2(onnx_src, dest_onnx)
+            else:
+                try:
+                    from export_onnx import export_to_onnx
+                    export_to_onnx(dest, dest_onnx)
+                    print(f" [+] Exported monolithic ONNX for {m}: {dest_onnx.name} ({dest_onnx.stat().st_size / (1024*1024):.2f} MB)")
+                except Exception as e:
+                    print(f" [-] Warning: Failed to export monolithic ONNX for {m}: {e}")
 
             info = extract_cnn_checkpoint_info(dest)
             info["source_checkpoint"] = str(cnn_src)
@@ -841,6 +849,18 @@ def cmd_backfill(args):
                     best_entry = max(c_hist, key=lambda x: x.get("macro_f1", 0.0))
                     m_info["best_epoch"] = best_entry.get("epoch", 0)
                 print(f" [+] Embedded {len(c_hist)} {m} epochs into manifest (Best: Epoch {m_info['best_epoch']})")
+
+        # Ensure monolithic ONNX binary exists in iteration models directory
+        dest_onnx = models_dir / f"{m}.onnx"
+        if not dest_onnx.exists() or dest_onnx.stat().st_size < 1_000_000:
+            pt_path = models_dir / f"{m}_best.pt"
+            if pt_path.exists():
+                try:
+                    from export_onnx import export_to_onnx
+                    export_to_onnx(pt_path, dest_onnx)
+                    print(f" [+] Exported monolithic ONNX for {m}: {dest_onnx.name} ({dest_onnx.stat().st_size / (1024*1024):.2f} MB)")
+                except Exception as e:
+                    print(f" [-] Warning: Failed to export monolithic ONNX for {m}: {e}")
 
     # Save updated manifest and generate summary.md
     with open(manifest_path, "w", encoding="utf-8") as fp:

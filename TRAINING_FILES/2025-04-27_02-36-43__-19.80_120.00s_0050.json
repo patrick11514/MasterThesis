@@ -1,0 +1,72 @@
+{
+  "file_name": "2025-04-27_02-36-43__-19.80_120.00s_0050.fits",
+  "width": 3840,
+  "height": 2160,
+  "global_star_trailing": false,
+  "global_cloud": false,
+  "is_clean": false,
+  "favorite": false,
+  "boxes": [
+    {
+      "id": "poly_1793215992185",
+      "label": "airplane",
+      "type": "polygon",
+      "x": -43.0,
+      "y": -24.0,
+      "width": 2102.0,
+      "height": 2202.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": [
+        [
+          1214.0,
+          1443.0
+        ],
+        [
+          1925.0,
+          2178.0
+        ],
+        [
+          2059.0,
+          2171.0
+        ],
+        [
+          1366.0,
+          1458.0
+        ],
+        [
+          70.0,
+          -24.0
+        ],
+        [
+          -43.0,
+          -15.0
+        ],
+        [
+          407.0,
+          534.0
+        ]
+      ],
+      "confidence": null,
+      "thickness": 16.0
+    },
+    {
+      "id": "full_1793216079984",
+      "label": "unfocused_star",
+      "type": "box",
+      "x": 0.0,
+      "y": 0.0,
+      "width": 3840.0,
+      "height": 2160.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": null,
+      "confidence": null,
+      "thickness": 16.0
+    }
+  ]
+}

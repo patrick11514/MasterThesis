@@ -1,0 +1,27 @@
+{
+  "file_name": "2024-09-20_21-57-07__-9.60_2.00s_0025.fits",
+  "width": 3840,
+  "height": 2160,
+  "global_star_trailing": false,
+  "global_cloud": false,
+  "is_clean": false,
+  "favorite": false,
+  "boxes": [
+    {
+      "id": "l_1793215594994",
+      "label": "satellite_streak",
+      "type": "line",
+      "x": 2493.0,
+      "y": 1946.0,
+      "width": 116.0,
+      "height": 214.0,
+      "x1": 2609.0,
+      "y1": 1946.0,
+      "x2": 2493.0,
+      "y2": 2160.0,
+      "points": null,
+      "confidence": null,
+      "thickness": 12.0
+    }
+  ]
+}

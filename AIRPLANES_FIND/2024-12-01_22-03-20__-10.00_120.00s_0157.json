@@ -1,0 +1,23 @@
+{
+  "file_name": "2024-12-01_22-03-20__-10.00_120.00s_0157.fits",
+  "width": 3840,
+  "height": 2160,
+  "global_star_trailing": false,
+  "global_cloud": false,
+  "is_clean": false,
+  "favorite": true,
+  "candidate_score": 0.9972,
+  "candidate_hit_tiles": 5,
+  "boxes": [
+    {
+      "id": "airplane_cnn_1793219521427_0",
+      "label": "airplane",
+      "type": "box",
+      "x": 2048.0,
+      "y": 1024.0,
+      "width": 512.0,
+      "height": 512.0,
+      "confidence": 0.997
+    }
+  ]
+}
