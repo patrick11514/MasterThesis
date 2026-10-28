@@ -232,6 +232,7 @@ def run_cnn_training(
     out_dir: Path,
     resume_checkpoint: Optional[str] = None,
     resume_state: bool = False,
+    no_amp: bool = False,
 ) -> Dict:
     """Invokes train.py as a subprocess to keep PyTorch CUDA context clean between architectures."""
     cmd = [
@@ -249,6 +250,8 @@ def run_cnn_training(
         cmd.extend(["--resume", str(resume_checkpoint)])
     if resume_state:
         cmd.append("--resume-state")
+    if no_amp:
+        cmd.append("--no-amp")
 
     resume_type = "Exact State Resume" if resume_state else "Weights Fine-Tune"
     resume_msg = f" [{resume_type} from: {resume_checkpoint}]" if resume_checkpoint else ""
@@ -365,6 +368,10 @@ def main():
     parser.add_argument("--stride", type=int, default=460, help="Tile stride in pixels (default: 460)")
     parser.add_argument("--bg-ratio", type=float, default=0.15,
                         help="Ratio of clean background tiles to include in YOLO dataset (default: 0.15)")
+    parser.add_argument("--synth-prob", type=float, default=0.20,
+                        help="Probability of injecting synthetic defect into clean training tiles (default: 0.20)")
+    parser.add_argument("--bin-aug-prob", type=float, default=0.30,
+                        help="Probability of synthetic full-frame binning on eligible 1x1 training frames (default: 0.30)")
 
     # Execution phases
     parser.add_argument("--skip-prep", action="store_true", help="Skip dataset slicing")
@@ -515,6 +522,8 @@ def main():
             export_yolo=True,
             yolo_dir=args.yolo_dir,
             bg_ratio=args.bg_ratio,
+            synth_prob=args.synth_prob,
+            bin_aug_prob=args.bin_aug_prob,
         )
     else:
         print("\n>>> Skipping Step 1: Dataset Slicing (--skip-prep)")
@@ -718,6 +727,7 @@ def main():
                     out_dir=session_dir,
                     resume_checkpoint=cnn_resume_path,
                     resume_state=resume_state,
+                    no_amp=args.no_amp,
                 )
 
                 if res["success"]:

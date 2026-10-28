@@ -14,6 +14,7 @@ Key capabilities:
 """
 
 import argparse
+import csv
 from datetime import datetime
 import json
 import os
@@ -43,6 +44,31 @@ def print_banner(text: str):
     print("=" * 70 + "\n")
 
 
+def parse_yolo_results_csv(csv_path: Path) -> List[Dict[str, Any]]:
+    """Parses Ultralytics YOLO results.csv into structured per-epoch records."""
+    if not csv_path.exists():
+        return []
+    history = []
+    try:
+        with open(csv_path, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                clean_row = {k.strip(): v.strip() for k, v in row.items() if k is not None}
+                epoch_entry = {}
+                for k, v in clean_row.items():
+                    try:
+                        if k == "epoch":
+                            epoch_entry[k] = int(v)
+                        else:
+                            epoch_entry[k] = float(v)
+                    except (ValueError, TypeError):
+                        epoch_entry[k] = v
+                history.append(epoch_entry)
+    except Exception as e:
+        print(f"Warning: Failed to parse YOLO results.csv: {e}")
+    return history
+
+
 def extract_cnn_checkpoint_info(pt_path: Path) -> Dict[str, Any]:
     """Extracts metadata and validation metrics from a CNN best_model.pt checkpoint."""
     if not pt_path.exists():
@@ -68,24 +94,38 @@ def extract_cnn_checkpoint_info(pt_path: Path) -> Dict[str, Any]:
         info["load_error"] = str(e)
 
     # Also check sibling training_history.json if present
-    hist_path = pt_path.parent / "training_history.json"
-    if hist_path.exists():
-        try:
-            with open(hist_path, "r", encoding="utf-8") as fp:
-                hist = json.load(fp)
-            if hist and isinstance(hist, list):
-                best_entry = hist[-1]
-                if info.get("epoch"):
-                    matching = [h for h in hist if h.get("epoch") == info["epoch"]]
-                    if matching:
-                        best_entry = matching[0]
-                info["history_metrics"] = best_entry
-                if "macro_f1" not in info and "macro_f1" in best_entry:
-                    info["macro_f1"] = best_entry["macro_f1"]
-                if "clean_sky_accuracy" not in info and "clean_sky_accuracy" in best_entry:
-                    info["clean_sky_accuracy"] = best_entry["clean_sky_accuracy"]
-        except Exception:
-            pass
+    hist_candidates = [
+        pt_path.parent / "training_history.json",
+        pt_path.parent / f"{pt_path.stem.replace('_best', '')}_training_history.json",
+    ]
+    for hist_path in hist_candidates:
+        if hist_path.exists():
+            try:
+                with open(hist_path, "r", encoding="utf-8") as fp:
+                    hist = json.load(fp)
+                if hist and isinstance(hist, list):
+                    info["training_history"] = hist
+                    info["total_epochs_run"] = len(hist)
+                    best_entry = hist[-1]
+                    if info.get("epoch"):
+                        matching = [h for h in hist if h.get("epoch") == info["epoch"]]
+                        if matching:
+                            best_entry = matching[0]
+                    else:
+                        best_entry = max(hist, key=lambda x: x.get("macro_f1", 0.0))
+                        info["best_epoch"] = best_entry.get("epoch", 0)
+
+                    if "best_epoch" not in info and info.get("epoch") is not None:
+                        info["best_epoch"] = info["epoch"]
+
+                    info["history_metrics"] = best_entry
+                    if "macro_f1" not in info and "macro_f1" in best_entry:
+                        info["macro_f1"] = best_entry["macro_f1"]
+                    if "clean_sky_accuracy" not in info and "clean_sky_accuracy" in best_entry:
+                        info["clean_sky_accuracy"] = best_entry["clean_sky_accuracy"]
+                break
+            except Exception:
+                pass
 
     return info
 
@@ -121,6 +161,22 @@ def extract_yolo_checkpoint_info(pt_path: Path) -> Dict[str, Any]:
                 info["fitness"] = train_metrics.get("fitness")
     except Exception as e:
         info["load_error"] = str(e)
+
+    # Check for results.csv
+    csv_candidates = [
+        pt_path.parent / "yolo_results.csv",
+        pt_path.parent.parent / "results.csv",
+        pt_path.parent / "results.csv",
+    ]
+    for csv_path in csv_candidates:
+        if csv_path.exists():
+            y_hist = parse_yolo_results_csv(csv_path)
+            if y_hist:
+                info["training_history"] = y_hist
+                info["total_epochs_run"] = len(y_hist)
+                best_entry = max(y_hist, key=lambda x: x.get("fitness", x.get("metrics/mAP50(B)", 0.0)))
+                info["best_epoch"] = best_entry.get("epoch", -1)
+                break
 
     return info
 
@@ -225,6 +281,16 @@ def cmd_create(args):
     if yolo_src and yolo_src.exists():
         dest = models_dir / "yolo_best.pt"
         shutil.copy2(yolo_src, dest)
+
+        # Copy YOLO results.csv and args.yaml if present
+        yolo_run_dir = yolo_src.parent.parent if yolo_src.parent.name == "weights" else yolo_src.parent
+        yolo_csv = yolo_run_dir / "results.csv"
+        if yolo_csv.exists():
+            shutil.copy2(yolo_csv, models_dir / "yolo_results.csv")
+        yolo_args = yolo_run_dir / "args.yaml"
+        if yolo_args.exists():
+            shutil.copy2(yolo_args, models_dir / "yolo_args.yaml")
+
         info = extract_yolo_checkpoint_info(dest)
         info["source_checkpoint"] = str(yolo_src)
         models_manifest["yolo"] = info
@@ -250,6 +316,12 @@ def cmd_create(args):
         if cnn_src and cnn_src.exists():
             dest = models_dir / f"{m}_best.pt"
             shutil.copy2(cnn_src, dest)
+
+            # Copy training_history.json if present
+            hist_src = cnn_src.parent / "training_history.json"
+            if hist_src.exists():
+                shutil.copy2(hist_src, models_dir / f"{m}_training_history.json")
+
             # Also copy ONNX if present
             onnx_src = cnn_src.parent / "best_model.onnx"
             if not onnx_src.exists():
@@ -322,6 +394,15 @@ def cmd_add_model(args):
     if "yolo" in m_name:
         dest = models_dir / "yolo_best.pt"
         shutil.copy2(src_path, dest)
+        # Copy YOLO results.csv and args.yaml if present
+        yolo_run_dir = src_path.parent.parent if src_path.parent.name == "weights" else src_path.parent
+        yolo_csv = yolo_run_dir / "results.csv"
+        if yolo_csv.exists():
+            shutil.copy2(yolo_csv, models_dir / "yolo_results.csv")
+        yolo_args = yolo_run_dir / "args.yaml"
+        if yolo_args.exists():
+            shutil.copy2(yolo_args, models_dir / "yolo_args.yaml")
+
         info = extract_yolo_checkpoint_info(dest)
         info["source_checkpoint"] = str(src_path)
         manifest["models"]["yolo"] = info
@@ -329,6 +410,11 @@ def cmd_add_model(args):
     else:
         dest = models_dir / f"{m_name}_best.pt"
         shutil.copy2(src_path, dest)
+        # Copy training_history.json if present
+        hist_src = src_path.parent / "training_history.json"
+        if hist_src.exists():
+            shutil.copy2(hist_src, models_dir / f"{m_name}_training_history.json")
+
         info = extract_cnn_checkpoint_info(dest)
         info["source_checkpoint"] = str(src_path)
         manifest["models"][m_name] = info
@@ -592,6 +678,27 @@ def generate_iteration_markdown(iter_dir: Path, manifest: Dict[str, Any]):
             fp.write(f"- **Mask mAP50:** `{y.get('seg_map50', 'N/A')}` | **Box mAP50:** `{y.get('box_map50', 'N/A')}`\n")
             fp.write(f"- **Mask Recall:** `{y.get('seg_recall', 'N/A')}` | **Mask Precision:** `{y.get('seg_precision', 'N/A')}`\n\n")
 
+            y_hist = y.get("training_history", [])
+            if y_hist:
+                best_ep = y.get("best_epoch", -1)
+                tot_ep = y.get("total_epochs_run", len(y_hist))
+                fp.write(f"#### Training Progression (YOLO — Best at Epoch {best_ep} / {tot_ep} run)\n\n")
+                fp.write("| Epoch | Train Box Loss | Train Seg Loss | Val Box Loss | Val Seg Loss | Box mAP50 | Mask mAP50 |\n")
+                fp.write("| :---: | :---: | :---: | :---: | :---: | :---: | :---: |\n")
+                for h in y_hist:
+                    ep = h.get("epoch", 0)
+                    tr_box = f"{h.get('train/box_loss', 0.0):.4f}"
+                    tr_seg = f"{h.get('train/seg_loss', 0.0):.4f}"
+                    val_box = f"{h.get('val/box_loss', 0.0):.4f}"
+                    val_seg = f"{h.get('val/seg_loss', 0.0):.4f}"
+                    b50 = f"{h.get('metrics/mAP50(B)', 0.0):.4f}"
+                    m50 = f"{h.get('metrics/mAP50(M)', 0.0):.4f}"
+                    if ep == best_ep:
+                        fp.write(f"| **{ep}** | **{tr_box}** | **{tr_seg}** | **{val_box}** | **{val_seg}** | **{b50}** | **{m50}** |\n")
+                    else:
+                        fp.write(f"| {ep} | {tr_box} | {tr_seg} | {val_box} | {val_seg} | {b50} | {m50} |\n")
+                fp.write("\n")
+
         for m_name, info in models.items():
             if m_name == "yolo":
                 continue
@@ -606,7 +713,143 @@ def generate_iteration_markdown(iter_dir: Path, manifest: Dict[str, Any]):
                     r = raw_m.get(f"{c}_recall", "-")
                     f = raw_m.get(f"{c}_f1", "-")
                     fp.write(f"| `{c}` | {p} | {r} | **{f}** |\n")
-            fp.write("\n")
+                fp.write("\n")
+
+            c_hist = info.get("training_history", [])
+            if c_hist:
+                best_ep = info.get("best_epoch", info.get("epoch", 0))
+                tot_ep = info.get("total_epochs_run", len(c_hist))
+                fp.write(f"#### Training Progression (`{m_name}` — Best at Epoch {best_ep} / {tot_ep} run)\n\n")
+                fp.write("| Epoch | Train Loss | Val Loss | Macro F1 | Clean Sky Acc | Exact Match |\n")
+                fp.write("| :---: | :---: | :---: | :---: | :---: | :---: |\n")
+                for h in c_hist:
+                    ep = h.get("epoch", 0)
+                    tr_loss = f"{h.get('train_loss', 0.0):.4f}"
+                    val_loss = f"{h.get('val_loss', 0.0):.4f}"
+                    mf1 = f"{h.get('macro_f1', 0.0):.4f}"
+                    cacc = f"{h.get('clean_sky_accuracy', 0.0):.4f}"
+                    ematch = f"{h.get('exact_match_ratio', 0.0):.4f}"
+                    if ep == best_ep:
+                        fp.write(f"| **{ep}** | **{tr_loss}** | **{val_loss}** | **{mf1}** | **{cacc}** | **{ematch}** |\n")
+                    else:
+                        fp.write(f"| {ep} | {tr_loss} | {val_loss} | {mf1} | {cacc} | {ematch} |\n")
+                fp.write("\n")
+
+
+def cmd_backfill(args):
+    """Retroactively copies training history and results.csv into an existing iteration and regenerates its reports."""
+    iter_name = args.iteration.strip()
+    iter_dir = ITERATIONS_DIR / iter_name
+    manifest_path = iter_dir / "iteration.json"
+    if not manifest_path.exists():
+        print(f"Error: Iteration '{iter_name}' does not exist at {manifest_path}")
+        sys.exit(1)
+
+    with open(manifest_path, "r", encoding="utf-8") as fp:
+        manifest = json.load(fp)
+
+    models_dir = iter_dir / "models"
+    models_dir.mkdir(parents=True, exist_ok=True)
+
+    session_dir = None
+    if args.from_session:
+        session_dir = SESSIONS_DIR / args.from_session
+    else:
+        # Infer session directory from source_checkpoint
+        for m_name, m_info in manifest.get("models", {}).items():
+            src = m_info.get("source_checkpoint")
+            if src and "sessions" in src:
+                p = Path(src)
+                parts = p.parts
+                if "sessions" in parts:
+                    idx = parts.index("sessions")
+                    if idx + 1 < len(parts):
+                        session_dir = Path(*parts[:idx + 2])
+                        break
+
+    if session_dir and session_dir.exists():
+        print(f" [Backfill] Sourcing history from session: {session_dir}")
+    else:
+        print(" [Backfill] Session directory not specified/found. Looking for sibling history files...")
+
+    # 1. Backfill YOLO
+    y_info = manifest.get("models", {}).get("yolo", {})
+    if y_info:
+        yolo_csv = None
+        yolo_args = None
+        if session_dir:
+            for y_folder in ["yolo_astro", "yolo11_astro"]:
+                cand_csv = session_dir / y_folder / "results.csv"
+                if cand_csv.exists():
+                    yolo_csv = cand_csv
+                    yolo_args = session_dir / y_folder / "args.yaml"
+                    break
+        if not yolo_csv:
+            src_cp = y_info.get("source_checkpoint")
+            if src_cp:
+                cand_csv = Path(src_cp).parent.parent / "results.csv"
+                if cand_csv.exists():
+                    yolo_csv = cand_csv
+                    yolo_args = Path(src_cp).parent.parent / "args.yaml"
+
+        dest_csv = models_dir / "yolo_results.csv"
+        if yolo_csv and yolo_csv.exists():
+            shutil.copy2(yolo_csv, dest_csv)
+            print(f" [+] Copied YOLO results.csv: {yolo_csv} -> {dest_csv}")
+        if yolo_args and yolo_args.exists():
+            shutil.copy2(yolo_args, models_dir / "yolo_args.yaml")
+
+        if dest_csv.exists():
+            y_hist = parse_yolo_results_csv(dest_csv)
+            if y_hist:
+                y_info["training_history"] = y_hist
+                y_info["total_epochs_run"] = len(y_hist)
+                best_entry = max(y_hist, key=lambda x: x.get("fitness", x.get("metrics/mAP50(B)", 0.0)))
+                y_info["best_epoch"] = best_entry.get("epoch", -1)
+                print(f" [+] Embedded {len(y_hist)} YOLO epochs into manifest (Best: Epoch {y_info['best_epoch']})")
+
+    # 2. Backfill CNNs
+    cnn_names = [m for m in manifest.get("models", {}).keys() if m != "yolo"]
+    for m in cnn_names:
+        m_info = manifest["models"][m]
+        hist_src = None
+        if session_dir:
+            cand_hist = session_dir / f"{m}_f32" / "training_history.json"
+            if cand_hist.exists():
+                hist_src = cand_hist
+        if not hist_src:
+            src_cp = m_info.get("source_checkpoint")
+            if src_cp:
+                cand_hist = Path(src_cp).parent / "training_history.json"
+                if cand_hist.exists():
+                    hist_src = cand_hist
+
+        dest_hist = models_dir / f"{m}_training_history.json"
+        if hist_src and hist_src.exists():
+            shutil.copy2(hist_src, dest_hist)
+            print(f" [+] Copied {m} history: {hist_src} -> {dest_hist}")
+
+        if dest_hist.exists():
+            with open(dest_hist, "r", encoding="utf-8") as fp:
+                c_hist = json.load(fp)
+            if c_hist and isinstance(c_hist, list):
+                m_info["training_history"] = c_hist
+                m_info["total_epochs_run"] = len(c_hist)
+                if m_info.get("epoch") is not None:
+                    m_info["best_epoch"] = m_info["epoch"]
+                else:
+                    best_entry = max(c_hist, key=lambda x: x.get("macro_f1", 0.0))
+                    m_info["best_epoch"] = best_entry.get("epoch", 0)
+                print(f" [+] Embedded {len(c_hist)} {m} epochs into manifest (Best: Epoch {m_info['best_epoch']})")
+
+    # Save updated manifest and generate summary.md
+    with open(manifest_path, "w", encoding="utf-8") as fp:
+        json.dump(manifest, fp, indent=2)
+
+    generate_iteration_markdown(iter_dir, manifest)
+    print(f"\n[OK] Iteration '{iter_name}' successfully backfilled with full training history.")
+    print(f"     Manifest: {manifest_path}")
+    print(f"     Summary Report: {iter_dir / 'summary.md'}\n")
 
 
 # =====================================================================
@@ -653,6 +896,12 @@ def main():
     p_exp = subparsers.add_parser("export-thesis", help="Export Markdown and LaTeX comparison tables for diploma thesis")
     p_exp.add_argument("--out-dir", type=str, default="thesis_reports", help="Output directory for reports")
     p_exp.set_defaults(func=cmd_export_thesis)
+
+    # 7. backfill
+    p_backfill = subparsers.add_parser("backfill", help="Retroactively copy training history and results.csv into an existing iteration")
+    p_backfill.add_argument("iteration", type=str, help="Name of iteration to backfill (e.g. v1_ver2)")
+    p_backfill.add_argument("--from-session", type=str, default=None, help="Session folder to source history files from")
+    p_backfill.set_defaults(func=cmd_backfill)
 
     args = parser.parse_args()
     args.func(args)

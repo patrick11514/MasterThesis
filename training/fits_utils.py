@@ -233,14 +233,28 @@ def load_fits_unified_rgb(
                     pass
         return default_val
 
+    bin_x = int(_parse_header_float(["XBINNING", "BINX"], 1.0))
+    bin_y = int(_parse_header_float(["YBINNING", "BINY"], 1.0))
+    binning = max(1, max(bin_x, bin_y))
+    is_mono = bool(bayer_pat is None and data_norm.ndim == 2)
+
     focal_length_mm = _parse_header_float(["FOCALLEN", "FOCAL"], 250.0)
-    pixel_size_um = _parse_header_float(["XPIXSZ", "PIXSIZE1", "PIXSIZE"], 2.9)
-    pixel_scale = float(np.clip((206.265 * pixel_size_um) / max(focal_length_mm, 1e-3), 0.1, 10.0))
+    raw_pixel_size_um = _parse_header_float(["XPIXSZ", "PIXSIZE1", "PIXSIZE"], 2.9)
+    # If XPIXSZ in the header is the native unbinned pixel size (e.g. <= 3.0 um when bin_x > 1), scale by bin_x;
+    # if capture software (such as N.I.N.A.) already multiplied XPIXSZ by bin_x (e.g. 5.8 or 11.6 um), do not multiply twice.
+    if bin_x > 1 and raw_pixel_size_um <= 3.0:
+        pixel_size_um = raw_pixel_size_um * float(bin_x)
+    else:
+        pixel_size_um = raw_pixel_size_um
+
+    pixel_scale = float(np.clip((206.265 * pixel_size_um) / max(focal_length_mm, 1e-3), 0.1, 20.0))
 
     metadata = {
         "file_name": path.name,
         "width": data_norm.shape[-1],
         "height": data_norm.shape[-2],
+        "binning": binning,
+        "is_mono": is_mono,
         "bayer_pattern": bayer_pat,
         "exposure": header.get("EXPTIME"),
         "filter": header.get("FILTER"),

@@ -4,6 +4,31 @@ Supports both Track A (Pure CNN from scratch on raw f32) and Track B (Pre-traine
 Optimizes multi-label BCE loss with positive class balancing.
 """
 
+import os
+import sys
+
+# Configure AMD ROCm / MIOpen environment optimizations before importing torch
+os.environ.setdefault("MIOPEN_FIND_MODE", "FAST")
+os.environ.setdefault("MIOPEN_DEBUG_CONV_WINOGRAD", "1")
+
+# Ensure ROCm SDK shared library paths and unversioned .so symlinks exist
+conda_prefix = os.environ.get("CONDA_PREFIX")
+if conda_prefix:
+    import glob
+    sdk_lib_candidates = glob.glob(os.path.join(conda_prefix, "lib", "python*", "site-packages", "_rocm_sdk_libraries_*", "lib"))
+    for lib_dir in sdk_lib_candidates:
+        if os.path.isdir(lib_dir):
+            for f in glob.glob(os.path.join(lib_dir, "*.so.*")):
+                base = f.split(".so.")[0] + ".so"
+                if not os.path.exists(base):
+                    try:
+                        os.symlink(os.path.basename(f), base)
+                    except OSError:
+                        pass
+            current_ld = os.environ.get("LD_LIBRARY_PATH", "")
+            if lib_dir not in current_ld.split(":"):
+                os.environ["LD_LIBRARY_PATH"] = f"{lib_dir}:{current_ld}" if current_ld else lib_dir
+
 import argparse
 import json
 from pathlib import Path
@@ -18,7 +43,6 @@ from torchvision import transforms
 from PIL import Image
 from tqdm import tqdm
 
-import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from models.cnn_zoo import build_model, NUM_CLASSES
 from fits_utils import CLASSES
@@ -113,10 +137,12 @@ class AstroPatchDataset(Dataset):
 
         # Astronomical data augmentation
         if self.augment:
-            # Mono-camera simulation (25% probability)
+            # Mono-camera Rec.601 luminance simulation (25% probability)
             if torch.rand(1).item() < 0.25:
-                lum = tensor.mean(dim=0, keepdim=True)
-                tensor = lum.repeat(3, 1, 1)
+                if not torch.allclose(tensor[0], tensor[1], atol=1e-4):
+                    weights = torch.tensor([0.299, 0.587, 0.114], device=tensor.device, dtype=tensor.dtype).view(3, 1, 1)
+                    mono = (tensor * weights).sum(dim=0, keepdim=True)
+                    tensor = mono.repeat(3, 1, 1)
 
             # Random 90/180/270 degree rotation
             k = int(torch.randint(0, 4, (1,)).item())
@@ -191,6 +217,7 @@ def train_one_epoch(
     criterion: nn.Module,
     optimizer: torch.optim.Optimizer,
     device: torch.device,
+    use_amp: bool = False,
     epoch: int = 1,
     total_epochs: int = 1,
 ) -> float:
@@ -198,14 +225,20 @@ def train_one_epoch(
     total_loss = 0.0
     pbar = tqdm(loader, desc=f"Epoch {epoch:02d}/{total_epochs:02d} [Train]", leave=False)
     for images, metas, targets in pbar:
-        images = images.to(device)
-        metas = metas.to(device)
-        targets = targets.to(device)
+        if device.type == "cuda":
+            images = images.to(device, non_blocking=True, memory_format=torch.channels_last)
+        else:
+            images = images.to(device)
+        metas = metas.to(device, non_blocking=True)
+        targets = targets.to(device, non_blocking=True)
 
         optimizer.zero_grad()
-        outputs = model(images, metas)
-        loss = criterion(outputs, targets)
+        with torch.amp.autocast("cuda", dtype=torch.bfloat16, enabled=use_amp):
+            outputs = model(images, metas)
+            loss = criterion(outputs, targets)
         loss.backward()
+        # Gradient norm clipping prevents BatchNorm validation spikes
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
 
         batch_loss = loss.item()
@@ -220,6 +253,7 @@ def evaluate(
     loader: DataLoader,
     criterion: nn.Module,
     device: torch.device,
+    use_amp: bool = False,
     epoch: int = 1,
     total_epochs: int = 1,
 ) -> Tuple[float, Dict[str, float]]:
@@ -231,17 +265,21 @@ def evaluate(
     pbar = tqdm(loader, desc=f"Epoch {epoch:02d}/{total_epochs:02d} [Val]", leave=False)
     with torch.no_grad():
         for images, metas, targets in pbar:
-            images = images.to(device)
-            metas = metas.to(device)
-            targets = targets.to(device)
+            if device.type == "cuda":
+                images = images.to(device, non_blocking=True, memory_format=torch.channels_last)
+            else:
+                images = images.to(device)
+            metas = metas.to(device, non_blocking=True)
+            targets = targets.to(device, non_blocking=True)
 
-            outputs = model(images, metas)
-            loss = criterion(outputs, targets)
+            with torch.amp.autocast("cuda", dtype=torch.bfloat16, enabled=use_amp):
+                outputs = model(images, metas)
+                loss = criterion(outputs, targets)
             batch_loss = loss.item()
             total_loss += batch_loss * images.size(0)
             pbar.set_postfix(loss=f"{batch_loss:.4f}")
 
-            probs = torch.sigmoid(outputs).cpu().numpy()
+            probs = torch.sigmoid(outputs.float()).cpu().numpy()
             all_preds.append(probs)
             all_targets.append(targets.cpu().numpy())
 
@@ -271,6 +309,7 @@ def main():
                         help="Resume exact optimizer, scheduler, early stopper, and epoch state from checkpoint")
     parser.add_argument("--out-dir", type=str, default="checkpoints")
     parser.add_argument("--patience", type=int, default=5, help="Early stopping patience (epochs without improvement, 0 to disable)")
+    parser.add_argument("--no-amp", action="store_true", help="Disable mixed precision (bfloat16 AMP)")
     parser.add_argument("--dry-run", action="store_true", help="Run 1 quick batch for testing")
 
     args = parser.parse_args()
@@ -287,7 +326,8 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
+    use_amp = (device.type == "cuda" and not args.no_amp)
+    print(f"Using device: {device} (Mixed Precision AMP: {use_amp}, bfloat16)")
     print(f"Training Model: {args.model} | Input Mode: {args.input_mode} | From Scratch: {args.from_scratch} | Patience: {args.patience}")
     if args.resume:
         print(f"Resume / Fine-tune weights: {args.resume}")
@@ -298,8 +338,25 @@ def main():
     print(f"Train samples: {len(train_ds)} | Val samples: {len(val_ds)}")
 
     pin_mem = (device.type == "cuda")
-    train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=2, pin_memory=pin_mem)
-    val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False, num_workers=2)
+    num_workers = min(8, os.cpu_count() or 4)
+    train_loader = DataLoader(
+        train_ds,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=pin_mem,
+        persistent_workers=(num_workers > 0),
+        prefetch_factor=(2 if num_workers > 0 else None),
+    )
+    val_loader = DataLoader(
+        val_ds,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=pin_mem,
+        persistent_workers=(num_workers > 0),
+        prefetch_factor=(2 if num_workers > 0 else None),
+    )
 
     with open(train_manifest, "r", encoding="utf-8") as f:
         records = json.load(f)
@@ -315,17 +372,21 @@ def main():
         all_labels = np.array([r["labels"] for r in records])
         pos_counts = np.sum(all_labels >= 0.5, axis=0)
         neg_counts = len(records) - pos_counts
-        # Clip pos_weight to [1.0, 10.0]
-        pos_weights = np.clip(neg_counts / np.maximum(pos_counts, 1), 1.0, 10.0)
+        # Square-root damped pos_weight clipped to [1.0, 4.0]
+        pos_weights = np.clip(np.sqrt(neg_counts / np.maximum(pos_counts, 1)), 1.0, 4.0)
         pos_weight_tensor = torch.tensor(pos_weights, dtype=torch.float32).to(device)
-        print(f"Computed Pos Weights: {pos_weights.tolist()}")
+        print(f"Computed Pos Weights (sqrt-damped [1.0, 4.0]): {pos_weights.tolist()}")
         criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight_tensor)
     else:
         criterion = nn.BCEWithLogitsLoss()
 
     # Build model
     pretrained = not args.from_scratch and args.model != "astronet"
-    model = build_model(args.model, pretrained=pretrained, num_classes=NUM_CLASSES).to(device)
+    model = build_model(args.model, pretrained=pretrained, num_classes=NUM_CLASSES)
+    if device.type == "cuda":
+        model = model.to(device, memory_format=torch.channels_last)
+    else:
+        model = model.to(device)
 
     # Load resume weights if requested
     if args.resume:
@@ -399,8 +460,8 @@ def main():
     start_time = time.time()
     for epoch in range(start_epoch, args.epochs + 1):
         t0 = time.time()
-        train_loss = train_one_epoch(model, train_loader, criterion, optimizer, device, epoch=epoch, total_epochs=args.epochs)
-        val_loss, metrics = evaluate(model, val_loader, criterion, device, epoch=epoch, total_epochs=args.epochs)
+        train_loss = train_one_epoch(model, train_loader, criterion, optimizer, device, use_amp=use_amp, epoch=epoch, total_epochs=args.epochs)
+        val_loss, metrics = evaluate(model, val_loader, criterion, device, use_amp=use_amp, epoch=epoch, total_epochs=args.epochs)
         scheduler.step()
 
         elapsed = time.time() - t0
@@ -494,6 +555,7 @@ def main():
                 export_params=True,
                 opset_version=18,
                 do_constant_folding=True,
+                dynamo=False,
                 input_names=["image", "meta"],
                 output_names=["logits"],
                 dynamic_axes={

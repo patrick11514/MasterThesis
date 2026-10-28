@@ -7,6 +7,7 @@ Zero active labels = Clean Astronomical Sky.
 
 import argparse
 from concurrent.futures import ProcessPoolExecutor, as_completed
+import copy
 import json
 import os
 from pathlib import Path
@@ -23,6 +24,7 @@ from fits_utils import (
     to_auto_stf_f32,
     to_stf_u8,
     compute_tile_metadata,
+    calculate_channel_stats,
     CLASSES,
 )
 from synthetic_defects import inject_random_synthetic_defect
@@ -321,25 +323,56 @@ def get_tile_offsets(dimension_size: int, tile_size: int = 512, stride: int = 46
     return offsets
 
 
-def slice_fits_frame(
+def scale_annotations_for_binning(boxes: List[dict], bin_factor: int) -> List[dict]:
+    """Scales annotation coordinates (boxes, lines, polygons) by 1 / bin_factor."""
+    if bin_factor <= 1:
+        return boxes
+    scaled_boxes = []
+    bf = float(bin_factor)
+    for b in copy.deepcopy(boxes):
+        if b.get("x") is not None:
+            b["x"] = float(b["x"]) / bf
+        if b.get("y") is not None:
+            b["y"] = float(b["y"]) / bf
+        if b.get("width") is not None:
+            b["width"] = float(b["width"]) / bf
+        if b.get("height") is not None:
+            b["height"] = float(b["height"]) / bf
+        if b.get("x1") is not None:
+            b["x1"] = float(b["x1"]) / bf
+        if b.get("y1") is not None:
+            b["y1"] = float(b["y1"]) / bf
+        if b.get("x2") is not None:
+            b["x2"] = float(b["x2"]) / bf
+        if b.get("y2") is not None:
+            b["y2"] = float(b["y2"]) / bf
+        if b.get("thickness") is not None:
+            b["thickness"] = max(4.0, float(b["thickness"]) / bf)
+        if b.get("points") is not None and isinstance(b["points"], list):
+            b["points"] = [[float(p[0]) / bf, float(p[1]) / bf] for p in b["points"] if len(p) >= 2]
+        scaled_boxes.append(b)
+    return scaled_boxes
+
+
+def _slice_frame_array(
+    rgb_f32: np.ndarray,
+    boxes: List[dict],
+    pixel_scale: float,
     fits_path: Path,
     out_dir: Path,
+    tile_prefix: str,
     tile_size: int = 512,
     stride: int = 460,
-    norm_mode: str = "stf",  # 'stf' or 'asinh'
+    norm_mode: str = "stf",
     rgb_linked: bool = False,
     is_val: bool = False,
     synth_prob: float = 0.20,
 ) -> List[Dict]:
     """
-    Slices a single FITS frame into 512x512 tiles and generates metadata records.
-    Applies star presence gating, area-weighted soft labels, and synthetic defect injection.
+    Slices an arbitrary full-resolution [H, W, 3] linear RGB float32 array into 512x512 tiles.
     """
-    rgb_f32, meta = load_fits_unified_rgb(fits_path)
     h, w, _ = rgb_f32.shape
-    frame_med = float(meta.get("frame_median", 0.05))
-    frame_mad = float(meta.get("frame_mad", 0.005))
-    pixel_scale = float(meta.get("pixel_scale", 2.39))
+    frame_med, frame_mad = calculate_channel_stats(rgb_f32, stride=100)
 
     # Pre-normalize the full image to desired float representation
     if norm_mode == "asinh":
@@ -349,32 +382,7 @@ def slice_fits_frame(
 
     preview_u8 = to_stf_u8(rgb_f32, rgb_linked=rgb_linked)
 
-    # Load annotations if available
-    json_path = fits_path.with_suffix(".json")
-    if not json_path.exists():
-        for fb in [
-            fits_path.parent / "TRAINING_FILES" / f"{fits_path.stem}.json",
-            fits_path.parent.parent / "TRAINING_FILES" / f"{fits_path.stem}.json",
-            Path("TRAINING_FILES") / f"{fits_path.stem}.json",
-        ]:
-            if fb.exists():
-                json_path = fb
-                break
-
-    annotations = {"boxes": []}
-    if json_path.exists():
-        try:
-            with open(json_path, "r", encoding="utf-8") as f:
-                raw_annot = json.load(f)
-                annotations = normalize_legacy_annotations(raw_annot, w, h)
-        except Exception as e:
-            print(f"Warning: Failed to parse {json_path}: {e}")
-
-    boxes = annotations.get("boxes", [])
-
     records = []
-    base_name = fits_path.stem
-
     f32_dir = out_dir / "tiles_f32"
     img_dir = out_dir / "tiles_img"
     f32_dir.mkdir(parents=True, exist_ok=True)
@@ -383,7 +391,6 @@ def slice_fits_frame(
     x_offsets = get_tile_offsets(w, tile_size, stride)
     y_offsets = get_tile_offsets(h, tile_size, stride)
 
-    tile_idx = 0
     for y_start in y_offsets:
         for x_start in x_offsets:
             x_end = x_start + tile_size
@@ -490,7 +497,7 @@ def slice_fits_frame(
             # Compute normalized 6-element metadata vector for tile
             meta_vec = compute_tile_metadata(tile_linear, tile_f32, frame_med, frame_mad, pixel_scale)
 
-            tile_id = f"{base_name}_x{x_start}_y{y_start}"
+            tile_id = f"{tile_prefix}_x{x_start}_y{y_start}"
             npy_path = f32_dir / f"{tile_id}.npy"
             png_path = img_dir / f"{tile_id}.png"
 
@@ -515,7 +522,110 @@ def slice_fits_frame(
                 "yolo_segments": yolo_segments,
                 "meta": meta_vec,
             })
-            tile_idx += 1
+
+    return records
+
+
+def slice_fits_frame(
+    fits_path: Path,
+    out_dir: Path,
+    tile_size: int = 512,
+    stride: int = 460,
+    norm_mode: str = "stf",  # 'stf' or 'asinh'
+    rgb_linked: bool = False,
+    is_val: bool = False,
+    synth_prob: float = 0.20,
+    bin_aug_prob: float = 0.30,
+) -> List[Dict]:
+    """
+    Slices a single FITS frame into 512x512 tiles and generates metadata records.
+    Supports guarded full-frame synthetic 2x2/4x4 binning on eligible 1x1 training frames.
+    """
+    rgb_f32, meta = load_fits_unified_rgb(fits_path)
+    h, w, _ = rgb_f32.shape
+    native_binning = int(meta.get("binning", 1))
+    pixel_scale = float(meta.get("pixel_scale", 2.39))
+
+    # Load annotations if available
+    json_path = fits_path.with_suffix(".json")
+    if not json_path.exists():
+        for fb in [
+            fits_path.parent / "TRAINING_FILES" / f"{fits_path.stem}.json",
+            fits_path.parent.parent / "TRAINING_FILES" / f"{fits_path.stem}.json",
+            Path("TRAINING_FILES") / f"{fits_path.stem}.json",
+        ]:
+            if fb.exists():
+                json_path = fb
+                break
+
+    annotations = {"boxes": []}
+    if json_path.exists():
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                raw_annot = json.load(f)
+                annotations = normalize_legacy_annotations(raw_annot, w, h)
+        except Exception as e:
+            print(f"Warning: Failed to parse {json_path}: {e}")
+
+    boxes = annotations.get("boxes", [])
+    base_name = fits_path.stem
+
+    # 1. Always slice the native 1x1 frame first
+    records = _slice_frame_array(
+        rgb_f32=rgb_f32,
+        boxes=boxes,
+        pixel_scale=pixel_scale,
+        fits_path=fits_path,
+        out_dir=out_dir,
+        tile_prefix=base_name,
+        tile_size=tile_size,
+        stride=stride,
+        norm_mode=norm_mode,
+        rgb_linked=rgb_linked,
+        is_val=is_val,
+        synth_prob=synth_prob,
+    )
+
+    # 2. Eligibility Guard for synthetic binning pass
+    # Only allow synthetic frame-level binning on training split, strictly unbinned 1x1 frames,
+    # with native resolution large enough to yield >= tile_size in both dimensions.
+    can_bin_2x2 = (w >= 1920 and h >= 1080)
+    can_bin_4x4 = (w >= 3000 and h >= 2048)
+
+    if (not is_val) and (native_binning == 1) and can_bin_2x2 and (random.random() < bin_aug_prob):
+        if can_bin_4x4 and (random.random() < 0.25):
+            bin_factor = 4
+        else:
+            bin_factor = 2
+
+        new_w = w // bin_factor
+        new_h = h // bin_factor
+        rgb_binned = cv2.resize(rgb_f32, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+        # Optional ZWO Mono-Bin Mode (50% chance when synthetically binning)
+        if random.random() < 0.50:
+            lum = 0.299 * rgb_binned[:, :, 0] + 0.587 * rgb_binned[:, :, 1] + 0.114 * rgb_binned[:, :, 2]
+            rgb_binned = np.stack([lum, lum, lum], axis=-1).astype(np.float32)
+
+        binned_boxes = scale_annotations_for_binning(boxes, bin_factor)
+        binned_pixel_scale = pixel_scale * float(bin_factor)
+        binned_prefix = f"{base_name}_bin{bin_factor}"
+
+        binned_records = _slice_frame_array(
+            rgb_f32=rgb_binned,
+            boxes=binned_boxes,
+            pixel_scale=binned_pixel_scale,
+            fits_path=fits_path,
+            out_dir=out_dir,
+            tile_prefix=binned_prefix,
+            tile_size=tile_size,
+            stride=stride,
+            norm_mode=norm_mode,
+            rgb_linked=rgb_linked,
+            is_val=is_val,
+            synth_prob=synth_prob,
+        )
+        records.extend(binned_records)
 
     return records
 
@@ -533,6 +643,7 @@ def prepare_dataset(
     yolo_dir: Union[Path, str] = "dataset_yolo",
     bg_ratio: float = 0.15,
     synth_prob: float = 0.20,
+    bin_aug_prob: float = 0.30,
 ):
     """
     Prepares train and validation sets with frame-level isolation to prevent data leakage.
@@ -594,6 +705,7 @@ def prepare_dataset(
                 norm_mode=norm_mode,
                 is_val=is_val,
                 synth_prob=synth_prob,
+                bin_aug_prob=bin_aug_prob,
             ): (f, is_val)
             for f, is_val in jobs
         }
@@ -718,6 +830,7 @@ if __name__ == "__main__":
     parser.add_argument("--yolo-dir", type=str, default="dataset_yolo", help="Output directory for YOLO segmentation dataset")
     parser.add_argument("--bg-ratio", type=float, default=0.15, help="Ratio of clean background sky tiles to include in YOLO dataset (default: 0.15)")
     parser.add_argument("--synth-prob", type=float, default=0.20, help="Probability of injecting synthetic defect into clean training tiles (default: 0.20)")
+    parser.add_argument("--bin-aug-prob", type=float, default=0.30, help="Probability of synthetic full-frame binning on eligible 1x1 training frames (default: 0.30)")
 
     args = parser.parse_args()
     prepare_dataset(
@@ -732,4 +845,5 @@ if __name__ == "__main__":
         yolo_dir=args.yolo_dir,
         bg_ratio=args.bg_ratio,
         synth_prob=args.synth_prob,
+        bin_aug_prob=args.bin_aug_prob,
     )
