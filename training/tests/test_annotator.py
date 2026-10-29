@@ -266,7 +266,7 @@ class TestAnnotatorAPI(unittest.TestCase):
         iter_models = [m for m in data["models"] if m.get("source") == "iteration" or m.get("iteration")]
         self.assertGreater(len(iter_models), 0)
         for m in iter_models:
-            self.assertTrue(m["iteration"] in ("v1", "v2"))
+            self.assertTrue(bool(m["iteration"]))
             self.assertTrue(m["name"].startswith(f"[Iteration {m['iteration']}]"))
 
     def test_list_models_session_discovery(self):

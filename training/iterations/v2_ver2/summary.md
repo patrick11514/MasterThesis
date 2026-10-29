@@ -1,8 +1,9 @@
 # Iteration Summary: v2_ver2
 
-- **Created:** 2026-10-29T19:39:58.881270
+- **Created:** 2026-10-29T19:51:28.397085
 - **Description:** more plane dataset, grayscale simulation + binning simulation
 - **Parent Iteration:** `v1_ver2`
+- **Source Sessions:** `2026-10-29_14-15-20`, `2026-10-29_11-49-11`
 
 ## Dataset Information
 
@@ -45,7 +46,7 @@
 ### CNN Model: `astronet`
 
 - **Macro F1:** `0.7405` | **Clean Sky Accuracy:** `0.9007`
-- **Source Checkpoint:** `/home/patrick115/Projects/MasterThesis/training/checkpoints/astronet_f32/best_model.pt`
+- **Source Checkpoint:** `/home/patrick115/Projects/MasterThesis/training/checkpoints/sessions/2026-10-29_14-15-20/astronet_f32/best_model.pt`
 
 | Class | Precision | Recall | F1 Score |
 | :--- | :---: | :---: | :---: |
@@ -82,7 +83,7 @@
 ### CNN Model: `resnet18`
 
 - **Macro F1:** `0.7864` | **Clean Sky Accuracy:** `0.9103`
-- **Source Checkpoint:** `/home/patrick115/Projects/MasterThesis/training/checkpoints/resnet18_f32/best_model.pt`
+- **Source Checkpoint:** `/home/patrick115/Projects/MasterThesis/training/checkpoints/sessions/2026-10-29_14-15-20/resnet18_f32/best_model.pt`
 
 | Class | Precision | Recall | F1 Score |
 | :--- | :---: | :---: | :---: |
@@ -109,44 +110,38 @@
 
 ### CNN Model: `mobilenet_v3`
 
-- **Macro F1:** `0.7412` | **Clean Sky Accuracy:** `0.8888`
-- **Source Checkpoint:** `/home/patrick115/Projects/MasterThesis/training/checkpoints/mobilenet_v3_f32/best_model.pt`
+- **Macro F1:** `0.832` | **Clean Sky Accuracy:** `0.9305`
+- **Source Checkpoint:** `/home/patrick115/Projects/MasterThesis/training/checkpoints/sessions/2026-10-29_14-15-20/mobilenet_v3_f32/best_model.pt`
 
 | Class | Precision | Recall | F1 Score |
 | :--- | :---: | :---: | :---: |
-| `satellite_streak` | 0.5781 | 0.8428 | **0.6858** |
-| `airplane` | 0.7143 | 1.0 | **0.8333** |
-| `cloud` | 0.658 | 0.7585 | **0.7047** |
-| `obstruction` | 0.5789 | 0.9659 | **0.7239** |
-| `star_trail` | 0.6277 | 0.7284 | **0.6743** |
-| `unfocused_star` | 0.704 | 0.9962 | **0.825** |
+| `satellite_streak` | 0.8913 | 0.8454 | **0.8678** |
+| `airplane` | 0.8125 | 0.8125 | **0.8125** |
+| `cloud` | 0.767 | 0.9483 | **0.8481** |
+| `obstruction` | 0.5024 | 1.0 | **0.6688** |
+| `star_trail` | 0.8429 | 0.8871 | **0.8645** |
+| `unfocused_star` | 0.8718 | 0.9978 | **0.9306** |
 
-#### Training Progression (`mobilenet_v3` — Best at Epoch 12 / 17 run)
+#### Training Progression (`mobilenet_v3` — Best at Epoch 3 / 11 run)
 
 | Epoch | Train Loss | Val Loss | Macro F1 | Clean Sky Acc | Exact Match |
 | :---: | :---: | :---: | :---: | :---: | :---: |
-| 1 | 0.3702 | 0.3303 | 0.5064 | 0.6209 | 0.5385 |
-| 2 | 0.2612 | 0.3974 | 0.5970 | 0.8407 | 0.7843 |
-| 3 | 0.2330 | 0.2779 | 0.5778 | 0.7169 | 0.6602 |
-| 4 | 0.2118 | 0.3445 | 0.6361 | 0.7561 | 0.7070 |
-| 5 | 0.2016 | 0.3095 | 0.6222 | 0.8561 | 0.8078 |
-| 6 | 0.1894 | 0.3043 | 0.5941 | 0.8315 | 0.7802 |
-| 7 | 0.1818 | 0.2321 | 0.6484 | 0.7909 | 0.7326 |
-| 8 | 0.1729 | 0.3224 | 0.6778 | 0.8257 | 0.7638 |
-| 9 | 0.1703 | 0.2655 | 0.5605 | 0.7730 | 0.7083 |
-| 10 | 0.1596 | 0.3324 | 0.6648 | 0.8308 | 0.7751 |
-| 11 | 0.1495 | 0.3467 | 0.5768 | 0.7879 | 0.7348 |
-| **12** | **0.1433** | **0.3403** | **0.7412** | **0.8888** | **0.8430** |
-| 13 | 0.1387 | 0.3618 | 0.5991 | 0.7615 | 0.7106 |
-| 14 | 0.1329 | 0.4264 | 0.6232 | 0.8047 | 0.7491 |
-| 15 | 0.1271 | 0.4067 | 0.5632 | 0.7946 | 0.7438 |
-| 16 | 0.1219 | 0.3308 | 0.6187 | 0.8500 | 0.7990 |
-| 17 | 0.1156 | 0.3778 | 0.6488 | 0.8489 | 0.7976 |
+| 1 | 0.0748 | 0.0687 | 0.8163 | 0.9308 | 0.9111 |
+| 2 | 0.0704 | 0.0699 | 0.8072 | 0.9249 | 0.9054 |
+| **3** | **0.0677** | **0.0685** | **0.8320** | **0.9305** | **0.9117** |
+| 4 | 0.0664 | 0.0704 | 0.8260 | 0.9312 | 0.9121 |
+| 5 | 0.0631 | 0.0718 | 0.8098 | 0.9306 | 0.9096 |
+| 6 | 0.0620 | 0.0793 | 0.8088 | 0.9281 | 0.9028 |
+| 7 | 0.0595 | 0.0735 | 0.8118 | 0.9367 | 0.9128 |
+| 8 | 0.0574 | 0.0789 | 0.8216 | 0.9292 | 0.9079 |
+| 9 | 0.0565 | 0.0779 | 0.8124 | 0.9310 | 0.9106 |
+| 10 | 0.0554 | 0.0746 | 0.8208 | 0.9302 | 0.9108 |
+| 11 | 0.0544 | 0.0753 | 0.8182 | 0.9286 | 0.9112 |
 
 ### CNN Model: `efficientnet_b0`
 
 - **Macro F1:** `0.8343` | **Clean Sky Accuracy:** `0.9312`
-- **Source Checkpoint:** `/home/patrick115/Projects/MasterThesis/training/checkpoints/efficientnet_b0_f32/best_model.pt`
+- **Source Checkpoint:** `/home/patrick115/Projects/MasterThesis/training/checkpoints/sessions/2026-10-29_14-15-20/efficientnet_b0_f32/best_model.pt`
 
 | Class | Precision | Recall | F1 Score |
 | :--- | :---: | :---: | :---: |

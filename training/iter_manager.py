@@ -244,6 +244,84 @@ def get_all_iterations() -> List[Dict[str, Any]]:
     return iterations
 
 
+def resolve_session_dir(session_arg: str) -> Optional[Path]:
+    """
+    Resolves session identifier ('latest', full ID, prefix match, or direct path)
+    to a valid directory Path. Returns None if not found.
+    """
+    if not session_arg:
+        return None
+
+    session_arg = str(session_arg).strip()
+    p = Path(session_arg)
+    if p.exists() and p.is_dir():
+        return p.resolve()
+
+    cand = SESSIONS_DIR / session_arg
+    if cand.exists() and cand.is_dir():
+        return cand.resolve()
+
+    if not SESSIONS_DIR.exists():
+        return None
+
+    # Handle 'latest'
+    if session_arg.lower() == "latest":
+        valid_sessions = [d for d in SESSIONS_DIR.iterdir() if d.is_dir() and (d / "session.json").exists()]
+        if not valid_sessions:
+            valid_sessions = [d for d in SESSIONS_DIR.iterdir() if d.is_dir()]
+        if valid_sessions:
+            valid_sessions.sort(key=lambda d: d.name, reverse=True)
+            return valid_sessions[0].resolve()
+        return None
+
+    # Handle prefix match
+    matches = [d for d in SESSIONS_DIR.iterdir() if d.is_dir() and d.name.startswith(session_arg)]
+    if len(matches) == 1:
+        return matches[0].resolve()
+    elif len(matches) > 1:
+        exact = [d for d in matches if d.name == session_arg]
+        if exact:
+            return exact[0].resolve()
+        print(f"Warning: Ambiguous session identifier '{session_arg}'. Multiple matches found: {[m.name for m in matches]}")
+        return matches[0].resolve()
+
+    return None
+
+
+def parse_sessions_arg(args: Any) -> List[str]:
+    """
+    Flattens various formats of session arguments into a list of session strings:
+    - Repeated flags: --from-session S1 --from-session S2 (action='append' with nargs='+')
+    - Multi-argument: --from-session S1 S2
+    - Comma-separated: --from-session S1,S2
+    - Single string fallback: args.from_session = 'S1'
+    """
+    raw = getattr(args, "from_sessions", None)
+    if not raw:
+        raw = getattr(args, "from_session", None)
+    if not raw:
+        return []
+
+    if isinstance(raw, str):
+        raw = [raw]
+
+    res: List[str] = []
+    for item in raw:
+        if isinstance(item, list):
+            for sub in item:
+                if isinstance(sub, str):
+                    for piece in sub.split(","):
+                        piece = piece.strip()
+                        if piece and piece not in res:
+                            res.append(piece)
+        elif isinstance(item, str):
+            for piece in item.split(","):
+                piece = piece.strip()
+                if piece and piece not in res:
+                    res.append(piece)
+    return res
+
+
 # =====================================================================
 # CLI Actions
 # =====================================================================
@@ -257,19 +335,33 @@ def cmd_create(args):
 
     print_banner(f"Creating Model Iteration: {iter_name}")
 
+    # Resolve candidate session directories in specified order
+    session_names = parse_sessions_arg(args)
+    session_dirs: List[Path] = []
+    for s_name in session_names:
+        s_dir = resolve_session_dir(s_name)
+        if s_dir:
+            if s_dir not in session_dirs:
+                session_dirs.append(s_dir)
+                print(f" [Session Source] Registered candidate session: {s_dir.name}")
+        else:
+            print(f" [Warning] Could not resolve session identifier: {s_name}")
+
     models_manifest: Dict[str, Any] = {}
 
     # 1. Resolve YOLO model
     yolo_src = None
     if args.yolo:
         yolo_src = Path(args.yolo).resolve()
-    elif args.from_session:
-        s_dir = SESSIONS_DIR / args.from_session
-        cand = s_dir / "yolo_astro" / "weights" / "best.pt"
-        if not cand.exists():
-            cand = s_dir / "yolo11_astro" / "weights" / "best.pt"
-        if cand.exists():
-            yolo_src = cand
+    elif session_dirs:
+        for s_dir in session_dirs:
+            for y_folder in ["yolo_astro", "yolo11_astro"]:
+                cand = s_dir / y_folder / "weights" / "best.pt"
+                if cand.exists():
+                    yolo_src = cand
+                    break
+            if yolo_src:
+                break
     else:
         # Default fallback to legacy mirrors
         cand = RUNS_DIR / "segment" / "yolo_astro" / "weights" / "best.pt"
@@ -304,10 +396,12 @@ def cmd_create(args):
     cnn_names = args.cnn_models if args.cnn_models else ["astronet", "resnet18", "mobilenet_v3", "efficientnet_b0"]
     for m in cnn_names:
         cnn_src = None
-        if args.from_session:
-            cand = SESSIONS_DIR / args.from_session / f"{m}_f32" / "best_model.pt"
-            if cand.exists():
-                cnn_src = cand
+        if session_dirs:
+            for s_dir in session_dirs:
+                cand = s_dir / f"{m}_f32" / "best_model.pt"
+                if cand.exists():
+                    cnn_src = cand
+                    break
         if not cnn_src or not cnn_src.exists():
             cand = CHECKPOINTS_DIR / f"{m}_f32" / "best_model.pt"
             if cand.exists():
@@ -361,6 +455,7 @@ def cmd_create(args):
         "name": iter_name,
         "description": args.description or "Model evolutionary iteration",
         "parent_iteration": args.parent or None,
+        "source_sessions": [s.name for s in session_dirs] if session_dirs else None,
         "created_at": datetime.now().isoformat(),
         "dataset": dataset_stats,
         "models": models_manifest,
@@ -667,6 +762,9 @@ def generate_iteration_markdown(iter_dir: Path, manifest: Dict[str, Any]):
         fp.write(f"- **Description:** {manifest.get('description')}\n")
         if manifest.get("parent_iteration"):
             fp.write(f"- **Parent Iteration:** `{manifest.get('parent_iteration')}`\n")
+        if manifest.get("source_sessions"):
+            sess_str = ", ".join([f"`{s}`" for s in manifest["source_sessions"]])
+            fp.write(f"- **Source Sessions:** {sess_str}\n")
 
         ds = manifest.get("dataset", {})
         fp.write("\n## Dataset Information\n\n")
@@ -759,24 +857,35 @@ def cmd_backfill(args):
     models_dir = iter_dir / "models"
     models_dir.mkdir(parents=True, exist_ok=True)
 
-    session_dir = None
-    if args.from_session:
-        session_dir = SESSIONS_DIR / args.from_session
-    else:
-        # Infer session directory from source_checkpoint
-        for m_name, m_info in manifest.get("models", {}).items():
-            src = m_info.get("source_checkpoint")
-            if src and "sessions" in src:
-                p = Path(src)
-                parts = p.parts
-                if "sessions" in parts:
-                    idx = parts.index("sessions")
-                    if idx + 1 < len(parts):
-                        session_dir = Path(*parts[:idx + 2])
-                        break
+    session_names = parse_sessions_arg(args)
+    session_dirs: List[Path] = []
+    for s_name in session_names:
+        s_dir = resolve_session_dir(s_name)
+        if s_dir and s_dir not in session_dirs:
+            session_dirs.append(s_dir)
 
-    if session_dir and session_dir.exists():
-        print(f" [Backfill] Sourcing history from session: {session_dir}")
+    # If no session directory was explicitly given, check iteration's recorded source_sessions
+    if not session_dirs:
+        for s_name in manifest.get("source_sessions", []) or []:
+            s_dir = resolve_session_dir(s_name)
+            if s_dir and s_dir not in session_dirs:
+                session_dirs.append(s_dir)
+
+    # Also infer session directories from model source_checkpoints
+    for m_name, m_info in manifest.get("models", {}).items():
+        src = m_info.get("source_checkpoint")
+        if src and "sessions" in src:
+            p = Path(src)
+            parts = p.parts
+            if "sessions" in parts:
+                idx = parts.index("sessions")
+                if idx + 1 < len(parts):
+                    cand_s = Path(*parts[:idx + 2])
+                    if cand_s.exists() and cand_s not in session_dirs:
+                        session_dirs.append(cand_s)
+
+    if session_dirs:
+        print(f" [Backfill] Sourcing history from session(s): {', '.join([s.name for s in session_dirs])}")
     else:
         print(" [Backfill] Session directory not specified/found. Looking for sibling history files...")
 
@@ -785,13 +894,15 @@ def cmd_backfill(args):
     if y_info:
         yolo_csv = None
         yolo_args = None
-        if session_dir:
+        for s_dir in session_dirs:
             for y_folder in ["yolo_astro", "yolo11_astro"]:
-                cand_csv = session_dir / y_folder / "results.csv"
+                cand_csv = s_dir / y_folder / "results.csv"
                 if cand_csv.exists():
                     yolo_csv = cand_csv
-                    yolo_args = session_dir / y_folder / "args.yaml"
+                    yolo_args = s_dir / y_folder / "args.yaml"
                     break
+            if yolo_csv:
+                break
         if not yolo_csv:
             src_cp = y_info.get("source_checkpoint")
             if src_cp:
@@ -821,10 +932,11 @@ def cmd_backfill(args):
     for m in cnn_names:
         m_info = manifest["models"][m]
         hist_src = None
-        if session_dir:
-            cand_hist = session_dir / f"{m}_f32" / "training_history.json"
+        for s_dir in session_dirs:
+            cand_hist = s_dir / f"{m}_f32" / "training_history.json"
             if cand_hist.exists():
                 hist_src = cand_hist
+                break
         if not hist_src:
             src_cp = m_info.get("source_checkpoint")
             if src_cp:
@@ -887,7 +999,14 @@ def main():
     p_create.add_argument("--parent", type=str, default=None, help="Parent iteration name")
     p_create.add_argument("--yolo", type=str, default=None, help="Explicit path to YOLO best.pt")
     p_create.add_argument("--cnn-models", nargs="+", default=None, help="CNN model names to package")
-    p_create.add_argument("--from-session", type=str, default=None, help="Session folder to source checkpoints from")
+    p_create.add_argument(
+        "--from-session", "--from-sessions", "--session", "--sessions", "-s",
+        dest="from_sessions",
+        nargs="+",
+        action="append",
+        default=None,
+        help="Session folder(s) to source checkpoints from (supports multiple sessions)",
+    )
     p_create.add_argument("--dataset-dir", type=str, default=None, help="Dataset directory to extract stats from")
     p_create.set_defaults(func=cmd_create)
 
@@ -920,7 +1039,14 @@ def main():
     # 7. backfill
     p_backfill = subparsers.add_parser("backfill", help="Retroactively copy training history and results.csv into an existing iteration")
     p_backfill.add_argument("iteration", type=str, help="Name of iteration to backfill (e.g. v1_ver2)")
-    p_backfill.add_argument("--from-session", type=str, default=None, help="Session folder to source history files from")
+    p_backfill.add_argument(
+        "--from-session", "--from-sessions", "--session", "--sessions", "-s",
+        dest="from_sessions",
+        nargs="+",
+        action="append",
+        default=None,
+        help="Session folder(s) to source history files from (supports multiple sessions)",
+    )
     p_backfill.set_defaults(func=cmd_backfill)
 
     args = parser.parse_args()
