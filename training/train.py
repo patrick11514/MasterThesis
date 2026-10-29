@@ -7,6 +7,19 @@ Optimizes multi-label BCE loss with positive class balancing.
 import os
 import sys
 
+# Silence low-level C++ stdout spam (e.g. AMD ROCm Composable Kernel std::cout)
+# while preserving Python sys.stdout print() and tqdm interactive progress bars (stderr).
+if not getattr(sys, "_rocm_stdout_silenced", False):
+    try:
+        _real_stdout_fd = os.dup(1)
+        _devnull_fd = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(_devnull_fd, 1)
+        os.close(_devnull_fd)
+        sys.stdout = os.fdopen(_real_stdout_fd, "w", buffering=1, encoding="utf-8")
+        sys._rocm_stdout_silenced = True
+    except Exception:
+        pass
+
 # Configure AMD ROCm / MIOpen environment optimizations before importing torch
 os.environ.setdefault("MIOPEN_FIND_MODE", "FAST")
 os.environ.setdefault("MIOPEN_DEBUG_CONV_WINOGRAD", "1")

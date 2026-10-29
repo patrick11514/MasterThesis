@@ -7,6 +7,21 @@ Evaluates Mask/Box mAP and exports to ONNX for the AstroGrader Rust engine.
 
 import argparse
 import os
+import sys
+
+# Silence low-level C++ stdout spam (e.g. AMD ROCm Composable Kernel std::cout)
+# while preserving Python sys.stdout print() and tqdm interactive progress bars (stderr).
+if not getattr(sys, "_rocm_stdout_silenced", False):
+    try:
+        _real_stdout_fd = os.dup(1)
+        _devnull_fd = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(_devnull_fd, 1)
+        os.close(_devnull_fd)
+        sys.stdout = os.fdopen(_real_stdout_fd, "w", buffering=1, encoding="utf-8")
+        sys._rocm_stdout_silenced = True
+    except Exception:
+        pass
+
 # Configure ROCm / MIOpen stability defaults for AMD Radeon GPUs (RDNA4 gfx1200, RDNA3 gfx1100)
 # Setting MIOPEN_FIND_MODE=1 prevents MIOpen from executing uncompiled/broken CK dynamic benchmarking sweeps
 os.environ.setdefault("HSA_OVERRIDE_GFX_VERSION", "12.0.0")
@@ -15,7 +30,6 @@ os.environ.setdefault("PYTORCH_HIP_ALLOC_CONF", "garbage_collection_threshold:0.
 os.environ.setdefault("TORCH_BLAS_PREFER_HIPBLASLT", "0")
 
 from pathlib import Path
-import sys
 
 import torch
 from ultralytics import YOLO
