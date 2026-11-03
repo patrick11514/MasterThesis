@@ -90,6 +90,12 @@ def extract_cnn_checkpoint_info(pt_path: Path) -> Dict[str, Any]:
                 info["metrics"] = raw_metrics
                 info["macro_f1"] = raw_metrics.get("macro_f1")
                 info["clean_sky_accuracy"] = raw_metrics.get("clean_sky_accuracy")
+            opt_thresh = data.get("optimal_thresholds") or (raw_metrics.get("optimal_thresholds") if isinstance(raw_metrics, dict) else None)
+            if opt_thresh:
+                info["optimal_thresholds"] = opt_thresh
+            calib_f1 = data.get("calibrated_macro_f1") or (raw_metrics.get("calibrated_macro_f1") if isinstance(raw_metrics, dict) else None)
+            if calib_f1 is not None:
+                info["calibrated_macro_f1"] = calib_f1
     except Exception as e:
         info["load_error"] = str(e)
 
@@ -123,9 +129,16 @@ def extract_cnn_checkpoint_info(pt_path: Path) -> Dict[str, Any]:
                         info["macro_f1"] = best_entry["macro_f1"]
                     if "clean_sky_accuracy" not in info and "clean_sky_accuracy" in best_entry:
                         info["clean_sky_accuracy"] = best_entry["clean_sky_accuracy"]
+                    if "optimal_thresholds" not in info and "optimal_thresholds" in best_entry:
+                        info["optimal_thresholds"] = best_entry["optimal_thresholds"]
+                    if "calibrated_macro_f1" not in info and "calibrated_macro_f1" in best_entry:
+                        info["calibrated_macro_f1"] = best_entry["calibrated_macro_f1"]
                 break
             except Exception:
                 pass
+
+    if "optimal_thresholds" not in info:
+        info["optimal_thresholds"] = {c: 0.50 for c in CLASSES}
 
     return info
 
@@ -809,16 +822,20 @@ def generate_iteration_markdown(iter_dir: Path, manifest: Dict[str, Any]):
             if m_name == "yolo":
                 continue
             fp.write(f"### CNN Model: `{m_name}`\n\n")
-            fp.write(f"- **Macro F1:** `{info.get('macro_f1', 'N/A')}` | **Clean Sky Accuracy:** `{info.get('clean_sky_accuracy', 'N/A')}`\n")
+            calib_f1 = info.get("calibrated_macro_f1")
+            calib_str = f" | **Calibrated Macro F1:** `{calib_f1}`" if calib_f1 is not None else ""
+            fp.write(f"- **Macro F1:** `{info.get('macro_f1', 'N/A')}`{calib_str} | **Clean Sky Accuracy:** `{info.get('clean_sky_accuracy', 'N/A')}`\n")
             fp.write(f"- **Source Checkpoint:** `{info.get('source_checkpoint')}`\n")
+            opt_t = info.get("optimal_thresholds", {})
             raw_m = info.get("metrics", {})
             if raw_m:
-                fp.write("\n| Class | Precision | Recall | F1 Score |\n| :--- | :---: | :---: | :---: |\n")
+                fp.write("\n| Class | Precision | Recall | F1 Score | Optimal Threshold |\n| :--- | :---: | :---: | :---: | :---: |\n")
                 for c in CLASSES:
                     p = raw_m.get(f"{c}_precision", "-")
                     r = raw_m.get(f"{c}_recall", "-")
                     f = raw_m.get(f"{c}_f1", "-")
-                    fp.write(f"| `{c}` | {p} | {r} | **{f}** |\n")
+                    t_val = opt_t.get(c, 0.50) if isinstance(opt_t, dict) else 0.50
+                    fp.write(f"| `{c}` | {p} | {r} | **{f}** | `{t_val:.2f}` |\n")
                 fp.write("\n")
 
             c_hist = info.get("training_history", [])
@@ -957,9 +974,17 @@ def cmd_backfill(args):
                 m_info["total_epochs_run"] = len(c_hist)
                 if m_info.get("epoch") is not None:
                     m_info["best_epoch"] = m_info["epoch"]
+                    matching = [h for h in c_hist if h.get("epoch") == m_info["epoch"]]
+                    best_entry = matching[0] if matching else max(c_hist, key=lambda x: x.get("macro_f1", 0.0))
                 else:
                     best_entry = max(c_hist, key=lambda x: x.get("macro_f1", 0.0))
                     m_info["best_epoch"] = best_entry.get("epoch", 0)
+                if "optimal_thresholds" in best_entry:
+                    m_info["optimal_thresholds"] = best_entry["optimal_thresholds"]
+                elif "optimal_thresholds" not in m_info:
+                    m_info["optimal_thresholds"] = {c: 0.50 for c in CLASSES}
+                if "calibrated_macro_f1" in best_entry:
+                    m_info["calibrated_macro_f1"] = best_entry["calibrated_macro_f1"]
                 print(f" [+] Embedded {len(c_hist)} {m} epochs into manifest (Best: Epoch {m_info['best_epoch']})")
 
         # Ensure monolithic ONNX binary exists in iteration models directory

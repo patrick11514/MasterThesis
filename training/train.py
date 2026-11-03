@@ -175,6 +175,20 @@ class AstroPatchDataset(Dataset):
                 noise = torch.randn_like(tensor) * 0.005
                 tensor = torch.clamp(tensor + noise, 0.0, 1.0)
 
+            # Synthetic clean-sky optical vignetting augmentation (15% probability)
+            if labels.sum() == 0 and torch.rand(1).item() < 0.15:
+                # Simulate corner/edge optical vignetting falloff so the model does not confuse vignetting with obstructions
+                h, w = tensor.shape[1], tensor.shape[2]
+                yy = torch.linspace(-1.0, 1.0, h, device=tensor.device, dtype=tensor.dtype).view(h, 1)
+                xx = torch.linspace(-1.0, 1.0, w, device=tensor.device, dtype=tensor.dtype).view(1, w)
+                # Randomize off-center optical axis to mimic corner position within a full frame
+                cx = (torch.rand(1, device=tensor.device, dtype=tensor.dtype).item() - 0.5) * 1.5
+                cy = (torch.rand(1, device=tensor.device, dtype=tensor.dtype).item() - 0.5) * 1.5
+                r2 = (xx - cx) ** 2 + (yy - cy) ** 2
+                strength = 0.08 + 0.14 * torch.rand(1, device=tensor.device, dtype=tensor.dtype).item()  # 8% to 22% falloff
+                vignette = torch.clamp(1.0 - strength * r2, 0.65, 1.0).unsqueeze(0)
+                tensor = tensor * vignette
+
         return tensor, meta_tensor, labels
 
 
@@ -182,17 +196,19 @@ def compute_metrics(
     all_preds: np.ndarray,
     all_targets: np.ndarray,
     threshold: float = 0.5,
-) -> Dict[str, float]:
+) -> Dict[str, object]:
     """
     Computes multi-label metrics: Precision, Recall, F1 per class, and Clean Sky Accuracy.
     Binarizes ground truth targets (targets >= 0.5) to seamlessly handle continuous soft targets.
+    Also sweeps candidate thresholds t in np.linspace(0.30, 0.85, 56) per class to find
+    optimal_thresholds and calibrated_macro_f1.
     """
     binary_preds = (all_preds >= threshold).astype(int)
     targets = (all_targets >= 0.5).astype(int)
 
-    metrics = {}
+    metrics: Dict[str, object] = {}
     f1_list = []
-    num_classes = min(binary_preds.shape[1], len(CLASSES))
+    num_classes = min(binary_preds.shape[1], len(CLASSES)) if binary_preds.ndim == 2 else 0
 
     for i in range(num_classes):
         cls_name = CLASSES[i]
@@ -209,7 +225,39 @@ def compute_metrics(
         metrics[f"{cls_name}_f1"] = round(f1, 4)
         f1_list.append(f1)
 
-    metrics["macro_f1"] = round(float(np.mean(f1_list)), 4)
+    metrics["macro_f1"] = round(float(np.mean(f1_list)), 4) if f1_list else 0.0
+
+    # Per-class optimal threshold calibration across t in np.linspace(0.30, 0.85, 56)
+    candidate_thresholds = np.linspace(0.30, 0.85, 56)
+    optimal_thresholds: Dict[str, float] = {}
+    calibrated_f1_list = []
+
+    for i in range(num_classes):
+        cls_name = CLASSES[i]
+        targs_c = targets[:, i]
+        probs_c = all_preds[:, i]
+        best_t = float(threshold)
+        best_c_f1 = -1.0
+
+        if len(targs_c) > 0 and np.sum(targs_c == 1) > 0:
+            for t in candidate_thresholds:
+                preds_c = (probs_c >= t).astype(int)
+                tp_c = int(np.sum((preds_c == 1) & (targs_c == 1)))
+                fp_c = int(np.sum((preds_c == 1) & (targs_c == 0)))
+                fn_c = int(np.sum((preds_c == 0) & (targs_c == 1)))
+                denom_c = 2 * tp_c + fp_c + fn_c
+                f1_t = (2.0 * tp_c) / denom_c if denom_c > 0 else 0.0
+                if f1_t > best_c_f1:
+                    best_c_f1 = f1_t
+                    best_t = float(t)
+        else:
+            best_c_f1 = float(metrics.get(f"{cls_name}_f1", 0.0))
+
+        optimal_thresholds[cls_name] = round(float(best_t), 2)
+        calibrated_f1_list.append(max(0.0, best_c_f1))
+
+    metrics["optimal_thresholds"] = optimal_thresholds
+    metrics["calibrated_macro_f1"] = round(float(np.mean(calibrated_f1_list)), 4) if calibrated_f1_list else 0.0
 
     # Clean sky metric: true clean vs predicted clean
     pred_clean = (np.sum(binary_preds, axis=1) == 0)
@@ -478,13 +526,14 @@ def main():
         scheduler.step()
 
         elapsed = time.time() - t0
-        macro_f1 = metrics.get("macro_f1", 0.0)
-        clean_acc = metrics.get("clean_sky_accuracy", 0.0)
+        macro_f1 = float(metrics.get("macro_f1", 0.0))
+        calib_f1 = float(metrics.get("calibrated_macro_f1", macro_f1))
+        clean_acc = float(metrics.get("clean_sky_accuracy", 0.0))
 
         print(
             f"Epoch [{epoch:02d}/{args.epochs:02d}] "
             f"Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} | "
-            f"Macro F1: {macro_f1:.4f} | Clean Acc: {clean_acc:.4f} | Time: {elapsed:.1f}s"
+            f"Macro F1: {macro_f1:.4f} (Calib: {calib_f1:.4f}) | Clean Acc: {clean_acc:.4f} | Time: {elapsed:.1f}s"
         )
 
         history.append({
@@ -506,9 +555,11 @@ def main():
                 "model_name": args.model,
                 "state_dict": model.state_dict(),
                 "metrics": metrics,
+                "optimal_thresholds": metrics.get("optimal_thresholds", {}),
+                "calibrated_macro_f1": metrics.get("calibrated_macro_f1", macro_f1),
                 "input_mode": args.input_mode,
             }, out_dir / "best_model.pt")
-            print(f"  --> Saved new best checkpoint (Macro F1: {best_f1:.4f})")
+            print(f"  --> Saved new best checkpoint (Macro F1: {best_f1:.4f}, Calibrated F1: {calib_f1:.4f})")
 
         # Always save last model checkpoint with full optimizer, scheduler and epoch state
         torch.save({
@@ -525,6 +576,8 @@ def main():
             },
             "best_f1": best_f1,
             "metrics": metrics,
+            "optimal_thresholds": metrics.get("optimal_thresholds", {}),
+            "calibrated_macro_f1": metrics.get("calibrated_macro_f1", macro_f1),
             "history": history,
             "input_mode": args.input_mode,
         }, out_dir / "last_model.pt")

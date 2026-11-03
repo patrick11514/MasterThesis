@@ -12,7 +12,7 @@ import json
 import os
 from pathlib import Path
 import random
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -25,6 +25,7 @@ from fits_utils import (
     to_stf_u8,
     compute_tile_metadata,
     calculate_channel_stats,
+    calculate_stf,
     CLASSES,
 )
 from synthetic_defects import inject_random_synthetic_defect
@@ -215,9 +216,10 @@ def extract_tile_yolo_segments(
     <class_id> <x1> <y1> <x2> <y2> ... <xn> <yn>
     Converts polygons, thick line ribbons (for streaks/planes), and boxes to valid polygon masks.
     If a star_trail or unfocused_star box is larger than 256x256, automatically extracts tight
-    contours around the actual bright stars inside that box using tile_u8.
+    contours around the actual bright stars inside that box using tile_u8 (capped at top 30 per tile).
     """
     yolo_lines = []
+    star_contours_emitted = 0
     for item in items:
         lbl = item.get("label")
         if lbl not in CLASSES:
@@ -251,15 +253,18 @@ def extract_tile_yolo_segments(
                     star_mask = (lum > c_thresh).astype(np.uint8) * 255
 
                     contours, _ = cv2.findContours(star_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                    valid_star_contours = [c for c in contours if cv2.contourArea(c) >= 8.0]
+                    valid_star_contours.sort(key=cv2.contourArea, reverse=True)
                     extracted_stars = False
-                    for c in contours:
-                        if cv2.contourArea(c) < 8.0:
-                            continue
+                    for c in valid_star_contours:
+                        if star_contours_emitted >= 30:
+                            break
                         approx = cv2.approxPolyDP(c, epsilon=1.0, closed=True)
                         pts = approx.reshape(-1, 2)
                         if len(pts) < 3:
                             continue
                         extracted_stars = True
+                        star_contours_emitted += 1
                         norm_coords = []
                         for px, py in pts:
                             gx = px + x_start
@@ -292,6 +297,12 @@ def extract_tile_yolo_segments(
             bw = int(round(float(item.get("width", 0))))
             bh = int(round(float(item.get("height", 0))))
             cv2.rectangle(mask, (bx, by), (bx + bw, by + bh), 255, -1)
+
+        # Skip emitting YOLO segments for 2D area defects if clipped tile area is < 10%
+        if lbl in ("cloud", "obstruction"):
+            clipped_area_ratio = float(np.count_nonzero(mask)) / float(tile_size * tile_size)
+            if clipped_area_ratio < 0.10:
+                continue
 
         # Extract external contours
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -372,15 +383,24 @@ def _slice_frame_array(
     Slices an arbitrary full-resolution [H, W, 3] linear RGB float32 array into 512x512 tiles.
     """
     h, w, _ = rgb_f32.shape
-    frame_med, frame_mad = calculate_channel_stats(rgb_f32, stride=100)
+    frame_bg_median = float(np.median(rgb_f32))
+    _, frame_mad = calculate_channel_stats(rgb_f32, stride=100)
+
+    # Precompute full-frame per-channel STF parameters so synthetic tiles share the exact frame stretch
+    ch_medians, ch_mads = [], []
+    for c_idx_stf in range(3):
+        c_med, c_mad = calculate_channel_stats(rgb_f32[:, :, c_idx_stf], stride=100)
+        ch_medians.append(c_med)
+        ch_mads.append(c_mad)
+    frame_stf_params = calculate_stf(ch_medians, ch_mads, rgb_linked=rgb_linked)
 
     # Pre-normalize the full image to desired float representation
     if norm_mode == "asinh":
         norm_f32 = to_asinh_f32(rgb_f32)
     else:
-        norm_f32 = to_auto_stf_f32(rgb_f32, rgb_linked=rgb_linked)
+        norm_f32 = to_auto_stf_f32(rgb_f32, rgb_linked=rgb_linked, stf_params=frame_stf_params)
 
-    preview_u8 = to_stf_u8(rgb_f32, rgb_linked=rgb_linked)
+    preview_u8 = to_stf_u8(rgb_f32, rgb_linked=rgb_linked, stf_params=frame_stf_params)
 
     records = []
     f32_dir = out_dir / "tiles_f32"
@@ -411,7 +431,8 @@ def _slice_frame_array(
                 c_idx = CLASSES.index(lbl)
 
                 if lbl in ("cloud", "obstruction"):
-                    # Area-weighted soft label calculation
+                    # 2D Area Defects: require >= 20% tile overlap for binary CNN label,
+                    # and >= 10% clipped area for YOLO segmentation mask emission
                     mask = np.zeros((tile_size, tile_size), dtype=np.uint8)
                     itype = b.get("type", "box")
                     if itype == "polygon" and "points" in b and len(b["points"]) >= 3:
@@ -433,12 +454,12 @@ def _slice_frame_array(
                         bh = int(round(float(b.get("height", 0))))
                         cv2.rectangle(mask, (bx, by), (bx + bw, by + bh), 255, -1)
 
-                    coverage = float(np.count_nonzero(mask)) / float(tile_size * tile_size)
-                    if coverage >= 0.02:
-                        soft_val = round(min(1.0, coverage / 0.25), 4)
-                        labels[c_idx] = max(labels[c_idx], soft_val)
-                        matched_classes.append(lbl)
+                    tile_overlap_ratio = float(np.count_nonzero(mask)) / float(tile_size * tile_size)
+                    if tile_overlap_ratio >= 0.10:
                         valid_tile_boxes.append(b)
+                    if tile_overlap_ratio >= 0.20:
+                        labels[c_idx] = 1.0
+                        matched_classes.append(lbl)
 
                 elif lbl in ("star_trail", "unfocused_star"):
                     if item_intersects_tile(b, x_start, y_start, tile_size):
@@ -459,33 +480,33 @@ def _slice_frame_array(
 
             is_clean = (sum(labels) == 0.0)
 
-            # Synthetic defect injection: applied only to training split on clean tiles
-            if (not is_val) and is_clean and (random.random() < synth_prob):
-                syn_tile, syn_cls, syn_annot = inject_random_synthetic_defect(tile_linear, frame_med, frame_mad)
+            # Synthetic defect injection: applied only to training split on clean tiles with no partial defects
+            if (not is_val) and is_clean and (not valid_tile_boxes) and (random.random() < synth_prob):
+                syn_tile, syn_cls, syn_annot = inject_random_synthetic_defect(tile_linear, frame_bg_median, frame_mad)
                 if syn_cls is not None:
                     tile_linear = syn_tile
                     c_idx = CLASSES.index(syn_cls)
 
                     if syn_cls in ("cloud", "obstruction"):
-                        # Calculate coverage for soft target
                         s_mask = np.zeros((tile_size, tile_size), dtype=np.uint8)
                         if isinstance(syn_annot, dict) and syn_annot.get("type") == "polygon":
                             pts = np.array(syn_annot["points"], dtype=np.int32)
                             cv2.fillPoly(s_mask, [pts], 255)
                         cov = float(np.count_nonzero(s_mask)) / float(tile_size * tile_size)
-                        labels[c_idx] = round(min(1.0, max(0.20, cov / 0.25)), 4)
+                        labels[c_idx] = 1.0 if cov >= 0.20 else 0.0
                     else:
                         labels[c_idx] = 1.0
 
-                    matched_classes.append(syn_cls)
-                    is_clean = False
+                    if labels[c_idx] > 0.0:
+                        matched_classes.append(syn_cls)
+                        is_clean = False
 
-                    # Recompute stretched f32 and u8 for modified linear tile
+                    # Recompute stretched f32 and u8 for modified linear tile using full-frame STF parameters
                     if norm_mode == "asinh":
                         tile_f32 = to_asinh_f32(tile_linear)
                     else:
-                        tile_f32 = to_auto_stf_f32(tile_linear, rgb_linked=rgb_linked)
-                    tile_u8 = to_stf_u8(tile_linear, rgb_linked=rgb_linked)
+                        tile_f32 = to_auto_stf_f32(tile_linear, rgb_linked=rgb_linked, stf_params=frame_stf_params)
+                    tile_u8 = to_stf_u8(tile_linear, rgb_linked=rgb_linked, stf_params=frame_stf_params)
 
                     syn_items = [syn_annot] if isinstance(syn_annot, dict) else (syn_annot or [])
                     yolo_segments = extract_tile_yolo_segments(syn_items, 0, 0, tile_size=tile_size, tile_u8=tile_u8)
@@ -495,7 +516,7 @@ def _slice_frame_array(
                 yolo_segments = extract_tile_yolo_segments(valid_tile_boxes, x_start, y_start, tile_size=tile_size, tile_u8=tile_u8)
 
             # Compute normalized 6-element metadata vector for tile
-            meta_vec = compute_tile_metadata(tile_linear, tile_f32, frame_med, frame_mad, pixel_scale)
+            meta_vec = compute_tile_metadata(tile_linear, tile_f32, frame_bg_median, frame_mad, pixel_scale)
 
             tile_id = f"{tile_prefix}_x{x_start}_y{y_start}"
             npy_path = f32_dir / f"{tile_id}.npy"

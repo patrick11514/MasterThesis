@@ -304,19 +304,21 @@ def compute_tile_metadata(
     """
     Computes a normalized 6-element float32 optical and statistical metadata vector:
     meta[0]: Normalized pixel scale (arcsec/px)
-    meta[1]: Relative background median vs full frame
-    meta[2]: Relative noise / contrast ratio vs full frame
+    meta[1]: Frame-relative background ratio (tile_bg_median / (frame_bg_median + 1e-6))
+    meta[2]: Relative noise / contrast (SNR) ratio vs full frame
     meta[3]: Normalized star count in tile
     meta[4]: Mean stellar FWHM (px)
     meta[5]: Mean stellar eccentricity [0.0, 1.0]
     """
     # 0. Normalized Pixel Scale
-    m0 = float(np.log1p(max(0.0, float(pixel_scale))) / 2.5)
+    m0 = float(np.clip(np.log1p(max(0.0, float(pixel_scale))) / 2.5, 0.0, 2.0))
 
-    # 1. & 2. Tile Linear Statistics
-    tile_med, tile_mad = calculate_channel_stats(tile_linear_rgb, stride=16)
-    m1 = float(np.clip((tile_med / max(float(frame_median), 1e-6)) / 3.0, 0.0, 2.0))
-    m2 = float(np.clip((tile_mad / max(float(frame_mad), 1e-6)) / 3.0, 0.0, 2.0))
+    # 1. & 2. Tile Linear Statistics (Frame-Relative Background Ratio & SNR/Noise Ratio)
+    tile_bg_median = float(np.median(tile_linear_rgb))
+    _, tile_mad = calculate_channel_stats(tile_linear_rgb, stride=16)
+    bg_ratio = float(tile_bg_median / (max(0.0, float(frame_median)) + 1e-6))
+    m1 = float(np.clip(bg_ratio, 0.0, 3.0))
+    m2 = float(np.clip((tile_mad / (max(0.0, float(frame_mad)) + 1e-6)) / 3.0, 0.0, 2.0))
 
     # STF tile luminance for stellar blob analysis
     if tile_stf_rgb.ndim == 3:
@@ -354,13 +356,13 @@ def compute_tile_metadata(
             valid_blobs.append((area, lbl, x, y, w, h, peak_val))
 
     star_count = len(valid_blobs)
-    m3 = float(min(1.0, star_count / 50.0))
+    m3 = float(np.clip(star_count / 50.0, 0.0, 1.0))
 
     if star_count > 0:
         areas = np.array([b[0] for b in valid_blobs], dtype=np.float32)
         fwhm_px = 2.0 * np.sqrt(areas / np.pi)
         mean_fwhm = float(np.mean(fwhm_px))
-        m4 = float(min(1.0, mean_fwhm / 15.0))
+        m4 = float(np.clip(mean_fwhm / 15.0, 0.0, 1.0))
 
         # Top 15 brightest stellar blobs for eccentricity
         valid_blobs.sort(key=lambda b: b[6], reverse=True)
@@ -388,7 +390,8 @@ def compute_tile_metadata(
         m4 = 0.0
         m5 = 0.0
 
-    return [round(m0, 4), round(m1, 4), round(m2, 4), round(m3, 4), round(m4, 4), round(m5, 4)]
+    raw_vec = [m0, m1, m2, m3, m4, m5]
+    return [round(float(v) if math.isfinite(v) else 0.0, 4) for v in raw_vec]
 
 
 def to_auto_stf_f32(
@@ -396,25 +399,27 @@ def to_auto_stf_f32(
     shadows_clipping: float = -2.80,
     target_bg: float = 0.25,
     rgb_linked: bool = True,
+    stf_params: Optional[list[Tuple[float, float, float]]] = None,
 ) -> np.ndarray:
     """
     Transforms unified 3-channel RGB float32 into continuous AutoSTF float32 [0.0, 1.0].
     Preserves full 32-bit floating point precision (no 8-bit quantization).
     """
     assert img_rgb.ndim == 3 and img_rgb.shape[2] == 3, "Input must be [H, W, 3]"
-    medians, mads = [], []
-    for c in range(3):
-        med, mad = calculate_channel_stats(img_rgb[:, :, c], stride=100)
-        medians.append(med)
-        mads.append(mad)
+    if stf_params is None:
+        medians, mads = [], []
+        for c in range(3):
+            med, mad = calculate_channel_stats(img_rgb[:, :, c], stride=100)
+            medians.append(med)
+            mads.append(mad)
 
-    stf_params = calculate_stf(
-        medians,
-        mads,
-        rgb_linked=rgb_linked,
-        shadows_clipping=shadows_clipping,
-        target_bg=target_bg,
-    )
+        stf_params = calculate_stf(
+            medians,
+            mads,
+            rgb_linked=rgb_linked,
+            shadows_clipping=shadows_clipping,
+            target_bg=target_bg,
+        )
 
     out = np.zeros_like(img_rgb, dtype=np.float32)
     for c in range(3):
@@ -451,6 +456,7 @@ def to_stf_u8(
     target_bg: float = 0.25,
     rgb_linked: bool = True,
     mode: str = "stf",
+    stf_params: Optional[list[Tuple[float, float, float]]] = None,
 ) -> np.ndarray:
     """
     Renders 8-bit RGB image [H, W, 3] in uint8 [0..255] for visual preview and tagging UI.
@@ -467,6 +473,7 @@ def to_stf_u8(
             shadows_clipping=shadows_clipping,
             target_bg=target_bg,
             rgb_linked=rgb_linked,
+            stf_params=stf_params,
         )
     return np.clip(stretched * 255.0, 0, 255).astype(np.uint8)
 

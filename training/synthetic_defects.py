@@ -368,40 +368,115 @@ def inject_synthetic_obstruction(
     bg_mad: float,
 ) -> Tuple[np.ndarray, str, Dict]:
     """
-    Injects an opaque or semi-translucent boundary obstruction (e.g. roof edge, telescope pier, cable).
-    Creates a random edge/corner polygon, attenuates signal, and adds realistic Gaussian noise.
+    Injects an opaque or semi-translucent boundary obstruction (e.g. roof edge, telescope pier, tree branch, cable).
+    - Uses per-channel linear statistics (c0_ch, med_ch, mad_ch) so obstructions render as realistic
+      black, neutral dark gray, or subtle ambient-lit colors (warm amber/brown, olive foliage, dim red)
+      after unlinked AutoSTF rather than turning bright blue.
+    - Randomizes edge blur/diffusion (from soft edges to heavily defocused foreground gradients)
+      and opacity (opaque vs. partially transparent/diffused).
     """
     h, w, c = linear_tile.shape
 
-    # Choose a corner: 0=top-left, 1=top-right, 2=bottom-right, 3=bottom-left
-    corner = random.randint(0, 3)
-    span_x = random.uniform(120.0, 320.0)
-    span_y = random.uniform(120.0, 320.0)
+    # Generate a corner or edge-wedge polygon covering >= 20% of the 512x512 tile
+    shape_mode = random.choice(["corner", "corner", "edge"])
+    if shape_mode == "corner":
+        corner = random.randint(0, 3)
+        span_x = random.uniform(280.0, 430.0)
+        span_y = random.uniform(280.0, 430.0)
 
-    if corner == 0:  # top-left
-        poly_pts = [[0.0, 0.0], [span_x, 0.0], [span_x * 0.7, span_y * 0.8], [0.0, span_y]]
-    elif corner == 1:  # top-right
-        poly_pts = [[w - span_x, 0.0], [float(w), 0.0], [float(w), span_y], [w - span_x * 0.7, span_y * 0.8]]
-    elif corner == 2:  # bottom-right
-        poly_pts = [[w - span_x * 0.8, h - span_y * 0.7], [float(w), h - span_y], [float(w), float(h)], [w - span_x, float(h)]]
-    else:  # bottom-left
-        poly_pts = [[0.0, h - span_y], [span_x * 0.8, h - span_y * 0.7], [span_x, float(h)], [0.0, float(h)]]
+        if corner == 0:  # top-left
+            poly_pts = [[0.0, 0.0], [span_x, 0.0], [span_x * 0.72, span_y * 0.82], [0.0, span_y]]
+        elif corner == 1:  # top-right
+            poly_pts = [[w - span_x, 0.0], [float(w), 0.0], [float(w), span_y], [w - span_x * 0.72, span_y * 0.82]]
+        elif corner == 2:  # bottom-right
+            poly_pts = [[w - span_x * 0.82, h - span_y * 0.72], [float(w), h - span_y], [float(w), float(h)], [w - span_x, float(h)]]
+        else:  # bottom-left
+            poly_pts = [[0.0, h - span_y], [span_x * 0.82, h - span_y * 0.72], [span_x, float(h)], [0.0, float(h)]]
+    else:
+        edge = random.randint(0, 3)
+        d1 = random.uniform(135.0, 230.0)
+        d2 = random.uniform(135.0, 230.0)
+        if edge == 0:  # top band
+            poly_pts = [[0.0, 0.0], [float(w), 0.0], [float(w), d2], [0.0, d1]]
+        elif edge == 1:  # bottom band
+            poly_pts = [[0.0, h - d1], [float(w), h - d2], [float(w), float(h)], [0.0, float(h)]]
+        elif edge == 2:  # left band
+            poly_pts = [[0.0, 0.0], [d1, 0.0], [d2, float(h)], [0.0, float(h)]]
+        else:  # right band
+            poly_pts = [[w - d1, 0.0], [float(w), 0.0], [float(w), float(h)], [w - d2, float(h)]]
 
     pts_np = np.array(poly_pts, dtype=np.int32)
     binary_mask = np.zeros((h, w), dtype=np.float32)
     cv2.fillPoly(binary_mask, [pts_np], 1.0)
 
-    # Soften edge with Gaussian blur (9..21 px)
-    ksize = random.choice([9, 13, 17, 21])
-    sigma = random.uniform(3.0, 7.0)
+    # Edge diffusion: 40% moderately soft edge, 60% heavily blurred/diffused out-of-focus edge
+    if random.random() < 0.40:
+        sigma = random.uniform(6.0, 14.0)
+    else:
+        sigma = random.uniform(16.0, 42.0)
+    ksize = int(math.ceil(sigma * 3.5)) * 2 + 1
     smooth_mask = cv2.GaussianBlur(binary_mask, (ksize, ksize), sigmaX=sigma, sigmaY=sigma)
     smooth_mask_3d = np.repeat(smooth_mask[:, :, np.newaxis], c, axis=2)
 
-    # Attenuation 85% to 98%
-    attenuation = random.uniform(0.85, 0.98)
-    simulated_dark = bg_med + np.random.normal(0.0, max(float(bg_mad), 1e-5), (h, w, c)).astype(np.float32)
+    # Opacity / transparency: 55% opaque obstacle, 45% semi-transparent / diffused obstacle
+    if random.random() < 0.55:
+        attenuation = random.uniform(0.88, 0.99)
+    else:
+        attenuation = random.uniform(0.48, 0.82)
 
-    modified = linear_tile * (1.0 - smooth_mask_3d * attenuation) + simulated_dark * (smooth_mask_3d * attenuation)
+    # Choose color palette in STF-invariant per-channel [c0_ch .. med_ch] coordinates:
+    # 55% pure black / deep shadow, 20% neutral dark gray, 25% subtle ambient-lit color
+    palette_roll = random.random()
+    if palette_roll < 0.55:
+        base_alpha = random.uniform(0.0, 0.25)
+        alphas = [
+            max(0.0, base_alpha + random.uniform(-0.02, 0.02)),
+            max(0.0, base_alpha + random.uniform(-0.02, 0.02)),
+            max(0.0, base_alpha + random.uniform(-0.02, 0.02)),
+        ]
+    elif palette_roll < 0.75:
+        base_alpha = random.uniform(0.25, 0.65)
+        alphas = [
+            max(0.0, base_alpha + random.uniform(-0.04, 0.04)),
+            max(0.0, base_alpha + random.uniform(-0.04, 0.04)),
+            max(0.0, base_alpha + random.uniform(-0.04, 0.04)),
+        ]
+    else:
+        color_kind = random.choice(["warm_amber", "olive_foliage", "dim_red"])
+        if color_kind == "warm_amber":
+            a_r = random.uniform(0.55, 1.10)
+            a_g = a_r * random.uniform(0.65, 0.85)
+            a_b = a_r * random.uniform(0.25, 0.50)
+            alphas = [a_r, a_g, a_b]
+        elif color_kind == "olive_foliage":
+            a_g = random.uniform(0.45, 0.88)
+            a_r = a_g * random.uniform(0.65, 0.85)
+            a_b = a_g * random.uniform(0.35, 0.65)
+            alphas = [a_r, a_g, a_b]
+        else:  # dim_red
+            a_r = random.uniform(0.60, 1.15)
+            a_g = random.uniform(0.12, 0.38)
+            a_b = random.uniform(0.12, 0.38)
+            alphas = [a_r, a_g, a_b]
+
+    # Build per-channel obstruction fill anchored to each channel's own linear median and MAD
+    simulated_obs = np.zeros((h, w, c), dtype=np.float32)
+    for ch in range(c):
+        ch_data = linear_tile[:, :, ch]
+        ch_med = float(np.median(ch_data))
+        ch_mad = float(np.median(np.abs(ch_data - ch_med)))
+        eff_mad = max(ch_mad, float(bg_mad) * 0.5, 1e-5)
+        scaled_mad = 1.4826 * eff_mad
+
+        # If synthetic test tile has artificially high constant value >> bg_med, anchor to min(ch_med, bg_med)
+        ref_med = min(ch_med, float(bg_med) * 1.5) if float(bg_med) > 0 and ch_med > float(bg_med) * 3.0 else ch_med
+        c0_ch = max(0.0, ref_med - 2.80 * scaled_mad)
+        target_level = c0_ch + alphas[ch % 3] * max(ref_med - c0_ch, scaled_mad)
+        ch_noise = np.random.normal(0.0, eff_mad * 0.8, (h, w)).astype(np.float32)
+        simulated_obs[:, :, ch] = np.clip(target_level + ch_noise, 0.0, 1.0)
+
+    eff_mask = smooth_mask_3d * attenuation
+    modified = linear_tile * (1.0 - eff_mask) + simulated_obs * eff_mask
     modified = np.clip(modified, 0.0, 1.0)
 
     annot = {
