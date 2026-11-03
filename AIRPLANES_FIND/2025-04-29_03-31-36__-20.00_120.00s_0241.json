@@ -10,7 +10,7 @@
   "candidate_hit_tiles": 2,
   "boxes": [
     {
-      "id": "airplane_yolo_1793215853201_0",
+      "id": "airplane_yolo_1793712904180_0",
       "label": "satellite_streak",
       "confidence": 0.818,
       "type": "polygon",
@@ -362,7 +362,7 @@
       "height": 446.7745361328125
     },
     {
-      "id": "airplane_yolo_1793215853201_1",
+      "id": "airplane_yolo_1793712904180_1",
       "label": "satellite_streak",
       "confidence": 0.67,
       "type": "polygon",

@@ -1,0 +1,1 @@
+training/mount_astro.sh

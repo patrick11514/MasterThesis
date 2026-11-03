@@ -10,7 +10,7 @@
   "candidate_hit_tiles": 2,
   "boxes": [
     {
-      "id": "airplane_yolo_1793216025305_0",
+      "id": "airplane_yolo_1793712969420_0",
       "label": "satellite_streak",
       "confidence": 0.709,
       "type": "polygon",
@@ -62,7 +62,7 @@
       "height": 93.10791015625
     },
     {
-      "id": "airplane_yolo_1793216025305_1",
+      "id": "airplane_yolo_1793712969420_1",
       "label": "cloud",
       "confidence": 0.477,
       "type": "polygon",
@@ -90,7 +90,7 @@
       "height": 512.0
     },
     {
-      "id": "airplane_yolo_1793216025305_2",
+      "id": "airplane_yolo_1793712969420_2",
       "label": "satellite_streak",
       "confidence": 0.883,
       "type": "polygon",

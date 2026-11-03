@@ -10,7 +10,7 @@
   "candidate_hit_tiles": 4,
   "boxes": [
     {
-      "id": "airplane_cnn_1793220491741_0",
+      "id": "airplane_cnn_1793714601990_0",
       "label": "airplane",
       "type": "box",
       "x": 1024.0,

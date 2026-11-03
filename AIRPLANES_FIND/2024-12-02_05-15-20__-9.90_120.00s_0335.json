@@ -10,7 +10,7 @@
   "candidate_hit_tiles": 2,
   "boxes": [
     {
-      "id": "airplane_yolo_1793219713530_0",
+      "id": "airplane_yolo_1793714318884_0",
       "label": "cloud",
       "confidence": 0.463,
       "type": "polygon",

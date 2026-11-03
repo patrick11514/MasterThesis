@@ -51,7 +51,7 @@ if conda_prefix:
                 os.environ["LD_LIBRARY_PATH"] = f"{lib_dir}:{current_ld}" if current_ld else lib_dir
 
 import argparse
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from datetime import datetime
 import json
 from pathlib import Path
@@ -543,7 +543,7 @@ def main():
         return
 
     # 5. Pipelined Multithreaded Execution Setup
-    frame_queue: queue.Queue = queue.Queue(maxsize=max(8, args.workers * 2))
+    frame_queue: queue.Queue = queue.Queue(maxsize=max(8, min(args.workers, 32)))
     stop_event = threading.Event()
     stats_lock = threading.Lock()
 
@@ -558,23 +558,47 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
 
     def producer_worker(file_list: List[Path]):
-        """CPU worker fetching and preprocessing FITS frames into the queue."""
+        """CPU worker fetching and preprocessing FITS frames into the queue concurrently."""
+        file_iter = iter(file_list)
+        in_flight = {}
+        max_in_flight = max(args.workers, 4)
+
         with ThreadPoolExecutor(max_workers=args.workers) as executor:
-            for fits_path in file_list:
+            # Seed initial batch of parallel tasks
+            for _ in range(max_in_flight):
                 if stop_event.is_set():
                     break
-                future = executor.submit(preprocess_frame, fits_path, args.tile_size, args.stride)
-                try:
-                    preloaded = future.result()
-                    if preloaded is not None:
-                        while not stop_event.is_set():
-                            try:
-                                frame_queue.put(preloaded, timeout=0.5)
-                                break
-                            except queue.Full:
-                                pass
-                except Exception:
-                    pass
+                next_path = next(file_iter, None)
+                if next_path is None:
+                    break
+                fut = executor.submit(preprocess_frame, next_path, args.tile_size, args.stride)
+                in_flight[fut] = next_path
+
+            # Continuous worker pipeline
+            while in_flight and not stop_event.is_set():
+                done, _ = wait(in_flight.keys(), return_when=FIRST_COMPLETED)
+                for fut in done:
+                    in_flight.pop(fut, None)
+                    try:
+                        preloaded = fut.result()
+                        if preloaded is not None:
+                            while not stop_event.is_set():
+                                try:
+                                    frame_queue.put(preloaded, timeout=0.2)
+                                    break
+                                except queue.Full:
+                                    pass
+                    except Exception:
+                        pass
+
+                    # Keep worker threads saturated
+                    if not stop_event.is_set():
+                        next_path = next(file_iter, None)
+                        if next_path is not None:
+                            fut_next = executor.submit(
+                                preprocess_frame, next_path, args.tile_size, args.stride
+                            )
+                            in_flight[fut_next] = next_path
 
         # Sentinel to signal completion
         frame_queue.put(None)
