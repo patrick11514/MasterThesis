@@ -11,9 +11,12 @@
  *   node scripts/sync_local.js [target_folder] [source_folder] [options]
  *
  * Options:
+ *   --quick, -q          Fast streaming mode: use remote 'send' and local 'receive' (zstd-compressed stream)
  *   --local, -l          Search on local machine (localhost) instead of remote SSH
  *   --source-dir, -s <p> Source search directory (aliases: --src-dir, --dir, --remote-dir)
  *   --host <host>        SSH host alias or IP (default: proxmox; 'localhost'/'local' for local sync)
+ *   --refresh            Rebuild remote file index cache
+ *   --no-cache           Disable index caching
  *   --dry-run            Show missing and found files without transferring
  *   --help, -h           Show help message
  */
@@ -51,24 +54,32 @@ ${colors.bold}Arguments:${colors.reset}
                        Can be a folder on this PC (localhost) or a remote directory path
 
 ${colors.bold}Options:${colors.reset}
+  --quick, -q          Fast streaming mode: use remote 'send' and local 'receive' (zstd stream)
+  --rsync              Force legacy rsync transfer mode (default: rsync)
   --local, -l          Search on this local machine (localhost) instead of remote SSH host
   --source-dir, -s <p> Source search directory for raw images (aliases: --src-dir, --dir, --remote-dir)
   --host <name>        SSH remote host (default: proxmox). Set to 'localhost' or 'local' for local sync
+  --refresh            Rebuild remote file index cache (find_astro_files.py)
+  --no-cache           Disable remote file index caching
   --dry-run            Scan and locate files without downloading/copying
   --help, -h           Show this help message
 
 ${colors.bold}Examples:${colors.reset}
-  # Sync from another folder on this machine (localhost):
-  ./sync_local.sh /path/to/my/local/astro_images
-  ./sync_local.sh --local --source-dir /media/external/ASTRO
-  node scripts/sync_local.js TRAINING_FILES /mnt/data/fits
+  # Quick streaming sync from Proxmox over SSH:
+  ./sync_local.sh --quick
+  ./sync_local.sh -q
 
   # Sync from remote Proxmox storage over SSH:
   ./sync_local.sh
   ./sync_local.sh --host proxmox --remote-dir /mnt/HDD/ASTRO
 
+  # Sync from another folder on this machine (localhost):
+  ./sync_local.sh /path/to/my/local/astro_images
+  ./sync_local.sh --local --source-dir /media/external/ASTRO
+  node scripts/sync_local.js TRAINING_FILES /mnt/data/fits
+
   # Dry run (locate files without copying):
-  ./sync_local.sh /path/to/local/astro_images --dry-run
+  ./sync_local.sh --quick --dry-run
 `);
 }
 
@@ -90,6 +101,9 @@ let isDryRun = false;
 let isLocalFlag = Boolean(process.env.LOCAL_DIR);
 let hostExplicitlySet = Boolean(process.env.REMOTE_HOST);
 let sourceDirExplicitlySet = Boolean(process.env.LOCAL_DIR || process.env.SOURCE_DIR || process.env.SRC_DIR || process.env.REMOTE_DIR);
+let isQuick = Boolean(process.env.SYNC_QUICK || process.env.QUICK);
+let refreshCache = false;
+let noCache = false;
 
 const positionalArgs = [];
 
@@ -98,6 +112,14 @@ for (let i = 0; i < args.length; i++) {
   if (arg === '--help' || arg === '-h') {
     printHelp();
     process.exit(0);
+  } else if (arg === '--quick' || arg === '-q' || arg === '--fast' || arg === '--stream' || arg === '--send-receive') {
+    isQuick = true;
+  } else if (arg === '--no-quick' || arg === '--rsync') {
+    isQuick = false;
+  } else if (arg === '--refresh' || arg === '--refresh-cache') {
+    refreshCache = true;
+  } else if (arg === '--no-cache') {
+    noCache = true;
   } else if (arg === '--dry-run') {
     isDryRun = true;
   } else if (arg === '--local' || arg === '-l' || arg === '--localhost') {
@@ -242,6 +264,7 @@ if (isLocal) {
   console.log(`${colors.dim}Sync Mode:${colors.reset}          ${colors.bold}${colors.blue}Remote SSH (${remoteHost})${colors.reset}`);
   console.log(`${colors.dim}Remote search dir:${colors.reset} ${colors.bold}${sourceDir}${colors.reset}`);
 }
+console.log(`${colors.dim}Transfer Engine:${colors.reset}    ${isQuick ? `${colors.bold}${colors.magenta}Quick Stream (send | receive)${colors.reset}` : `${colors.bold}rsync (batches of 20)${colors.reset}`}`);
 if (isDryRun) {
   console.log(`${colors.yellow}${colors.bold}[DRY RUN MODE]${colors.reset} No files will be transferred.`);
 }
@@ -510,8 +533,22 @@ async function searchRemoteFiles() {
   return new Promise((resolve, reject) => {
     const inputLines = missingImages.map(m => m.targetName).join('\n') + '\n';
 
-    const b64Script = Buffer.from(remoteFinderScript).toString('base64');
-    const remotePyCommand = `if command -v find_astro_files.py >/dev/null 2>&1; then find_astro_files.py --dir ${JSON.stringify(sourceDir)}; elif [ -f ~/find_astro_files.py ]; then python3 ~/find_astro_files.py --dir ${JSON.stringify(sourceDir)}; else python3 -c "import base64; exec(base64.b64decode('${b64Script}').decode('utf-8'))" ${JSON.stringify(sourceDir)}; fi`;
+    // Prefer find_astro_files.py with caching from local repo if available
+    const remoteScriptFile = path.join(__dirname, 'remote', 'find_astro_files.py');
+    let scriptContent = remoteFinderScript;
+    if (fs.existsSync(remoteScriptFile)) {
+      try {
+        scriptContent = fs.readFileSync(remoteScriptFile, 'utf8');
+      } catch (e) {}
+    }
+
+    const b64Script = Buffer.from(scriptContent).toString('base64');
+    const extraPyFlags = [];
+    if (refreshCache) extraPyFlags.push('--refresh');
+    if (noCache) extraPyFlags.push('--no-cache');
+    const flagsStr = extraPyFlags.length > 0 ? ' ' + extraPyFlags.join(' ') : '';
+
+    const remotePyCommand = `if command -v find_astro_files.py >/dev/null 2>&1; then find_astro_files.py --dir ${JSON.stringify(sourceDir)}${flagsStr}; elif [ -x /usr/local/bin/find_astro_files.py ]; then /usr/local/bin/find_astro_files.py --dir ${JSON.stringify(sourceDir)}${flagsStr}; elif [ -f ~/find_astro_files.py ]; then python3 ~/find_astro_files.py --dir ${JSON.stringify(sourceDir)}${flagsStr}; elif [ -f ~/.local/bin/find_astro_files.py ]; then python3 ~/.local/bin/find_astro_files.py --dir ${JSON.stringify(sourceDir)}${flagsStr}; else python3 -c "import base64; exec(base64.b64decode('${b64Script}').decode('utf-8'))" --dir ${JSON.stringify(sourceDir)}${flagsStr}; fi`;
 
     const sshCmdArgs = [
       ...sshControlArgs,
@@ -613,6 +650,16 @@ async function run() {
     process.exit(0);
   }
 
+  if (isQuick) {
+    try {
+      await transferQuick(foundList, targetDir, isLocal, remoteHost, sshControlArgs);
+    } catch (err) {
+      console.error(`\n${colors.red}${colors.bold}Quick stream transfer failed:${colors.reset}`, err.message);
+      process.exit(1);
+    }
+    return;
+  }
+
   const actionVerb = isLocal ? 'Copying' : 'Transferring';
   console.log(`\n${colors.bold}${colors.cyan}${actionVerb} ${foundList.length} files via rsync to ${targetDir}...${colors.reset}\n`);
 
@@ -665,6 +712,173 @@ async function run() {
   }
 
   console.log(`\n${colors.green}${colors.bold}✔ Transfer completed! Successfully synced ${completed} / ${foundList.length} files.${colors.reset}\n`);
+}
+
+// Locate local receive utility
+function findReceiveBinary() {
+  try {
+    const res = spawnSync('which', ['receive'], { encoding: 'utf8' });
+    if (res.status === 0 && res.stdout.trim()) {
+      return res.stdout.trim();
+    }
+  } catch (e) {}
+
+  const candidates = [
+    path.join(os.homedir(), 'scripts', 'receive'),
+    '/usr/local/bin/receive',
+    '/usr/bin/receive',
+  ];
+  for (const cand of candidates) {
+    if (fs.existsSync(cand)) return cand;
+  }
+  return null;
+}
+
+// Fast streaming transfer using remote 'send' and local 'receive'
+async function transferQuick(foundList, targetDir, isLocal, remoteHost, sshControlArgs) {
+  const filePaths = foundList.map(f => f.remotePath);
+  const receiveBin = findReceiveBinary();
+
+  const sourceDesc = isLocal ? 'local storage' : `${remoteHost} ('send -0')`;
+  const sinkDesc = receiveBin ? `'receive -f'` : 'tar extract flat';
+  console.log(`\n${colors.bold}${colors.magenta}Streaming ${foundList.length} files from ${sourceDesc} | ${sinkDesc} into ${targetDir}...${colors.reset}\n`);
+
+  if (isLocal) {
+    await new Promise((resolve, reject) => {
+      let packProc;
+      const hasLocalSend = Boolean(spawnSync('which', ['send'], { encoding: 'utf8' }).stdout.trim());
+      if (hasLocalSend) {
+        packProc = spawn('send', ['-0'], { stdio: ['pipe', 'pipe', 'inherit'] });
+      } else {
+        const hasZstd = Boolean(spawnSync('which', ['zstd'], { encoding: 'utf8' }).stdout.trim());
+        const compCmd = hasZstd ? 'zstd -3 -c' : 'gzip -c';
+        packProc = spawn('bash', ['-c', `tar --null -cf - -T - | ${compCmd}`], {
+          stdio: ['pipe', 'pipe', 'inherit'],
+        });
+      }
+
+      let receiveProc;
+      if (receiveBin) {
+        receiveProc = spawn(receiveBin, ['-f', targetDir], {
+          stdio: ['pipe', 'inherit', 'inherit'],
+        });
+      } else {
+        receiveProc = spawn('bash', ['-c', `tar -xf - -C ${JSON.stringify(targetDir)} --transform='s#^.*/##' --ignore-zeros`], {
+          stdio: ['pipe', 'inherit', 'inherit'],
+        });
+      }
+
+      packProc.stdout.pipe(receiveProc.stdin);
+      packProc.stdout.on('error', () => {});
+      packProc.stdin.on('error', () => {});
+      receiveProc.stdin.on('error', () => {});
+
+      let packCode = null;
+      let receiveCode = null;
+      let packErr = null;
+      let receiveErr = null;
+
+      packProc.on('error', err => { packErr = err; });
+      receiveProc.on('error', err => { receiveErr = err; });
+
+      packProc.on('close', code => {
+        packCode = code;
+        if (receiveCode !== null) checkDone();
+      });
+
+      receiveProc.on('close', code => {
+        receiveCode = code;
+        if (packCode !== null) checkDone();
+      });
+
+      function checkDone() {
+        if (packErr) return reject(packErr);
+        if (receiveErr) return reject(receiveErr);
+        if (packCode !== 0) return reject(new Error(`Pack process exited with code ${packCode}`));
+        if (receiveCode !== 0) return reject(new Error(`Receive process exited with code ${receiveCode}`));
+        resolve();
+      }
+
+      for (const p of filePaths) {
+        packProc.stdin.write(p + '\0');
+      }
+      packProc.stdin.end();
+    });
+  } else {
+    await new Promise((resolve, reject) => {
+      const remoteSendCmd = `if command -v send >/dev/null 2>&1; then send -0; elif [ -x /usr/bin/send ]; then /usr/bin/send -0; elif [ -x /usr/local/bin/send ]; then /usr/local/bin/send -0; else echo "==> 'send' not found on remote, streaming with tar..." >&2; if command -v zstd >/dev/null 2>&1; then tar --null -cf - -T - | zstd -3 -c; else tar --null -cf - -T - | gzip -c; fi; fi`;
+
+      const sshArgs = [
+        ...sshControlArgs,
+        remoteHost,
+        remoteSendCmd,
+      ];
+
+      const sshProc = spawn('ssh', sshArgs, {
+        stdio: ['pipe', 'pipe', 'inherit'], // stderr (pv progress) visible directly in terminal!
+      });
+
+      let receiveProc;
+      if (receiveBin) {
+        receiveProc = spawn(receiveBin, ['-f', targetDir], {
+          stdio: ['pipe', 'inherit', 'inherit'],
+        });
+      } else {
+        const fallbackCmd = `TEMP_FILE=$(mktemp); trap 'rm -f "$TEMP_FILE"' EXIT; cat > "$TEMP_FILE"; if command -v zstd >/dev/null 2>&1 && zstd -t "$TEMP_FILE" >/dev/null 2>&1; then zstd -dc "$TEMP_FILE"; else gzip -dc "$TEMP_FILE"; fi | tar -xf - -C ${JSON.stringify(targetDir)} --transform='s#^.*/##' --ignore-zeros`;
+        receiveProc = spawn('bash', ['-c', fallbackCmd], {
+          stdio: ['pipe', 'inherit', 'inherit'],
+        });
+      }
+
+      sshProc.stdout.pipe(receiveProc.stdin);
+      sshProc.stdout.on('error', () => {});
+      sshProc.stdin.on('error', () => {});
+      receiveProc.stdin.on('error', () => {});
+
+      let sshCode = null;
+      let receiveCode = null;
+      let sshErr = null;
+      let receiveErr = null;
+
+      sshProc.on('error', err => { sshErr = err; });
+      receiveProc.on('error', err => { receiveErr = err; });
+
+      sshProc.on('close', code => {
+        sshCode = code;
+        if (receiveCode !== null) checkDone();
+      });
+
+      receiveProc.on('close', code => {
+        receiveCode = code;
+        if (sshCode !== null) checkDone();
+      });
+
+      function checkDone() {
+        if (sshErr) return reject(sshErr);
+        if (receiveErr) return reject(receiveErr);
+        if (sshCode !== 0) return reject(new Error(`SSH send exited with code ${sshCode}`));
+        if (receiveCode !== 0) return reject(new Error(`Local receive exited with code ${receiveCode}`));
+        resolve();
+      }
+
+      for (const p of filePaths) {
+        sshProc.stdin.write(p + '\0');
+      }
+      sshProc.stdin.end();
+    });
+  }
+
+  // Verify transferred files
+  let verified = 0;
+  for (const item of foundList) {
+    const p1 = path.join(targetDir, item.targetName);
+    const p2 = path.join(targetDir, path.basename(item.remotePath));
+    if ((fs.existsSync(p1) && fs.statSync(p1).size > 0) || (fs.existsSync(p2) && fs.statSync(p2).size > 0)) {
+      verified++;
+    }
+  }
+
+  console.log(`\n${colors.green}${colors.bold}✔ Quick stream transfer completed! Verified ${verified} / ${foundList.length} files in target directory.${colors.reset}\n`);
 }
 
 run().catch(err => {

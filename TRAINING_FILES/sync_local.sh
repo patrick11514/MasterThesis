@@ -5,6 +5,10 @@
 #   ./sync_local.sh [source_dir] [options]
 #
 # Examples:
+#   # High-speed compressed stream using remote 'send' and local 'receive':
+#   ./sync_local.sh --quick
+#   ./sync_local.sh -q
+#
 #   # Search local folder on this PC:
 #   ./sync_local.sh /path/to/local/astro_images
 #   ./sync_local.sh --local --source-dir /media/external/ASTRO
@@ -14,7 +18,7 @@
 #   ./sync_local.sh --host proxmox --remote-dir /mnt/HDD/ASTRO
 #
 #   # Test run without copying:
-#   ./sync_local.sh /path/to/local/astro_images --dry-run
+#   ./sync_local.sh --quick --dry-run
 set -e
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 node "$DIR/../scripts/sync_local.js" "$DIR" "$@"
