@@ -1,0 +1,44 @@
+{
+  "file_name": "2024-12-26_20-58-35__-19.80_120.00s_0058.fits",
+  "width": 3840,
+  "height": 2160,
+  "global_star_trailing": false,
+  "global_cloud": false,
+  "is_clean": false,
+  "favorite": false,
+  "boxes": [
+    {
+      "id": "poly_1793813789438",
+      "label": "airplane",
+      "type": "polygon",
+      "x": -27.0,
+      "y": -24.0,
+      "width": 1616.0,
+      "height": 2075.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": [
+        [
+          1589.0,
+          -9.0
+        ],
+        [
+          -24.0,
+          2051.0
+        ],
+        [
+          -27.0,
+          1390.0
+        ],
+        [
+          1085.0,
+          -24.0
+        ]
+      ],
+      "confidence": null,
+      "thickness": 16.0
+    }
+  ]
+}

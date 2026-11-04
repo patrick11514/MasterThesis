@@ -1,0 +1,158 @@
+{
+  "file_name": "2024-11-03_20-17-32__-10.10_120.00s_0012.fits",
+  "width": 3840,
+  "height": 2160,
+  "global_star_trailing": false,
+  "global_cloud": false,
+  "is_clean": false,
+  "favorite": false,
+  "boxes": [
+    {
+      "id": "poly_1793813721911",
+      "label": "obstruction",
+      "type": "polygon",
+      "x": -32.0,
+      "y": 5.0,
+      "width": 756.0,
+      "height": 1572.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": [
+        [
+          23.0,
+          5.0
+        ],
+        [
+          604.0,
+          824.0
+        ],
+        [
+          724.0,
+          1199.0
+        ],
+        [
+          619.0,
+          1401.0
+        ],
+        [
+          361.0,
+          1574.0
+        ],
+        [
+          211.0,
+          1577.0
+        ],
+        [
+          82.0,
+          1395.0
+        ],
+        [
+          -32.0,
+          1263.0
+        ]
+      ],
+      "confidence": null,
+      "thickness": 16.0
+    },
+    {
+      "id": "poly_1793813724630",
+      "label": "obstruction",
+      "type": "polygon",
+      "x": 534.0,
+      "y": -56.0,
+      "width": 442.0,
+      "height": 255.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": [
+        [
+          534.0,
+          2.0
+        ],
+        [
+          619.0,
+          134.0
+        ],
+        [
+          756.0,
+          199.0
+        ],
+        [
+          847.0,
+          155.0
+        ],
+        [
+          935.0,
+          49.0
+        ],
+        [
+          976.0,
+          -27.0
+        ],
+        [
+          915.0,
+          -56.0
+        ]
+      ],
+      "confidence": null,
+      "thickness": 16.0
+    },
+    {
+      "id": "poly_1793813726802",
+      "label": "obstruction",
+      "type": "polygon",
+      "x": 1941.0,
+      "y": -65.0,
+      "width": 270.0,
+      "height": 155.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": [
+        [
+          1941.0,
+          -27.0
+        ],
+        [
+          2023.0,
+          82.0
+        ],
+        [
+          2097.0,
+          90.0
+        ],
+        [
+          2199.0,
+          -6.0
+        ],
+        [
+          2211.0,
+          -65.0
+        ]
+      ],
+      "confidence": null,
+      "thickness": 16.0
+    },
+    {
+      "id": "full_1793813730850",
+      "label": "star_trail",
+      "type": "box",
+      "x": 0.0,
+      "y": 0.0,
+      "width": 3840.0,
+      "height": 2160.0,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "points": null,
+      "confidence": null,
+      "thickness": 16.0
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "file_name": "2025-02-20_05-12-51__-19.80_120.00s_0346.fits",
+  "width": 3840,
+  "height": 2160,
+  "global_star_trailing": false,
+  "global_cloud": false,
+  "is_clean": false,
+  "favorite": false,
+  "boxes": [
+    {
+      "id": "l_1793813869435",
+      "label": "satellite_streak",
+      "type": "line",
+      "x": 1838.0,
+      "y": 1.0,
+      "width": 288.0,
+      "height": 1611.0,
+      "x1": 1838.0,
+      "y1": 1.0,
+      "x2": 2126.0,
+      "y2": 1612.0,
+      "points": null,
+      "confidence": null,
+      "thickness": 14.0
+    },
+    {
+      "id": "l_1793813878808",
+      "label": "satellite_streak",
+      "type": "line",
+      "x": 2780.0,
+      "y": 0.0,
+      "width": 464.0,
+      "height": 2159.0,
+      "x1": 2780.0,
+      "y1": 0.0,
+      "x2": 3244.0,
+      "y2": 2159.0,
+      "points": null,
+      "confidence": null,
+      "thickness": 14.0
+    },
+    {
+      "id": "l_1793813879947",
+      "label": "satellite_streak",
+      "type": "line",
+      "x": 2910.0,
+      "y": 1.0,
+      "width": 438.0,
+      "height": 2157.0,
+      "x1": 3348.0,
+      "y1": 2158.0,
+      "x2": 2910.0,
+      "y2": 1.0,
+      "points": null,
+      "confidence": null,
+      "thickness": 14.0
+    }
+  ]
+}
