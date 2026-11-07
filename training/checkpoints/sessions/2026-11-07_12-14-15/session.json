@@ -1,0 +1,61 @@
+{
+  "session_id": "2026-11-07_12-14-15",
+  "created_at": "2026-11-07T12:14:15.205259",
+  "parent_session": null,
+  "status": "interrupted",
+  "config": {
+    "yolo_epochs": 30,
+    "cnn_epochs": 25,
+    "batch_size": 32,
+    "lr": 0.0002,
+    "patience": 8
+  },
+  "models": {
+    "astronet": {
+      "status": "completed",
+      "task": "Multi-Label Classification",
+      "epochs_completed": 25,
+      "target_epochs": 25,
+      "best_epoch": 21,
+      "macro_f1": 0.7319,
+      "clean_sky_acc": 0.892,
+      "checkpoint": "/home/patrick115/Projects/MasterThesis/training/checkpoints/sessions/2026-11-07_12-14-15/astronet_f32/best_model.pt",
+      "last_checkpoint": "/home/patrick115/Projects/MasterThesis/training/checkpoints/sessions/2026-11-07_12-14-15/astronet_f32/last_model.pt",
+      "resumed_from": "iterations/v2_ver2/models/astronet_best.pt",
+      "elapsed_sec": 5020.6
+    },
+    "resnet18": {
+      "status": "completed",
+      "task": "Multi-Label Classification",
+      "epochs_completed": 12,
+      "target_epochs": 25,
+      "best_epoch": 4,
+      "macro_f1": 0.7549,
+      "clean_sky_acc": 0.8968,
+      "checkpoint": "/home/patrick115/Projects/MasterThesis/training/checkpoints/sessions/2026-11-07_12-14-15/resnet18_f32/best_model.pt",
+      "last_checkpoint": "/home/patrick115/Projects/MasterThesis/training/checkpoints/sessions/2026-11-07_12-14-15/resnet18_f32/last_model.pt",
+      "resumed_from": "iterations/v2_ver2/models/resnet18_best.pt",
+      "elapsed_sec": 2910.1
+    },
+    "mobilenet_v3": {
+      "status": "completed",
+      "task": "Multi-Label Classification",
+      "epochs_completed": 16,
+      "target_epochs": 25,
+      "best_epoch": 8,
+      "macro_f1": 0.7912,
+      "clean_sky_acc": 0.9178,
+      "checkpoint": "/home/patrick115/Projects/MasterThesis/training/checkpoints/sessions/2026-11-07_12-14-15/mobilenet_v3_f32/best_model.pt",
+      "last_checkpoint": "/home/patrick115/Projects/MasterThesis/training/checkpoints/sessions/2026-11-07_12-14-15/mobilenet_v3_f32/last_model.pt",
+      "resumed_from": "iterations/v2_ver2/models/mobilenet_v3_best.pt",
+      "elapsed_sec": 2904.2
+    },
+    "efficientnet_b0": {
+      "status": "in_progress",
+      "task": "Multi-Label Classification",
+      "target_epochs": 25,
+      "resumed_from": "iterations/v2_ver2/models/efficientnet_b0_best.pt"
+    }
+  },
+  "updated_at": "2026-11-07T17:24:22.606636"
+}
