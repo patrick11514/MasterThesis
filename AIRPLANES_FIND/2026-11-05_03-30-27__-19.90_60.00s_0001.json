@@ -1,0 +1,45 @@
+{
+  "file_name": "2026-11-05_03-30-27__-19.90_60.00s_0001.fits",
+  "width": 3840,
+  "height": 2160,
+  "global_star_trailing": false,
+  "global_cloud": false,
+  "is_clean": false,
+  "favorite": true,
+  "candidate_score": 0.8129,
+  "candidate_hit_tiles": 1,
+  "boxes": [
+    {
+      "id": "airplane_yolo_1794070053832_0",
+      "label": "satellite_streak",
+      "confidence": 0.448,
+      "type": "polygon",
+      "points": [
+        [
+          2049.0,
+          2080.0
+        ],
+        [
+          2049.0,
+          2143.0
+        ],
+        [
+          2057.0,
+          2159.0
+        ],
+        [
+          2073.0,
+          2159.0
+        ],
+        [
+          2055.0,
+          2110.0
+        ]
+      ],
+      "x": 2048.4827842712402,
+      "y": 2079.4388427734375,
+      "width": 25.426055908203125,
+      "height": 80.5611572265625
+    }
+  ]
+}

@@ -144,6 +144,45 @@ def collect_existing_stems(dir_path: Optional[Path]) -> Set[str]:
     return stems
 
 
+def expand_target_paths(path_patterns: List[str]) -> List[Path]:
+    """
+    Expands directories, glob patterns (*, ?), and shell-style brace expressions {a,b}
+    into resolved directory Path objects. Supports both quoted and unquoted CLI inputs.
+    """
+    import glob
+    import re
+
+    expanded: List[Path] = []
+    for pat in path_patterns:
+        # Check for shell brace expansion like {585*,678*,californ*}
+        brace_match = re.search(r"\{([^}]+)\}", pat)
+        if brace_match:
+            prefix = pat[:brace_match.start()]
+            suffix = pat[brace_match.end():]
+            options = brace_match.group(1).split(",")
+            sub_patterns = [f"{prefix}{opt.strip()}{suffix}" for opt in options]
+            expanded.extend(expand_target_paths(sub_patterns))
+            continue
+
+        if any(c in pat for c in ("*", "?", "[")):
+            matches = [Path(p).resolve() for p in glob.glob(pat) if Path(p).is_dir()]
+            if matches:
+                expanded.extend(matches)
+            else:
+                expanded.append(Path(pat).resolve())
+        else:
+            expanded.append(Path(pat).resolve())
+
+    # Deduplicate while preserving order
+    seen: Set[Path] = set()
+    result: List[Path] = []
+    for p in expanded:
+        if p not in seen:
+            seen.add(p)
+            result.append(p)
+    return result
+
+
 class PreloadedFrame:
     """Container for CPU pre-processed FITS frame data ready for inference."""
     def __init__(
@@ -493,7 +532,8 @@ def main():
 
     # 4. Discover Target FITS Files
     print("\n[+] Recursively scanning target directories for FITS files...")
-    target_dirs = [Path(d).resolve() for d in args.target_dir]
+    target_dirs = expand_target_paths(args.target_dir)
+    print(f"[+] Expanded target directory paths: {len(target_dirs)} directories")
     raw_files: List[Path] = []
     extensions = ("*.fits", "*.fit", "*.FITS", "*.FIT")
 
