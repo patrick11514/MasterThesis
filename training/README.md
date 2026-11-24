@@ -57,6 +57,7 @@ training/
 ├── train_yolo.py           # YOLO11-seg instance segmentation runner with early stopping
 ├── verify.py               # Evaluation & tile-level diagnostic overlays for CNNs
 ├── verify_yolo.py          # Full-frame FITS verification with polygon segmentation masks
+├── grid_verify.py          # Multi-model x multi-FITS grid comparison & leaderboard runner
 ├── export_onnx.py          # ONNX model exporter with numerical parity check
 └── rust_example/           # Standalone Rust engine integration example
     ├── Cargo.toml
@@ -510,6 +511,25 @@ python verify_yolo.py --fits image.fits --model runs/segment/yolo11_astro/weight
 This outputs:
 - **Terminal report**: Individual frame verdicts (`CLEAN SKY` or `DEFECT FLAGGED`), defect counts per class, and inference latency.
 - **Visual PNG reports**: `verification_output/<filename>_yolo_inspection.png` with color-filled polygon masks and confidence badges rendered over every defect.
+
+#### Option 3: Multi-Model Grid Comparison (`grid_verify.py`)
+Run all models (CNNs in `.pt`/`.onnx` and/or YOLO-seg `.pt`) across all FITS frames to compare accuracy, false positives/negatives, and latency side-by-side:
+
+```bash
+# Auto-discover checkpoints/ + runs/segment/ and run across test_fits/
+python grid_verify.py --fits ../test_fits/
+
+# Compare all models packaged in specific iteration(s) using calibrated per-class thresholds
+python grid_verify.py --fits ../test_fits/ --iterations v2 v3 --use-optimal-thresholds
+
+# Compare explicit model paths or directories
+python grid_verify.py --fits *.fits --models checkpoints/astronet_f32/best_model.pt iterations/v3/models/
+```
+
+This outputs:
+- **Terminal Matrix & Leaderboard**: Image × Model verdict matrix and ranked model leaderboard (using sibling `.json` ground truth when present, or inter-model consensus otherwise).
+- **Structured Reports**: `grid_summary.md`, `grid_matrix.csv`, and `grid_results.json` in `--out-dir` (`grid_verification_output/` by default).
+- **Side-by-Side Visual Grids**: `<filename>_grid.png` showing Ground Truth (when present) alongside every model's overlay.
 
 ---
 

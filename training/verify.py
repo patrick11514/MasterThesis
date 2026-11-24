@@ -9,7 +9,7 @@ import argparse
 import glob
 from pathlib import Path
 import time
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
